@@ -1,0 +1,169 @@
+[project]
+name = "raggd"
+version = "0.1.0"
+description = "RAG tool for your code and documents."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+authors = [
+    { name = "Matt Lebrun", email = "matt@lebrun.org" }
+]
+dependencies = [
+    "rich",
+    "typer",
+    "platformdirs",
+    "pathspec",
+    "pydantic-settings",
+    "pydantic>=2",
+    "tomlkit",
+    "pygments",
+]
+
+[dependency-groups]
+
+all = [
+    { include-group = "standard" },
+    { include-group = "local-embeddings" },
+    { include-group = "file-monitoring" },
+    { include-group = "mcp" },
+    { include-group = "mcp-rest" },
+]
+
+standard = [
+    { include-group = "rag" },
+    { include-group = "parsers" },
+]
+
+dev = [
+    # { include-group = "all" },
+    { include-group = "standard" },
+    { include-group = "test" },
+    { include-group = "docs" },
+]
+
+rag = [
+    "openai",
+    "tiktoken",
+    "faiss-cpu",
+    "rapidfuzz",
+]
+
+parsers = [
+    "markdown-it-py",
+    "libcst",
+    "tree-sitter",
+    "tree_sitter_languages",
+]
+
+file-monitoring = [
+    "watchdog",
+]
+
+local-embeddings = [
+    "sentence-transformers",
+    "onnxruntime",
+]
+
+mcp = [
+    "mcp",
+]
+
+mcp-rest = [
+    "fastapi",
+    "uvicorn",
+]
+
+test = [
+    "pytest",
+    "coverage",
+    "pytest-xdist",
+    "pytest-cov",
+    "pytest-pretty",
+    "ruff",
+]
+
+docs = [
+    "mkdocs",
+    "mkdocs-material[imaging]",
+    "mkdocs-exclude",
+    "mkdocs-llmstxt",
+    "mkdocs-autorefs",
+    "mkdocstrings[python]",
+    "mkdocs-jupyter",
+    "mkdocs-mermaid2-plugin",
+    "mkdocstrings-python",
+    "mkdocs-git-revision-date-localized-plugin",
+]
+
+
+[project.scripts]
+# NOTE: Placeholder for CLI entry point
+# raggd = "raggd.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+package = true
+default-groups = ["dev"]
+
+
+[build-system]
+requires = ["uv_build>=0.8.7,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "raggd"
+
+
+[tool.ruff]
+line-length = 80
+target-version = "py312"
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.ruff.lint]
+select = ["E", "F", "N", "W", "C90"]
+ignore = []
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-wrap-aliases = true
+known-first-party = ["raggd"]
+detect-same-package = true
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+order-by-type = true
+
+[tool.ruff.lint.pycodestyle]
+ignore-overlong-task-comments = true
+max-doc-length = 120
+max-line-length = 80
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.flake8-type-checking]
+quote-annotations = false
+runtime-evaluated-base-classes = [
+    "BaseModel",
+]
+runtime-evaluated-decorators = [
+    "dataclasses.dataclass",
+    "pydantic.validate_call",
+]
+exempt-regions = [
+    "typing",
+    "typing_extensions",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q -n auto --cov=raggd --cov-report=term-missing --cov-report=xml --cov-fail-under=100 --maxfail=1"
+testpaths = ["tests"]
