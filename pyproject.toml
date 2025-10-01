@@ -8,68 +8,101 @@ authors = [
     { name = "Matt Lebrun", email = "matt@lebrun.org" }
 ]
 dependencies = [
-    "rich",
-    "typer",
-    "platformdirs",
-    "pathspec",
-    "pydantic-settings",
+    "jinja2>=3.1",
+    "platformdirs>=3.11",
     "pydantic>=2",
-    "tomlkit",
-    "pygments",
+    "pydantic-settings>=2",
+    "rich>=13",
+    "structlog>=24",
+    "tomlkit>=0.12",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+file-monitoring = [
+    "watchdog>=4",
+]
+local-embeddings = [
+    "onnxruntime>=1.17",
+    "sentence-transformers>=3",
+]
+mcp = [
+    "mcp>=1",
+]
+mcp-rest = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+]
+parsers = [
+    "libcst>=1.4",
+    "markdown-it-py>=3",
+    "tree-sitter>=0.21",
+    "tree_sitter_languages>=1.9",
+]
+rag = [
+    "faiss-cpu>=1.8",
+    "openai>=1",
+    "rapidfuzz>=3",
+    "tiktoken>=0.7",
 ]
 
 [dependency-groups]
-
-all = [
-    { include-group = "standard" },
-    { include-group = "local-embeddings" },
-    { include-group = "file-monitoring" },
-    { include-group = "mcp" },
-    { include-group = "mcp-rest" },
-]
-
-standard = [
-    { include-group = "rag" },
-    { include-group = "parsers" },
-]
-
 dev = [
-    # { include-group = "all" },
-    { include-group = "standard" },
     { include-group = "test" },
     { include-group = "docs" },
 ]
 
-rag = [
-    "openai",
-    "tiktoken",
-    "faiss-cpu",
-    "rapidfuzz",
+docs = [
+    "mkdocs",
+    "mkdocs-autorefs",
+    "mkdocs-exclude",
+    "mkdocs-git-revision-date-localized-plugin",
+    "mkdocs-jupyter",
+    "mkdocs-llmstxt",
+    "mkdocs-material[imaging]",
+    "mkdocs-mermaid2-plugin",
+    "mkdocstrings-python",
 ]
 
-parsers = [
-    "markdown-it-py",
-    "libcst",
-    "tree-sitter",
-    "tree_sitter_languages",
+modules = [
+    { include-group = "file-monitoring" },
+    { include-group = "local-embeddings" },
+    { include-group = "mcp" },
+    { include-group = "mcp-rest" },
+    { include-group = "parsers" },
+    { include-group = "rag" },
 ]
 
 file-monitoring = [
-    "watchdog",
+    "watchdog>=4",
 ]
 
 local-embeddings = [
-    "sentence-transformers",
-    "onnxruntime",
+    "onnxruntime>=1.17",
+    "sentence-transformers>=3",
 ]
 
 mcp = [
-    "mcp",
+    "mcp>=1",
 ]
 
 mcp-rest = [
-    "fastapi",
-    "uvicorn",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+]
+
+parsers = [
+    "libcst>=1.4",
+    "markdown-it-py>=3",
+    "tree-sitter>=0.21",
+    "tree_sitter_languages>=1.9",
+]
+
+rag = [
+    "faiss-cpu>=1.8",
+    "openai>=1",
+    "rapidfuzz>=3",
+    "tiktoken>=0.7",
 ]
 
 test = [
@@ -81,23 +114,8 @@ test = [
     "ruff",
 ]
 
-docs = [
-    "mkdocs",
-    "mkdocs-material[imaging]",
-    "mkdocs-exclude",
-    "mkdocs-llmstxt",
-    "mkdocs-autorefs",
-    "mkdocstrings[python]",
-    "mkdocs-jupyter",
-    "mkdocs-mermaid2-plugin",
-    "mkdocstrings-python",
-    "mkdocs-git-revision-date-localized-plugin",
-]
-
-
 [project.scripts]
-# NOTE: Placeholder for CLI entry point
-# raggd = "raggd.cli:app"
+raggd = "raggd.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

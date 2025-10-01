@@ -42,7 +42,7 @@
 - Follow modular layout from `patterns_and_architecture.md`: `raggd.core` stays dependency-light and focused on seams (config/logging/path) while `raggd.modules` exposes registry hooks for optional packs.
 - Apply seam-first DI per `engineering-guide.md`: expose workspace resolver + config loader as injectable functions/classes for future overrides and testing via fixtures.
 - Stepwise checklist:
-  - [ ] Update `pyproject.toml` (uv-managed) with runtime deps, CLI entry point, extras for future modules, and optional dependency groups referenced by module descriptors.
+  - [x] Update `pyproject.toml` (uv-managed) with runtime deps, CLI entry point, extras for future modules, and optional dependency groups referenced by module descriptors.
   - [ ] Ensure uv packaging includes `src/raggd/resources/**/*` (defaults + templates) in both sdist and wheel artifacts.
   - [ ] Scaffold package directories (`cli`, `core`, `modules`, `resources`) with docstring-rich modules and type hints.
   - [ ] Implement workspace path resolver + `--workspace`/`RAGGD_WORKSPACE` precedence logic and refresh archiving helper.
@@ -67,14 +67,20 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
-### 2025-10-01 11:38 PDT
-**Summary**
-Expanded implementation plan for defaults precedence and module registry lifecycle.
-**Changes**
-- Added packaged defaults tasks, registry availability testing, and module descriptor wiring.
-
 ### 2025-10-02 02:09 PST
 **Summary**
 Initial implementation plan drafted per approved spec.
 **Changes**
 - Added implementation blueprint, dependencies, testing, and operability notes.
+
+### 2025-10-01 20:06 UTC
+**Summary**
+Marked dependency setup step complete after landing `pyproject.toml` CLI/dependency updates.
+**Changes**
+- Checked off dependency update task and noted uv-managed additions in history.
+
+### 2025-10-01 11:38 PDT
+**Summary**
+Expanded implementation plan for defaults precedence and module registry lifecycle.
+**Changes**
+- Added packaged defaults tasks, registry availability testing, and module descriptor wiring.
