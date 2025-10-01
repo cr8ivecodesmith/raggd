@@ -43,7 +43,7 @@
 - Apply seam-first DI per `engineering-guide.md`: expose workspace resolver + config loader as injectable functions/classes for future overrides and testing via fixtures.
 - Stepwise checklist:
   - [x] Update `pyproject.toml` (uv-managed) with runtime deps, CLI entry point, extras for future modules, and optional dependency groups referenced by module descriptors.
-  - [ ] Ensure uv packaging includes `src/raggd/resources/**/*` (defaults + templates) in both sdist and wheel artifacts.
+  - [x] Ensure uv packaging includes `src/raggd/resources/**/*` (defaults + templates) in both sdist and wheel artifacts.
   - [ ] Scaffold package directories (`cli`, `core`, `modules`, `resources`) with docstring-rich modules and type hints.
   - [ ] Implement workspace path resolver + `--workspace`/`RAGGD_WORKSPACE` precedence logic and refresh archiving helper.
   - [ ] Add configuration model that loads packaged defaults, overlays user `raggd.toml`, env vars, and CLI flags per precedence, and emits commented templates.
@@ -84,3 +84,9 @@ Marked dependency setup step complete after landing `pyproject.toml` CLI/depende
 Expanded implementation plan for defaults precedence and module registry lifecycle.
 **Changes**
 - Added packaged defaults tasks, registry availability testing, and module descriptor wiring.
+
+### 2025-10-01 20:10 UTC
+**Summary**
+Configured packaging so uv-built sdists/wheels ship the resource templates and defaults.
+**Changes**
+- Enabled setuptools package-data inclusion for `raggd.resources` and added `MANIFEST.in` to include bundled assets.

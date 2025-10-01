@@ -120,6 +120,15 @@ raggd = "raggd.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"raggd" = [
+    "resources/**/*.toml",
+    "resources/**/*.j2",
+]
+
 [tool.uv]
 package = true
 default-groups = ["dev"]
