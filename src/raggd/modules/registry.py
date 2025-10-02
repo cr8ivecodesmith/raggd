@@ -39,7 +39,9 @@ class ModuleDescriptor:
 
     def __post_init__(self) -> None:
         normalized_extras = tuple(
-            dict.fromkeys(extra.strip() for extra in self.extras if extra.strip())
+            dict.fromkeys(
+                extra.strip() for extra in self.extras if extra.strip()
+            )
         )
         object.__setattr__(self, "extras", normalized_extras)
 
@@ -53,7 +55,10 @@ class ModuleDescriptor:
                 ),
             )
 
-    def required_extras(self, override: ModuleToggle | None = None) -> tuple[str, ...]:
+    def required_extras(
+        self,
+        override: ModuleToggle | None = None,
+    ) -> tuple[str, ...]:
         """Return the extras that must be present for the module.
 
         Args:
@@ -111,12 +116,14 @@ class ModuleRegistry:
         for descriptor in descriptors:
             if descriptor.name in seen:
                 raise ValueError(
-                    f"Duplicate module descriptor registered: {descriptor.name!r}"
+                    f"Duplicate module descriptor: {descriptor.name!r}"
                 )
             deduped.append(descriptor)
             seen.add(descriptor.name)
         self._descriptors: tuple[ModuleDescriptor, ...] = tuple(deduped)
-        self._descriptor_index = {descriptor.name: descriptor for descriptor in self._descriptors}
+        self._descriptor_index = {
+            descriptor.name: descriptor for descriptor in self._descriptors
+        }
 
     def iter_descriptors(self) -> Iterator[ModuleDescriptor]:
         """Iterate over registered descriptors in declaration order."""
@@ -151,7 +158,7 @@ class ModuleRegistry:
                 by module name.
 
         Returns:
-            Mapping of module names to ``True`` (active) or ``False`` (inactive).
+            Mapping from module name to active (True) or inactive (False).
         """
 
         configured: dict[str, ModuleToggle] = dict(toggles)
@@ -175,9 +182,13 @@ class ModuleRegistry:
             toggle = configured.get(descriptor.name, descriptor.default_toggle)
             required = descriptor.required_extras(toggle)
             missing = tuple(
-                extra for extra in required if extra.lower() not in available_set
+                extra
+                for extra in required
+                if extra.lower() not in available_set
             )
-            is_available = not required or (available_extras is not None and not missing)
+            is_available = not required or (
+                available_extras is not None and not missing
+            )
             is_enabled = toggle.is_active() and is_available
 
             logger = get_logger(__name__, module=descriptor.name)

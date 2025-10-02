@@ -43,7 +43,7 @@ def test_init_workspace_respects_overrides_and_refresh(tmp_path) -> None:
     config_path = workspace / "raggd.toml"
 
     defaults_path.write_text("# mutated\n", encoding="utf-8")
-    config_path.write_text("workspace = \"/tmp/elsewhere\"\n", encoding="utf-8")
+    config_path.write_text('workspace = "/tmp/elsewhere"\n', encoding="utf-8")
 
     config = init_workspace(
         workspace=workspace,
@@ -70,7 +70,9 @@ def test_init_workspace_respects_overrides_and_refresh(tmp_path) -> None:
     assert DEFAULTS_RESOURCE_NAME in archived_names
 
 
-def test_init_workspace_reuses_existing_config_without_refresh(tmp_path) -> None:
+def test_init_workspace_reuses_existing_config_without_refresh(
+    tmp_path,
+) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace=workspace)
 

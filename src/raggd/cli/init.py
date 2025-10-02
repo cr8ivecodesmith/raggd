@@ -15,7 +15,11 @@ from raggd.core.config import (
     render_user_config,
     read_packaged_defaults_text,
 )
-from raggd.core.paths import WorkspacePaths, archive_workspace, resolve_workspace
+from raggd.core.paths import (
+    WorkspacePaths,
+    archive_workspace,
+    resolve_workspace,
+)
 
 
 def _ensure_directories(paths: WorkspacePaths) -> None:
@@ -34,7 +38,9 @@ def _normalize_module_overrides(
     if not overrides:
         return None
 
-    return {name: {"enabled": bool(enabled)} for name, enabled in overrides.items()}
+    return {
+        name: {"enabled": bool(enabled)} for name, enabled in overrides.items()
+    }
 
 
 def _load_existing_user_config(
@@ -46,7 +52,7 @@ def _load_existing_user_config(
 
     Args:
         path: Location of the user configuration file.
-        refresh: Whether the caller requested a refresh (skip reading when ``True``).
+        refresh: Whether refresh was requested. Skip reading when ``True``.
 
     Returns:
         Parsed TOML data or ``None`` when the file is absent.

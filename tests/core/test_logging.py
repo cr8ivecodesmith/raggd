@@ -42,14 +42,22 @@ def _build_console() -> Console:
     return Console(file=buffer, width=120, record=True)
 
 
-def test_configure_logging_installs_console_and_file_handlers(tmp_path: Path) -> None:
+def test_configure_logging_installs_console_and_file_handlers(
+    tmp_path: Path,
+) -> None:
     workspace = tmp_path / "workspace"
 
-    configure_logging(level="debug", workspace_path=workspace, console=_build_console())
+    configure_logging(
+        level="debug",
+        workspace_path=workspace,
+        console=_build_console(),
+    )
 
     root = logging.getLogger()
     rich_handlers = [h for h in root.handlers if isinstance(h, RichHandler)]
-    file_handlers = [h for h in root.handlers if isinstance(h, TimedRotatingFileHandler)]
+    file_handlers = [
+        h for h in root.handlers if isinstance(h, TimedRotatingFileHandler)
+    ]
 
     assert len(rich_handlers) == 1, "Expected a single Rich console handler"
     assert len(file_handlers) == 1, "Expected a file handler for workspace logs"
@@ -94,7 +102,11 @@ def test_configure_logging_rejects_unknown_level(tmp_path: Path) -> None:
 def test_configure_logging_rotates_with_compression(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
 
-    configure_logging(level="warning", workspace_path=workspace, console=_build_console())
+    configure_logging(
+        level="warning",
+        workspace_path=workspace,
+        console=_build_console(),
+    )
     root = logging.getLogger()
     file_handler = next(
         h for h in root.handlers if isinstance(h, TimedRotatingFileHandler)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -81,7 +82,13 @@ def test_cli_init_module_overrides_and_missing_extras(
     app = create_app()
     result = runner.invoke(
         app,
-        ["init", "--enable-module", "rag", "--disable-module", "file-monitoring"],
+        [
+            "init",
+            "--enable-module",
+            "rag",
+            "--disable-module",
+            "file-monitoring",
+        ],
         env=env,
         catch_exceptions=False,
     )
@@ -91,7 +98,8 @@ def test_cli_init_module_overrides_and_missing_extras(
     assert "file-monitoring: disabled" in result.stdout
 
     workspace = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
-    config = tomllib.loads((workspace / "raggd.toml").read_text(encoding="utf-8"))
+    config_text = (workspace / "raggd.toml").read_text(encoding="utf-8")
+    config = tomllib.loads(config_text)
     assert config["modules"]["rag"]["enabled"] is True
     assert config["modules"]["file-monitoring"]["enabled"] is False
 
@@ -111,7 +119,8 @@ def test_cli_init_rejects_conflicting_module_overrides(
     )
 
     assert result.exit_code != 0
-    assert "Invalid value for --enable-module/--disable-module" in result.output
+    clean = re.sub(r"[^A-Za-z]+", " ", result.output).casefold()
+    assert "modules cannot be both" in clean.lower()
 
 
 def test_cli_init_existing_workspace_note(
@@ -160,7 +169,11 @@ def test_build_module_overrides_sanitizes_names() -> None:
 
 
 def test_render_module_line_states() -> None:
-    enabled_line = _render_module_line("alpha", {"alpha": True}, {"alpha": "enabled"})
+    enabled_line = _render_module_line(
+        "alpha",
+        {"alpha": True},
+        {"alpha": "enabled"},
+    )
     assert enabled_line.endswith("enabled")
 
     unknown_line = _render_module_line(
@@ -171,7 +184,9 @@ def test_render_module_line_states() -> None:
     assert "unknown" in unknown_line
 
 
-def test_detect_available_extras_handles_sentinels(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_detect_available_extras_handles_sentinels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fake_find_spec(name: str):
         return object() if name == "marker" else None
 

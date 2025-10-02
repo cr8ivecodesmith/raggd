@@ -186,7 +186,7 @@ runtime-evaluated-decorators = [
     "dataclasses.dataclass",
     "pydantic.validate_call",
 ]
-exempt-regions = [
+exempt-modules = [
     "typing",
     "typing_extensions",
 ]

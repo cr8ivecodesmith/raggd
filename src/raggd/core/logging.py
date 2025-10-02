@@ -19,7 +19,7 @@ _CONSOLE_PROCESSOR = structlog.dev.ConsoleRenderer(colors=False)
 _FILE_PROCESSOR = structlog.processors.JSONRenderer(sort_keys=True)
 _TIMESTAMPER = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
-# Default retention mirrors a week of logs which balances insight with footprint.
+# Default retention keeps a week of history, balancing insight with footprint.
 _ROTATION_BACKUP_COUNT = 7
 _DEFAULT_LOG_FILENAME = "raggd.log"
 
@@ -38,7 +38,10 @@ def _normalize_level(level: str) -> int:
     return value
 
 
-def _reset_root_logger(root: logging.Logger, handlers: Iterable[logging.Handler]) -> None:
+def _reset_root_logger(
+    root: logging.Logger,
+    handlers: Iterable[logging.Handler],
+) -> None:
     """Replace root handlers with the provided ones."""
 
     for handler in list(root.handlers):
@@ -56,8 +59,7 @@ def _configure_structlog() -> None:
 
     structlog.reset_defaults()
     structlog.configure(
-        processors=
-        [
+        processors=[
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_log_level,
             _TIMESTAMPER,
@@ -107,7 +109,10 @@ def _build_file_handler(log_file: Path, level: int) -> TimedRotatingFileHandler:
     return handler
 
 
-def _build_console_handler(level: int, console: Console | None = None) -> RichHandler:
+def _build_console_handler(
+    level: int,
+    console: Console | None = None,
+) -> RichHandler:
     """Return a Rich-backed console handler for structured logging."""
 
     handler = RichHandler(

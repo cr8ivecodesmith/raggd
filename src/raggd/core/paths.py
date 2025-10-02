@@ -90,9 +90,7 @@ def resolve_workspace(
     workspace = _normalize(base)
 
     if workspace.exists() and workspace.is_file():
-        raise ValueError(
-            f"Workspace path '{workspace}' points to a file; expected a directory."
-        )
+        raise ValueError(f"Workspace file path not allowed: {workspace}")
 
     config_file = workspace / "raggd.toml"
     logs_dir = workspace / "logs"
@@ -130,7 +128,7 @@ def archive_workspace(paths: WorkspacePaths) -> Path | None:
         paths: Workspace paths describing the current workspace layout.
 
     Returns:
-        The path to the archive directory if contents were archived, otherwise ``None``.
+        Archive directory path when contents were moved, otherwise ``None``.
     """
 
     workspace = paths.workspace

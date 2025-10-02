@@ -13,7 +13,8 @@ from importlib import metadata
 
 try:
     __version__ = metadata.version("raggd")
-except metadata.PackageNotFoundError:  # pragma: no cover - fallback for editable installs
+except metadata.PackageNotFoundError:  # pragma: no cover
+    # Editable installs may not expose distribution metadata; fall back.
     __version__ = "0.0.0"
 
 __all__ = ["__version__"]

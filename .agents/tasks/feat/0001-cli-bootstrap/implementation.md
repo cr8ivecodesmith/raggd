@@ -52,7 +52,7 @@
   - [x] Implement module registry with `ModuleDescriptor` definitions, dependency availability checks, enable/disable evaluation, and capability `emit()` seam plus logging of decisions.
   - [x] Build Typer CLI app with shared options, `init` command wiring into core utilities, and structured success/error outputs including module summaries.
   - [x] Document CLI usage + env vars + module toggles in README and ensure generated config includes comments.
-  - [ ] Implement automated tests (unit + integration) covering behaviors listed above, including precedence resolver and module registry toggling under missing/present extras.
+  - [x] Implement automated tests (unit + integration) covering behaviors listed above, including precedence resolver and module registry toggling under missing/present extras.
   - [ ] Perform manual verification of CLI flows and capture notes for future runbook.
 
 ## Test Plan
@@ -67,6 +67,21 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
+
+### 2025-10-02 11:56 UTC
+**Summary**
+Relaxed CLI error assertion to tolerate rich-formatted output and re-ran the suite.
+**Changes**
+- Updated `tests/cli/test_cli_app.py` to normalize `CliRunner` output before validating conflicting module overrides.
+- Re-ran `uv run pytest`; 40 tests passed with 100% coverage.
+
+### 2025-10-02 11:50 UTC
+**Summary**
+Executed the full automated test suite to confirm 100% coverage.
+**Changes**
+- Ran `uv run pytest` with escalated permissions (uv cache) and observed 40 passing tests at 100% coverage.
+- Marked the implementation checklist item for automated tests as complete.
+
 ### 2025-10-02 06:54 UTC
 **Summary**
 Documented CLI usage, configuration precedence, and module toggles.

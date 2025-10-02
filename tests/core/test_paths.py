@@ -8,11 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from raggd.core.paths import WorkspacePaths, archive_workspace, resolve_workspace
+from raggd.core.paths import (
+    WorkspacePaths,
+    archive_workspace,
+    resolve_workspace,
+)
 
 
-def test_resolve_workspace_defaults_to_home_dot_raggd(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The resolver should default to ``$HOME/.raggd`` when no overrides are given."""
+def test_resolve_workspace_defaults_to_home_dot_raggd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolver defaults to ``$HOME/.raggd`` when overrides are absent."""
 
     fake_home = Path("/tmp/raggd-home")
     monkeypatch.setenv("HOME", fake_home.as_posix())
@@ -27,7 +33,10 @@ def test_resolve_workspace_defaults_to_home_dot_raggd(monkeypatch: pytest.Monkey
     assert paths.archives_dir == expected / "archives"
 
 
-def test_resolve_workspace_prefers_cli_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_workspace_prefers_cli_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """CLI override should take precedence over env and defaults."""
 
     monkeypatch.setenv("RAGGD_WORKSPACE", (tmp_path / "ignored").as_posix())
@@ -41,7 +50,9 @@ def test_resolve_workspace_prefers_cli_override(tmp_path: Path, monkeypatch: pyt
     assert paths.workspace == cli_override.resolve(strict=False)
 
 
-def test_resolve_workspace_uses_env_override_when_cli_missing(tmp_path: Path) -> None:
+def test_resolve_workspace_uses_env_override_when_cli_missing(
+    tmp_path: Path,
+) -> None:
     """Environment override fills in when CLI is omitted."""
 
     env_override = tmp_path / "from-env"
@@ -51,13 +62,17 @@ def test_resolve_workspace_uses_env_override_when_cli_missing(tmp_path: Path) ->
     assert paths.workspace == env_override.resolve(strict=False)
 
 
-def test_resolve_workspace_supports_relative_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_workspace_supports_relative_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Relative overrides should resolve from the current working directory."""
 
     monkeypatch.chdir(tmp_path)
     paths = resolve_workspace(workspace_override=Path("workspaces/relative"))
 
-    assert paths.workspace == (tmp_path / "workspaces/relative").resolve(strict=False)
+    expected = (tmp_path / "workspaces/relative").resolve(strict=False)
+    assert paths.workspace == expected
 
 
 def test_resolve_workspace_rejects_file_path(tmp_path: Path) -> None:
@@ -71,7 +86,7 @@ def test_resolve_workspace_rejects_file_path(tmp_path: Path) -> None:
 
 
 def test_archive_workspace_moves_contents(tmp_path: Path) -> None:
-    """Refreshing should move existing artifacts into a timestamped archive directory."""
+    """Refreshing should archive existing artifacts into timestamped folders."""
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -88,7 +103,8 @@ def test_archive_workspace_moves_contents(tmp_path: Path) -> None:
     archive_path = archive_workspace(paths)
     assert archive_path is not None
     assert archive_path.parent == paths.archives_dir
-    assert sorted(p.name for p in archive_path.iterdir()) == ["logs", "raggd.toml"]
+    entries = sorted(p.name for p in archive_path.iterdir())
+    assert entries == ["logs", "raggd.toml"]
     assert list(workspace.iterdir()) == [paths.archives_dir]
 
 
@@ -135,7 +151,10 @@ def test_workspace_paths_iter_all() -> None:
     assert names == {"workspace", "raggd.toml", "logs", "archives"}
 
 
-def test_archive_workspace_generates_unique_suffixes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_archive_workspace_generates_unique_suffixes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     workspace = tmp_path / "workspace"
     archives = workspace / "archives"
     workspace.mkdir()

@@ -10,7 +10,10 @@ import pytest
 from raggd.__main__ import main
 
 
-def test_main_invokes_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_main_invokes_cli(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     workspace = tmp_path / "workspace"
 
     monkeypatch.setenv("RAGGD_WORKSPACE", str(workspace))
@@ -20,7 +23,12 @@ def test_main_invokes_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
 
     configured: dict[str, object] = {}
 
-    def fake_configure_logging(*, level: str, workspace_path: Path, console=None) -> None:
+    def fake_configure_logging(
+        *,
+        level: str,
+        workspace_path: Path,
+        console=None,
+    ) -> None:
         configured["level"] = level
         configured["workspace"] = workspace_path
 

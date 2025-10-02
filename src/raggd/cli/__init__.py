@@ -38,11 +38,16 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
         name="file-monitoring",
         description="File system change detection watchers.",
         extras=("file-monitoring",),
-        default_toggle=ModuleToggle(enabled=False, extras=("file-monitoring",)),
+        default_toggle=ModuleToggle(
+            enabled=False,
+            extras=("file-monitoring",),
+        ),
     ),
     ModuleDescriptor(
         name="local-embeddings",
-        description="Generate embeddings locally via ONNX/SentenceTransformers.",
+        description=(
+            "Generate embeddings locally via ONNX/SentenceTransformers."
+        ),
         extras=("local-embeddings",),
         default_toggle=ModuleToggle(
             enabled=False,
@@ -53,25 +58,37 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
         name="mcp",
         description="Model Context Protocol integration (client).",
         extras=("mcp",),
-        default_toggle=ModuleToggle(enabled=False, extras=("mcp",)),
+        default_toggle=ModuleToggle(
+            enabled=False,
+            extras=("mcp",),
+        ),
     ),
     ModuleDescriptor(
         name="mcp-rest",
         description="REST bridge for Model Context Protocol servers.",
         extras=("mcp-rest",),
-        default_toggle=ModuleToggle(enabled=False, extras=("mcp-rest",)),
+        default_toggle=ModuleToggle(
+            enabled=False,
+            extras=("mcp-rest",),
+        ),
     ),
     ModuleDescriptor(
         name="parsers",
         description="Rich document and source parsing utilities.",
         extras=("parsers",),
-        default_toggle=ModuleToggle(enabled=False, extras=("parsers",)),
+        default_toggle=ModuleToggle(
+            enabled=False,
+            extras=("parsers",),
+        ),
     ),
     ModuleDescriptor(
         name="rag",
         description="Core retrieval-augmented generation capabilities.",
         extras=("rag",),
-        default_toggle=ModuleToggle(enabled=False, extras=("rag",)),
+        default_toggle=ModuleToggle(
+            enabled=False,
+            extras=("rag",),
+        ),
     ),
 )
 
@@ -81,7 +98,12 @@ _EXTRA_SENTINELS: Mapping[str, tuple[str, ...]] = {
     "local-embeddings": ("onnxruntime", "sentence_transformers"),
     "mcp": ("mcp",),
     "mcp-rest": ("fastapi", "uvicorn"),
-    "parsers": ("libcst", "markdown_it", "tree_sitter", "tree_sitter_languages"),
+    "parsers": (
+        "libcst",
+        "markdown_it",
+        "tree_sitter",
+        "tree_sitter_languages",
+    ),
     "rag": ("faiss", "openai", "rapidfuzz", "tiktoken"),
 }
 
@@ -116,14 +138,17 @@ def _build_module_overrides(
 
 
 def _detect_available_extras() -> set[str]:
-    """Inspect the environment and report available optional dependency groups."""
+    """Report optional dependency groups that are importable."""
 
     available: set[str] = set()
     for extra, sentinels in _EXTRA_SENTINELS.items():
         if not sentinels:
             available.add(extra)
             continue
-        if all(importlib_util.find_spec(sentinel) is not None for sentinel in sentinels):
+        if all(
+            importlib_util.find_spec(sentinel) is not None
+            for sentinel in sentinels
+        ):
             available.add(extra)
     return available
 
@@ -145,7 +170,11 @@ def _summarize_modules(
     return active, status
 
 
-def _render_module_line(name: str, active: Mapping[str, bool], status: Mapping[str, str]) -> str:
+def _render_module_line(
+    name: str,
+    active: Mapping[str, bool],
+    status: Mapping[str, str],
+) -> str:
     """Return a formatted status line for the module summary."""
 
     reason = status.get(name, "unknown")
@@ -165,7 +194,7 @@ def _handle_conflicts(
     enables: Sequence[str] | None,
     disables: Sequence[str] | None,
 ) -> None:
-    """Raise a CLI error if the same module appears in enable and disable sets."""
+    """Reject cases where a module is both enabled and disabled."""
 
     enable_set = {_canonical_module_name(name) for name in enables or ()}
     disable_set = {_canonical_module_name(name) for name in disables or ()}
@@ -242,18 +271,27 @@ def create_app() -> "typer.Typer":
 
         return None
 
-    @app.command("init", help="Bootstrap a workspace and seed configuration files.")
+    @app.command(
+        "init",
+        help="Bootstrap a workspace and seed configuration files.",
+    )
     def init_command(  # noqa: PLR0913 - CLI surface area intentionally explicit
         workspace: Path | None = typer.Option(
             None,
             "--workspace",
             "-w",
-            help="Override the workspace directory (defaults to $HOME/.raggd or RAGGD_WORKSPACE).",
+            help=(
+                "Override the workspace directory (defaults to $HOME/.raggd "
+                "or RAGGD_WORKSPACE)."
+            ),
         ),
         refresh: bool = typer.Option(
             False,
             "--refresh",
-            help="Archive existing workspace contents before regenerating a clean layout.",
+            help=(
+                "Archive existing workspace contents before regenerating a "
+                "clean layout."
+            ),
         ),
         log_level: str | None = typer.Option(
             None,
@@ -301,12 +339,15 @@ def create_app() -> "typer.Typer":
                 workspace_override=workspace,
                 env_override=env_workspace_path,
             )
-        except ValueError as exc:  # pragma: no cover - exercised via CLI error path
+        except ValueError as exc:  # pragma: no cover
             typer.secho(f"Workspace error: {exc}", fg=typer.colors.RED)
             raise typer.Exit(code=1) from exc
 
         env_overrides = {"log_level": env_log_level} if env_log_level else None
-        module_overrides = _build_module_overrides(enable_module, disable_module)
+        module_overrides = _build_module_overrides(
+            enable_module,
+            disable_module,
+        )
 
         workspace_exists = paths.workspace.exists()
 
@@ -318,11 +359,15 @@ def create_app() -> "typer.Typer":
                 module_overrides=module_overrides or None,
                 env_overrides=env_overrides,
             )
-        except Exception as exc:  # pragma: no cover - exercised via CLI error path
-            typer.secho(f"Failed to initialize workspace: {exc}", fg=typer.colors.RED)
+        except Exception as exc:  # pragma: no cover
+            message = f"Failed to initialize workspace: {exc}"
+            typer.secho(message, fg=typer.colors.RED)
             raise typer.Exit(code=1) from exc
 
-        configure_logging(level=config.log_level, workspace_path=config.workspace)
+        configure_logging(
+            level=config.log_level,
+            workspace_path=config.workspace,
+        )
         logger = get_logger(__name__, command="init")
 
         available_extras = _detect_available_extras()

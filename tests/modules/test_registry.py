@@ -27,19 +27,28 @@ def test_registry_evaluate_applies_toggles_and_extras() -> None:
             name="file-monitoring",
             description="File system watchers",
             extras=("file-monitoring",),
-            default_toggle=ModuleToggle(enabled=True, extras=("file-monitoring",)),
+            default_toggle=ModuleToggle(
+                enabled=True,
+                extras=("file-monitoring",),
+            ),
         ),
         ModuleDescriptor(
             name="local-embeddings",
             description="Local embedding generation",
             extras=("local-embeddings",),
-            default_toggle=ModuleToggle(enabled=True, extras=("local-embeddings",)),
+            default_toggle=ModuleToggle(
+                enabled=True,
+                extras=("local-embeddings",),
+            ),
         ),
         ModuleDescriptor(
             name="rag",
             description="Core retrieval pipeline",
             extras=("rag",),
-            default_toggle=ModuleToggle(enabled=True, extras=("rag",)),
+            default_toggle=ModuleToggle(
+                enabled=True,
+                extras=("rag",),
+            ),
         ),
     ]
 
@@ -71,7 +80,9 @@ def test_registry_evaluate_applies_toggles_and_extras() -> None:
     assert status["rag"] == "missing extras: rag"
 
 
-def test_registry_records_unknown_modules_and_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_registry_records_unknown_modules_and_logs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     records: dict[str | None, list[tuple[str, str, dict[str, Any]]]] = {}
 
     class Recorder:
@@ -85,7 +96,11 @@ def test_registry_records_unknown_modules_and_logs(monkeypatch: pytest.MonkeyPat
         def warning(self, event: str, **context: Any) -> None:
             records[self.module].append(("warning", event, context))
 
-        def exception(self, event: str, **context: Any) -> None:  # pragma: no cover
+        def exception(
+            self,
+            event: str,
+            **context: Any,
+        ) -> None:  # pragma: no cover
             records[self.module].append(("exception", event, context))
 
     loggers: dict[str | None, Recorder] = {}
@@ -126,7 +141,9 @@ def test_registry_records_unknown_modules_and_logs(monkeypatch: pytest.MonkeyPat
 def test_registry_rejects_duplicate_descriptors() -> None:
     descriptor = ModuleDescriptor(name="dup", description="duplicate")
     with pytest.raises(ValueError):
-        ModuleRegistry([descriptor, ModuleDescriptor(name="dup", description="copy")])
+        ModuleRegistry(
+            [descriptor, ModuleDescriptor(name="dup", description="copy")]
+        )
 
 
 def test_descriptor_post_init_applies_default_extras() -> None:
@@ -140,11 +157,25 @@ def test_descriptor_post_init_applies_default_extras() -> None:
     assert descriptor.default_toggle.extras == ("gamma",)
 
 
-def test_descriptor_is_available_handles_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    descriptor = ModuleDescriptor(name="delta", description="Delta module", extras=("delta",))
+def test_descriptor_is_available_handles_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ensure fixture registers without triggering unused warning
+    del monkeypatch
+    descriptor = ModuleDescriptor(
+        name="delta",
+        description="Delta module",
+        extras=("delta",),
+    )
 
     assert descriptor.is_available({"delta"}) is True
-    assert descriptor.is_available(None, override=ModuleToggle(enabled=True, extras=("delta",))) is False
+    assert (
+        descriptor.is_available(
+            None,
+            override=ModuleToggle(enabled=True, extras=("delta",)),
+        )
+        is False
+    )
 
     no_extra = ModuleDescriptor(name="plain", description="Plain module")
     assert no_extra.is_available(None) is True
