@@ -45,7 +45,7 @@
   - [x] Update `pyproject.toml` (uv-managed) with runtime deps, CLI entry point, extras for future modules, and optional dependency groups referenced by module descriptors.
   - [x] Ensure uv packaging includes `src/raggd/resources/**/*` (defaults + templates) in both sdist and wheel artifacts.
   - [x] Scaffold package directories (`cli`, `core`, `modules`, `resources`) with docstring-rich modules and type hints.
-  - [ ] Implement workspace path resolver + `--workspace`/`RAGGD_WORKSPACE` precedence logic and refresh archiving helper.
+  - [x] Implement workspace path resolver + `--workspace`/`RAGGD_WORKSPACE` precedence logic and refresh archiving helper.
   - [ ] Add configuration model that loads packaged defaults, overlays user `raggd.toml`, env vars, and CLI flags per precedence, and emits commented templates.
   - [ ] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init seeds both defaults and rendered user config.
   - [ ] Configure structlog with rich console handler and rotating file handler, exposing a reusable `get_logger` helper.
@@ -67,6 +67,13 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
+### 2025-10-02 02:41 UTC
+**Summary**
+Implemented workspace resolver and archive helper with supporting tests.
+**Changes**
+- Added precedence-aware path normalization, refresh archiving helper, and unit tests.
+- Ran `uv run pytest tests/core/test_paths.py` (fails coverage until remaining stubs are implemented).
+
 ### 2025-10-02 02:09 PST
 **Summary**
 Initial implementation plan drafted per approved spec.

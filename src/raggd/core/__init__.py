@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from .config import AppConfig, ModuleToggle, load_config
 from .logging import configure_logging, get_logger
-from .paths import WorkspacePaths, resolve_workspace
+from .paths import WorkspacePaths, archive_workspace, resolve_workspace
 
 __all__ = [
     "AppConfig",
@@ -23,5 +23,6 @@ __all__ = [
     "get_logger",
     "load_config",
     "WorkspacePaths",
+    "archive_workspace",
     "resolve_workspace",
 ]

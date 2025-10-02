@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+
+__all__ = [
+    "WorkspacePaths",
+    "resolve_workspace",
+    "archive_workspace",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,12 +75,96 @@ def resolve_workspace(
         Resolved workspace paths after precedence rules are applied.
 
     Raises:
-        NotImplementedError: Until the resolver is implemented.
+        ValueError: If the resolved workspace points to a regular file.
     """
 
-    raise NotImplementedError(
-        "Workspace resolution will be implemented in a subsequent step."
+    def _normalize(candidate: Path) -> Path:
+        raw = Path(candidate).expanduser()
+        if raw.is_absolute():
+            resolved = raw.resolve(strict=False)
+        else:
+            resolved = (Path.cwd() / raw).resolve(strict=False)
+        return resolved
+
+    base = workspace_override or env_override or Path.home() / ".raggd"
+    workspace = _normalize(base)
+
+    if workspace.exists() and workspace.is_file():
+        raise ValueError(
+            f"Workspace path '{workspace}' points to a file; expected a directory."
+        )
+
+    config_file = workspace / "raggd.toml"
+    logs_dir = workspace / "logs"
+    archives_dir = workspace / "archives"
+
+    return WorkspacePaths(
+        workspace=workspace,
+        config_file=config_file,
+        logs_dir=logs_dir,
+        archives_dir=archives_dir,
     )
 
 
-__all__ = ["WorkspacePaths", "resolve_workspace"]
+def archive_workspace(paths: WorkspacePaths) -> Path | None:
+    """Archive the current workspace contents into a timestamped folder.
+
+    Example:
+        >>> from pathlib import Path
+        >>> from raggd.core.paths import WorkspacePaths, archive_workspace
+        >>> root = Path("/tmp/raggd-example")
+        >>> paths = WorkspacePaths(
+        ...     workspace=root,
+        ...     config_file=root / "raggd.toml",
+        ...     logs_dir=root / "logs",
+        ...     archives_dir=root / "archives",
+        ... )
+        >>> root.mkdir(parents=True, exist_ok=True)
+        >>> _ = (root / "logs").mkdir(exist_ok=True)
+        >>> _ = (root / "raggd.toml").write_text("example = true\n")
+        >>> archive = archive_workspace(paths)
+        >>> archive is None or archive.parent.name == "archives"
+        True
+
+    Args:
+        paths: Workspace paths describing the current workspace layout.
+
+    Returns:
+        The path to the archive directory if contents were archived, otherwise ``None``.
+    """
+
+    workspace = paths.workspace
+    if not workspace.exists():
+        return None
+
+    if not workspace.is_dir():
+        raise ValueError(
+            f"Workspace path '{workspace}' exists but is not a directory."
+        )
+
+    archive_root = paths.archives_dir
+    archive_root.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    candidate = archive_root / timestamp
+    suffix = 0
+    while candidate.exists():
+        suffix += 1
+        candidate = archive_root / f"{timestamp}-{suffix:02d}"
+    candidate.mkdir(parents=True, exist_ok=True)
+
+    moved_any = False
+    for entry in workspace.iterdir():
+        if entry == archive_root or entry == candidate:
+            continue
+        target = candidate / entry.name
+        entry.rename(target)
+        moved_any = True
+
+    if not moved_any:
+        candidate.rmdir()
+        if not any(archive_root.iterdir()):
+            archive_root.rmdir()
+        return None
+
+    return candidate
