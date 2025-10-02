@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import shutil
+
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+from zipfile import ZIP_DEFLATED, ZipFile
 
 __all__ = [
     "WorkspacePaths",
@@ -104,8 +107,60 @@ def resolve_workspace(
     )
 
 
+def _gather_archive_candidates(
+    workspace: Path,
+    archive_root: Path,
+) -> list[Path]:
+    return [entry for entry in workspace.iterdir() if entry != archive_root]
+
+
+def _generate_archive_name(archive_root: Path, timestamp: str) -> Path:
+    suffix = 0
+    while True:
+        suffix_part = "" if suffix == 0 else f"-{suffix:02d}"
+        candidate = archive_root / f"{timestamp}{suffix_part}.zip"
+        if not candidate.exists():
+            return candidate
+        suffix += 1
+
+
+def _write_path_to_zip(root: Path, path: Path, zf: ZipFile) -> None:
+    relative = path.relative_to(root).as_posix()
+    if path.is_dir():
+        directory_name = relative.rstrip("/") + "/"
+        zf.writestr(directory_name, "")
+        for child in sorted(path.iterdir()):
+            _write_path_to_zip(root, child, zf)
+    else:
+        zf.write(path, relative)
+
+
+def _zip_workspace_entries(
+    workspace: Path,
+    entries: Iterable[Path],
+    destination: Path,
+) -> None:
+    with ZipFile(destination, mode="w", compression=ZIP_DEFLATED) as zf:
+        for entry in sorted(entries):
+            _write_path_to_zip(workspace, entry, zf)
+
+
+def _remove_archived_entries(entries: Iterable[Path]) -> None:
+    for entry in entries:
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
+def _prune_archive_root_if_empty(archive_root: Path) -> None:
+    if any(archive_root.iterdir()):
+        return
+    archive_root.rmdir()
+
+
 def archive_workspace(paths: WorkspacePaths) -> Path | None:
-    """Archive the current workspace contents into a timestamped folder.
+    """Archive the current workspace contents into a timestamped ZIP file.
 
     Example:
         >>> from pathlib import Path
@@ -121,7 +176,7 @@ def archive_workspace(paths: WorkspacePaths) -> Path | None:
         >>> _ = (root / "logs").mkdir(exist_ok=True)
         >>> _ = (root / "raggd.toml").write_text("example = true\n")
         >>> archive = archive_workspace(paths)
-        >>> archive is None or archive.parent.name == "archives"
+        >>> archive is None or archive.suffix == ".zip"
         True
 
     Args:
@@ -143,26 +198,16 @@ def archive_workspace(paths: WorkspacePaths) -> Path | None:
     archive_root = paths.archives_dir
     archive_root.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    candidate = archive_root / timestamp
-    suffix = 0
-    while candidate.exists():
-        suffix += 1
-        candidate = archive_root / f"{timestamp}-{suffix:02d}"
-    candidate.mkdir(parents=True, exist_ok=True)
+    to_archive = _gather_archive_candidates(workspace, archive_root)
 
-    moved_any = False
-    for entry in workspace.iterdir():
-        if entry == archive_root or entry == candidate:
-            continue
-        target = candidate / entry.name
-        entry.rename(target)
-        moved_any = True
-
-    if not moved_any:
-        candidate.rmdir()
-        if not any(archive_root.iterdir()):
-            archive_root.rmdir()
+    if not to_archive:
+        _prune_archive_root_if_empty(archive_root)
         return None
 
-    return candidate
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    archive_path = _generate_archive_name(archive_root, timestamp)
+
+    _zip_workspace_entries(workspace, to_archive, archive_path)
+    _remove_archived_entries(to_archive)
+
+    return archive_path

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
@@ -86,7 +87,7 @@ def test_resolve_workspace_rejects_file_path(tmp_path: Path) -> None:
 
 
 def test_archive_workspace_moves_contents(tmp_path: Path) -> None:
-    """Refreshing should archive existing artifacts into timestamped folders."""
+    """Refreshing archives existing artifacts into timestamped ZIPs."""
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -103,8 +104,12 @@ def test_archive_workspace_moves_contents(tmp_path: Path) -> None:
     archive_path = archive_workspace(paths)
     assert archive_path is not None
     assert archive_path.parent == paths.archives_dir
-    entries = sorted(p.name for p in archive_path.iterdir())
-    assert entries == ["logs", "raggd.toml"]
+    assert archive_path.suffix == ".zip"
+
+    with ZipFile(archive_path) as archive:
+        names = sorted(archive.namelist())
+
+    assert names == ["logs/", "raggd.toml"]
     assert list(workspace.iterdir()) == [paths.archives_dir]
 
 
@@ -181,7 +186,7 @@ def test_archive_workspace_generates_unique_suffixes(
     second_archive = archive_workspace(paths)
 
     assert second_archive is not None
-    assert second_archive.name.endswith("-01")
+    assert second_archive.name.endswith("-01.zip")
 
 
 def test_archive_workspace_cleans_empty_archives(tmp_path: Path) -> None:
@@ -201,3 +206,22 @@ def test_archive_workspace_cleans_empty_archives(tmp_path: Path) -> None:
 
     assert result is None
     assert not archives.exists()
+
+
+def test_archive_workspace_preserves_existing_archives(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    archives = workspace / "archives"
+    workspace.mkdir()
+    archives.mkdir()
+    (archives / "old.zip").write_bytes(b"")
+
+    paths = WorkspacePaths(
+        workspace=workspace,
+        config_file=workspace / "raggd.toml",
+        logs_dir=workspace / "logs",
+        archives_dir=archives,
+    )
+
+    assert archive_workspace(paths) is None
+    assert archives.exists()
+    assert (archives / "old.zip").exists()

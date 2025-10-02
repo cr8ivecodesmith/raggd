@@ -26,7 +26,7 @@ Establish the initial `raggd` CLI scaffold, default workspace bootstrap flow, an
 
 ## Configuration & Module Registry
 - Precedence order: CLI flags override environment variables, which override the user `raggd.toml`, which in turn overlays packaged defaults shipped as `raggd.defaults.toml`. Generated configs comment on each layer for discoverability.
-- Packaged defaults live under `src/raggd/resources/raggd.defaults.toml` and seed fresh workspaces alongside the rendered `raggd.toml` template.
+- Packaged defaults live under `src/raggd/resources/raggd.defaults.toml` and stay bundled with the application—they inform the generated `raggd.toml` but are not copied into the workspace.
 - User config structure reserves a flat `[modules]` table where each module key exposes `enabled`, dependency/extra names, and module-specific settings. Example:
   ```toml
   [modules]
@@ -85,6 +85,11 @@ Establish the initial `raggd` CLI scaffold, default workspace bootstrap flow, an
 _None._
 
 ## History
+### 2025-10-02 14:50 UTC
+**Summary** — Clarified packaged defaults handling
+**Changes**
+- Noted that `raggd.defaults.toml` remains bundled and is not copied into the workspace.
+
 ### 2025-10-01 11:38 PDT
 **Summary** — Documented configuration precedence and module lifecycle seams
 **Changes**

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from zipfile import ZipFile
 
 import tomlkit
 
@@ -11,7 +12,7 @@ from raggd.cli.init import init_workspace
 from raggd.core.config import DEFAULTS_RESOURCE_NAME
 
 
-def test_init_workspace_seeds_defaults_and_config(tmp_path) -> None:
+def test_init_workspace_seeds_config_without_copying_defaults(tmp_path) -> None:
     workspace = tmp_path / "workspace"
 
     config = init_workspace(workspace=workspace)
@@ -19,13 +20,10 @@ def test_init_workspace_seeds_defaults_and_config(tmp_path) -> None:
     defaults_path = workspace / DEFAULTS_RESOURCE_NAME
     config_path = workspace / "raggd.toml"
 
-    assert defaults_path.exists()
+    assert not defaults_path.exists()
     assert config_path.exists()
     assert (workspace / "logs").is_dir()
     assert (workspace / "archives").is_dir()
-
-    defaults = tomllib.loads(defaults_path.read_text(encoding="utf-8"))
-    assert defaults["log_level"] == "INFO"
 
     rendered = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert rendered["workspace"].endswith("workspace")
@@ -42,7 +40,6 @@ def test_init_workspace_respects_overrides_and_refresh(tmp_path) -> None:
     defaults_path = workspace / DEFAULTS_RESOURCE_NAME
     config_path = workspace / "raggd.toml"
 
-    defaults_path.write_text("# mutated\n", encoding="utf-8")
     config_path.write_text('workspace = "/tmp/elsewhere"\n', encoding="utf-8")
 
     config = init_workspace(
@@ -52,8 +49,7 @@ def test_init_workspace_respects_overrides_and_refresh(tmp_path) -> None:
         module_overrides={"file-monitoring": True},
     )
 
-    defaults = defaults_path.read_text(encoding="utf-8")
-    assert defaults.startswith("# Default configuration bundled with raggd")
+    assert not defaults_path.exists()
 
     rendered = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert rendered["log_level"] == "DEBUG"
@@ -65,9 +61,10 @@ def test_init_workspace_respects_overrides_and_refresh(tmp_path) -> None:
     archive_entries = list((workspace / "archives").iterdir())
     assert archive_entries, "refresh should archive previous workspace contents"
 
-    archived_names = {child.name for child in archive_entries[0].iterdir()}
-    assert "raggd.toml" in archived_names
-    assert DEFAULTS_RESOURCE_NAME in archived_names
+    archive_file = archive_entries[0]
+    assert archive_file.suffix == ".zip"
+    with ZipFile(archive_file) as archive:
+        assert "raggd.toml" in archive.namelist()
 
 
 def test_init_workspace_reuses_existing_config_without_refresh(

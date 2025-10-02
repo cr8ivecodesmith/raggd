@@ -1,7 +1,7 @@
 # Bootstrapping CLI & Core — Implementation
 
 ## Understanding
-- Stand up an initial Typer-driven `raggd` CLI exposing `init`, backed by core utilities that resolve the workspace (default `$HOME/.raggd` with `--workspace` flag and `RAGGD_WORKSPACE` env override), emit structured logs (structlog + rich + rotation), and generate a seeded `raggd.toml` plus folders/log archives sourced from a packaged defaults file.
+- Stand up an initial Typer-driven `raggd` CLI exposing `init`, backed by core utilities that resolve the workspace (default `$HOME/.raggd` with `--workspace` flag and `RAGGD_WORKSPACE` env override), emit structured logs (structlog + rich + rotation), and generate a seeded `raggd.toml` plus folders/log archives while keeping packaged defaults in-app.
 - Assumptions: `pyproject.toml` will adopt Typer, structlog, rich, tomlkit, pydantic-settings, and platformdirs; no extra questions outstanding.
 - Risks: cross-platform path handling and permissions (mitigate with `platformdirs` + `pathlib` and unit coverage), accidental destructive refresh (require explicit `--refresh` and archive before wipe), log rotation correctness (lean on well-tested handlers and add integration checks).
 - Opportunities: module registry is intentionally seam-first through `ModuleDescriptor` records and capability `emit()` hooks, keeping us flexible if we later replace the homegrown registry with `pluggy`.
@@ -47,7 +47,7 @@
   - [x] Scaffold package directories (`cli`, `core`, `modules`, `resources`) with docstring-rich modules and type hints.
   - [x] Implement workspace path resolver + `--workspace`/`RAGGD_WORKSPACE` precedence logic and refresh archiving helper.
   - [x] Add configuration model that loads packaged defaults, overlays user `raggd.toml`, env vars, and CLI flags per precedence, and emits commented templates.
-  - [x] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init seeds both defaults and rendered user config.
+  - [x] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init renders the user config while keeping the packaged defaults internal.
   - [x] Configure structlog with rich console handler and rotating file handler, exposing a reusable `get_logger` helper.
   - [x] Implement module registry with `ModuleDescriptor` definitions, dependency availability checks, enable/disable evaluation, and capability `emit()` seam plus logging of decisions.
   - [x] Build Typer CLI app with shared options, `init` command wiring into core utilities, and structured success/error outputs including module summaries.
@@ -67,6 +67,14 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
+
+### 2025-10-02 15:06 UTC
+**Summary**
+Compressed workspace refresh archives into timestamped ZIP files.
+**Changes**
+- Reworked `archive_workspace` to emit `.zip` artifacts and remove archived files from the live workspace.
+- Updated docs and tests to reference ZIP-based archives and verify their contents.
+- Ran `uv run pytest` with escalated permissions to confirm the suite still passes at 100% coverage.
 
 ### 2025-10-02 11:56 UTC
 **Summary**
@@ -98,6 +106,14 @@ Implemented dependency-aware module registry evaluation.
 - Introduced unit tests covering enablement precedence, missing extras, unknown modules, and emit hooks.
 - Ran `uv run pytest tests/modules/test_registry.py` (fails overall coverage until remaining CLI stubs are implemented).
 
+### 2025-10-02 14:50 UTC
+**Summary**
+Kept packaged defaults in-app and updated workspace bootstrap flow accordingly.
+**Changes**
+- Stopped copying `raggd.defaults.toml` into the workspace and adjusted CLI messaging/tests.
+- Documented the in-app default handling across spec, docs, and implementation notes.
+- Ran targeted updates in preparation for full test verification.
+
 ### 2025-10-02 06:17 UTC
 **Summary**
 Wired the Typer-based CLI entry point and covered workspace init flows via integration tests.
@@ -116,9 +132,9 @@ Configured structlog/rich logging with rotating file output.
 
 ### 2025-10-02 03:21 UTC
 **Summary**
-Seeded packaged defaults and ensured workspace init writes both defaults and user config.
+Introduced packaged defaults resource and workspace configuration seeding.
 **Changes**
-- Added bundled defaults resource, loader helpers, and workspace seeding logic.
+- Added bundled defaults resource, loader helpers, and initial workspace seeding logic.
 - Introduced CLI tests for init seeding/refresh plus defaults loader coverage.
 - Ran `uv run pytest tests/core/test_config.py tests/cli/test_init.py` (fails overall coverage until remaining stubs land).
 

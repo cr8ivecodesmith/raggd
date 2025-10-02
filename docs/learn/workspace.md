@@ -13,8 +13,8 @@ $ raggd init [OPTIONS]
 Available options:
 - `--workspace / -w <path>`: Override the workspace directory. Defaults to
   `~/.raggd`, or `RAGGD_WORKSPACE` when the environment variable is set.
-- `--refresh`: Archive the current workspace (if present) into `archives/`
-  before rebuilding a clean layout.
+- `--refresh`: Archive the current workspace (if present) into
+  `archives/<timestamp>.zip` before rebuilding a clean layout.
 - `--log-level / -l <level>`: Override the logging level (DEBUG, INFO, WARNING,
   ERROR). Defaults to the value recorded in `raggd.toml`.
 - `--enable-module / -E <module>`: Force-enable one or more modules for this
@@ -45,10 +45,13 @@ Running `raggd init` creates the following structure:
 ```
 ~/.raggd/
 ├── raggd.toml              # Editable user configuration with comments
-├── raggd.defaults.toml     # Read-only defaults shipped with the project
 ├── logs/                   # Rolling log files (gzip rotated)
-└── archives/               # Archived workspaces created by --refresh
+└── archives/               # Timestamped ZIP archives created by --refresh
 ```
+
+The packaged defaults live inside the application bundle as
+`raggd.defaults.toml`; they are referenced when rendering `raggd.toml` but are
+not copied into the workspace.
 
 Use `--workspace` or `RAGGD_WORKSPACE` to pick a different base directory—the
 layout remains the same.

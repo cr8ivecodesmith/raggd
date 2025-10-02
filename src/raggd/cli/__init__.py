@@ -20,8 +20,8 @@ from typing import Iterable, Mapping, Sequence
 
 import typer
 
-from raggd.cli.init import DEFAULTS_RESOURCE_NAME, init_workspace
-from raggd.core.config import AppConfig, ModuleToggle
+from raggd.cli.init import init_workspace
+from raggd.core.config import AppConfig, ModuleToggle, DEFAULTS_RESOURCE_NAME
 from raggd.core.logging import configure_logging, get_logger
 from raggd.core.paths import resolve_workspace
 from raggd.modules.registry import ModuleDescriptor, ModuleRegistry
@@ -220,7 +220,7 @@ def _emit_workspace_summary(
     typer.secho("Workspace initialized", fg=typer.colors.GREEN, bold=True)
     typer.echo(f"  workspace: {config.workspace}")
     typer.echo(f"  config: {config.workspace / 'raggd.toml'}")
-    typer.echo(f"  defaults: {config.workspace / DEFAULTS_RESOURCE_NAME}")
+    typer.echo(f"  defaults: packaged resource ({DEFAULTS_RESOURCE_NAME})")
     typer.echo(f"  log level: {config.log_level}")
 
     if existing and not refresh:

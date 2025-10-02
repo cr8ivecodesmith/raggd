@@ -9,11 +9,9 @@ import tomllib
 
 from raggd.core.config import (
     AppConfig,
-    DEFAULTS_RESOURCE_NAME,
     load_config,
     load_packaged_defaults,
     render_user_config,
-    read_packaged_defaults_text,
 )
 from raggd.core.paths import (
     WorkspacePaths,
@@ -126,11 +124,6 @@ def init_workspace(
         cli_overrides=cli_overrides,
         module_overrides=normalized_module_overrides,
     )
-
-    defaults_path = paths.workspace / DEFAULTS_RESOURCE_NAME
-    if refresh or not defaults_path.exists():
-        defaults_text = read_packaged_defaults_text()
-        defaults_path.write_text(defaults_text, encoding="utf-8")
 
     config_path = paths.config_file
     if refresh or not config_path.exists():

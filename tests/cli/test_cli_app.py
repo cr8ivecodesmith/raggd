@@ -54,13 +54,17 @@ def test_cli_init_respects_env_and_outputs_status(
     assert "Workspace initialized" in result.stdout
     assert "log level: WARNING" in result.stdout
     assert "file-monitoring" in result.stdout
+    expected_defaults_line = (
+        f"defaults: packaged resource ({DEFAULTS_RESOURCE_NAME})"
+    )
+    assert expected_defaults_line in result.stdout
 
     workspace = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
     config_path = workspace / "raggd.toml"
     defaults_path = workspace / DEFAULTS_RESOURCE_NAME
 
     assert config_path.exists()
-    assert defaults_path.exists()
+    assert not defaults_path.exists()
     assert (workspace / "logs").is_dir()
 
     config = tomllib.loads(config_path.read_text(encoding="utf-8"))
