@@ -44,7 +44,7 @@
 - Stepwise checklist:
   - [x] Update `pyproject.toml` (uv-managed) with runtime deps, CLI entry point, extras for future modules, and optional dependency groups referenced by module descriptors.
   - [x] Ensure uv packaging includes `src/raggd/resources/**/*` (defaults + templates) in both sdist and wheel artifacts.
-  - [ ] Scaffold package directories (`cli`, `core`, `modules`, `resources`) with docstring-rich modules and type hints.
+  - [x] Scaffold package directories (`cli`, `core`, `modules`, `resources`) with docstring-rich modules and type hints.
   - [ ] Implement workspace path resolver + `--workspace`/`RAGGD_WORKSPACE` precedence logic and refresh archiving helper.
   - [ ] Add configuration model that loads packaged defaults, overlays user `raggd.toml`, env vars, and CLI flags per precedence, and emits commented templates.
   - [ ] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init seeds both defaults and rendered user config.
@@ -90,3 +90,9 @@ Expanded implementation plan for defaults precedence and module registry lifecyc
 Configured packaging so uv-built sdists/wheels ship the resource templates and defaults.
 **Changes**
 - Enabled setuptools package-data inclusion for `raggd.resources` and added `MANIFEST.in` to include bundled assets.
+
+### 2025-10-01 20:16 UTC
+**Summary**
+Scaffolded CLI, core, modules, and resources packages with documented stubs.
+**Changes**
+- Added docstring-rich module skeletons for CLI, core utilities, module registry, and packaged resources.
