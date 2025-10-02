@@ -58,12 +58,12 @@ Establish the initial `raggd` CLI scaffold, default workspace bootstrap flow, an
 - Rollback is manual removal of the workspace directory and associated cache artifacts.
 
 ## Definition of Done
-- [ ] Behavior verified via CLI smoke tests for `raggd init` (happy path, existing workspace, `--refresh`, custom path, log-level override).
-- [ ] Docs updated (README quick start, inline docstrings, comments in `raggd.toml`).
-- [ ] Tests added for config parsing, workspace path resolution, and logging setup.
-- [ ] Flags defaulted per precedence stack, with module toggles documented and defaults sourced from packaged config.
-- [ ] Module registry logs availability decisions and only activates enabled, dependency-satisfied descriptors.
-- [ ] Monitoring hooks (log file + console) validated manually.
+- [x] Behavior verified via CLI smoke tests for `raggd init` (happy path, existing workspace, `--refresh`, custom path, log-level override).
+- [x] Docs updated (README quick start, inline docstrings, comments in `raggd.toml`).
+- [x] Tests added for config parsing, workspace path resolution, and logging setup.
+- [x] Flags defaulted per precedence stack, with module toggles documented and defaults sourced from packaged config.
+- [x] Module registry logs availability decisions and only activates enabled, dependency-satisfied descriptors.
+- [x] Monitoring hooks (log file + console) validated manually.
 
 ## Ownership
 - Owner: @matt
@@ -85,6 +85,13 @@ Establish the initial `raggd` CLI scaffold, default workspace bootstrap flow, an
 _None._
 
 ## History
+
+### 2025-10-02 15:35 UTC
+**Summary** — Definition of Done achieved
+**Changes**
+- Confirmed CLI smoke runs (`uv run raggd init` variants) and manual monitoring checks, completing the remaining DoD items.
+- Marked all Definition of Done checkboxes as satisfied.
+
 ### 2025-10-02 14:50 UTC
 **Summary** — Clarified packaged defaults handling
 **Changes**

@@ -183,8 +183,21 @@ def command_run(args: Args, deps: Deps) -> ExitCode:
 
 ## Project-Specific Practices
 
-- _Add project-tailored guidelines here (tech stacks, workflows, compliance notes)._
-  _Keep the main sections above tool-agnostic._
+- Keep orchestration inside `raggd.cli` commands thin. Delegate filesystem,
+  configuration, and logging work to helpers in `raggd.core` so the CLI layer
+  remains easy to test with Typer’s runner.
+- When adding modules under `raggd.modules`, implement the
+  `ModuleDescriptor` pattern (`slug`, `extras`, `enabled_by_default`,
+  `emit_capabilities`). Emit structured diagnostics through `structlog`
+  instead of ad-hoc prints.
+- Configure loggers via `raggd.core.logging.configure_logging` and acquire
+  logger instances with `structlog.get_logger(__name__)`. Avoid direct Rich or
+  stdlib logging calls in feature code so formatting stays consistent.
+- Workspace utilities live in `raggd.core.paths`. Reuse `resolve_workspace` and
+  `archive_workspace` rather than duplicating path or archiving logic.
+- Config helpers in `raggd.core.config` already merge CLI, env vars, user
+  config, and packaged defaults. Extend those seams (new settings, validation)
+  instead of re-parsing TOML inside features.
 
 
 ## Living Document

@@ -497,8 +497,24 @@ tests/
 
 ## Project-specific guidance
 
-_Capture repository or team-specific architectural rules here (framework integrations,
-layering constraints, approved libraries, etc.)._
+- `raggd` is a Typer-driven CLI. Keep the root app factory in
+  `raggd.__main__.create_app()` and register command modules inside
+  `raggd.cli`. New feature entrypoints should remain skinny shims over core
+  services.
+- Core services live under `raggd.core` (config, paths, logging). Treat this as
+  the seam layer: CLI modules should depend on it, while feature modules avoid
+  reaching back into CLI orchestration.
+- Modules are flattened under `raggd.modules.<name>` and registered through the
+  `ModuleDescriptor` lifecycle. Each descriptor declares a `slug`, optional
+  `extras` dependency group (matching `pyproject.toml`), and
+  `enabled_by_default` status. Missing extras leave the module disabled but do
+  not break the CLI.
+- Configuration precedence is enforced centrally (CLI flags → env vars → user
+  `raggd.toml` → packaged defaults). New settings should fit this stack rather
+  than inventing ad-hoc resolution logic.
+- Workspace refresh flows archive prior state into timestamped ZIP files under
+  `<workspace>/archives/`. Callers get the archive path back for logging and
+  user messaging; design new features to surface similar hand-offs.
 
 
 ## Anti-patterns and Micro-patterns

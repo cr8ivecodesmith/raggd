@@ -317,4 +317,16 @@ export async function http<T>(input: RequestInfo, init: RequestInit = {}): Promi
 - Document any custom ESLint/Prettier rules in the project-specific section.
 
 ## Project-specific Guidance
-_Add repository or team-specific style rules here (tool versions, formatting exceptions, language additions, etc.)._
+
+- Python is linted with Ruff at 80-character line length (`tool.ruff.line-length =
+  80`). Wrap long literals/docstrings manually; do not rely on auto-formatters to
+  exceed the limit.
+- Use `uv`-managed tooling: `uv run ruff check`, `uv run pytest`, and
+  `uv run pyright` (if added later). Document new tooling entries in
+  `pyproject.toml` extras or `uv` scripts rather than standalone binaries.
+- CLI help strings and docstrings should include short usage examples so our
+  auto-doc workflows can surface them. Prefer Google-style docstrings to match
+  the Ruff `D` configuration.
+- When authoring docs, keep semantic line breaks and mirror navigation in the
+  `docs/` tree (index + topical pages). Link back to CLI commands using inline
+  code (``raggd init``) for consistency.

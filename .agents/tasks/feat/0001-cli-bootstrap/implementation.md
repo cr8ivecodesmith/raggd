@@ -53,7 +53,7 @@
   - [x] Build Typer CLI app with shared options, `init` command wiring into core utilities, and structured success/error outputs including module summaries.
   - [x] Document CLI usage + env vars + module toggles in README and ensure generated config includes comments.
   - [x] Implement automated tests (unit + integration) covering behaviors listed above, including precedence resolver and module registry toggling under missing/present extras.
-  - [ ] Perform manual verification of CLI flows and capture notes for future runbook.
+  - [x] Perform manual verification of CLI flows and capture notes for future runbook.
 
 ## Test Plan
 - Unit: `core.paths` resolver precedence, refresh archiving behavior (with tmp dirs); `core.config` defaults + user file + env + CLI merge; `core.logging` structlog factories (assert handler types/levels) using temporary directories; `modules.registry` descriptor enablement + availability handling.
@@ -67,6 +67,14 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
+
+### 2025-10-02 15:35 UTC
+**Summary**
+Performed manual CLI verification of workspace bootstrap scenarios.
+**Changes**
+- Ran `uv run raggd init` against default, existing, `--refresh`, env-only, and CLI-override workspaces.
+- Confirmed zipped archives landed under `.manual-workspaces/default/archives` and precedence honored (`--workspace` over env, env over defaults).
+- Marked the manual verification checklist item complete.
 
 ### 2025-10-02 15:06 UTC
 **Summary**

@@ -118,7 +118,23 @@ Templates are stored in:
 
 ## Project-specific guidance
 
-_Add repository or team-specific workflow rules here (testing tools, release gates, compliance steps, etc.)._
+- Run all tooling through `uv` (for example `uv run raggd`, `uv run pytest`,
+  `uv run ruff check`). These commands write to `~/.cache/uv`, so expect to
+  request escalated permissions when running inside restricted sandboxes.
+- Before marking a task done, capture a manual smoke run in the task history
+  (`uv run raggd init` with default workspace, `--workspace`, `--refresh`, and
+  the `RAGGD_WORKSPACE` override). The manual note is part of the DoD.
+- Keep the 100% pytest coverage gate enabled and lint with `uv run ruff check`
+  before handing work back to the human.
+- Workspace refreshes compress the previous state into
+  `<workspace>/archives/<timestamp>.zip`; confirm the CLI output references the
+  archive path when performing manual checks.
+- Module toggles live in `[modules.<name>]` sections of `raggd.toml`. Align the
+  extras declared in `pyproject.toml` with these names and document user-facing
+  flags whenever new modules land.
+- Configuration precedence is `CLI flags` > `RAGGD_*` env vars > user
+  `raggd.toml` > the packaged defaults file (`raggd.defaults.toml`). Defaults
+  stay in-app: do not copy them into user workspaces during init flows.
 
 
 ## Exceptions and nuances
