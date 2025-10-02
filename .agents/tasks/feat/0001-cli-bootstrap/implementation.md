@@ -51,7 +51,7 @@
   - [x] Configure structlog with rich console handler and rotating file handler, exposing a reusable `get_logger` helper.
   - [x] Implement module registry with `ModuleDescriptor` definitions, dependency availability checks, enable/disable evaluation, and capability `emit()` seam plus logging of decisions.
   - [x] Build Typer CLI app with shared options, `init` command wiring into core utilities, and structured success/error outputs including module summaries.
-  - [ ] Document CLI usage + env vars + module toggles in README and ensure generated config includes comments.
+  - [x] Document CLI usage + env vars + module toggles in README and ensure generated config includes comments.
   - [ ] Implement automated tests (unit + integration) covering behaviors listed above, including precedence resolver and module registry toggling under missing/present extras.
   - [ ] Perform manual verification of CLI flows and capture notes for future runbook.
 
@@ -67,6 +67,14 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
+### 2025-10-02 06:54 UTC
+**Summary**
+Documented CLI usage, configuration precedence, and module toggles.
+**Changes**
+- Authored workspace bootstrap guide in `docs/learn/workspace.md` and updated the docs index.
+- Added a minimal README quickstart section that points to the new documentation.
+- Marked the implementation checklist documentation item complete; no tests required for doc-only changes.
+
 ### 2025-10-02 05:50 UTC
 **Summary**
 Implemented dependency-aware module registry evaluation.
