@@ -6,8 +6,11 @@ from collections.abc import Mapping as MappingABC
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+import tomllib
 import tomlkit
 from pydantic import BaseModel, Field, model_validator
+
+from raggd.resources import get_resource
 
 
 class ModuleToggle(BaseModel):
@@ -73,6 +76,36 @@ class AppConfig(BaseModel):
         object.__setattr__(value, "workspace", value.workspace.expanduser())
         object.__setattr__(value, "log_level", value.log_level.upper())
         return value
+
+
+DEFAULTS_RESOURCE_NAME = "raggd.defaults.toml"
+
+
+def read_packaged_defaults_text() -> str:
+    """Return the raw packaged defaults TOML content.
+
+    Example:
+        >>> text = read_packaged_defaults_text()
+        >>> text.startswith("#")
+        True
+    """
+
+    resource = get_resource(DEFAULTS_RESOURCE_NAME)
+    return resource.read_text(encoding="utf-8")
+
+
+def load_packaged_defaults() -> dict[str, Any]:
+    """Load the packaged defaults as a plain dictionary.
+
+    Example:
+        >>> defaults = load_packaged_defaults()
+        >>> defaults["log_level"]
+        'INFO'
+    """
+
+    text = read_packaged_defaults_text()
+    data: dict[str, Any] = tomllib.loads(text)
+    return data
 
 
 def _deep_merge(base: Mapping[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:
@@ -229,7 +262,10 @@ def iter_module_configs(config: AppConfig) -> Iterable[tuple[str, ModuleToggle]]
 __all__ = [
     "AppConfig",
     "ModuleToggle",
+    "DEFAULTS_RESOURCE_NAME",
     "iter_module_configs",
     "load_config",
+    "load_packaged_defaults",
+    "read_packaged_defaults_text",
     "render_user_config",
 ]

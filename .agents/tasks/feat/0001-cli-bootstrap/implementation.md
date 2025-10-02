@@ -47,7 +47,7 @@
   - [x] Scaffold package directories (`cli`, `core`, `modules`, `resources`) with docstring-rich modules and type hints.
   - [x] Implement workspace path resolver + `--workspace`/`RAGGD_WORKSPACE` precedence logic and refresh archiving helper.
   - [x] Add configuration model that loads packaged defaults, overlays user `raggd.toml`, env vars, and CLI flags per precedence, and emits commented templates.
-  - [ ] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init seeds both defaults and rendered user config.
+  - [x] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init seeds both defaults and rendered user config.
   - [ ] Configure structlog with rich console handler and rotating file handler, exposing a reusable `get_logger` helper.
   - [ ] Implement module registry with `ModuleDescriptor` definitions, dependency availability checks, enable/disable evaluation, and capability `emit()` seam plus logging of decisions.
   - [ ] Build Typer CLI app with shared options, `init` command wiring into core utilities, and structured success/error outputs including module summaries.
@@ -67,6 +67,14 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
+### 2025-10-02 03:21 UTC
+**Summary**
+Seeded packaged defaults and ensured workspace init writes both defaults and user config.
+**Changes**
+- Added bundled defaults resource, loader helpers, and workspace seeding logic.
+- Introduced CLI tests for init seeding/refresh plus defaults loader coverage.
+- Ran `uv run pytest tests/core/test_config.py tests/cli/test_init.py` (fails overall coverage until remaining stubs land).
+
 ### 2025-10-02 02:48 UTC
 **Summary**
 Implemented configuration loader and renderer with precedence-aware module overrides.

@@ -1,0 +1,32 @@
+# Default configuration bundled with raggd
+# Generated workspaces copy this file alongside the rendered raggd.toml so you
+# can inspect baseline settings and module toggles.
+
+workspace = "~/.raggd"
+log_level = "INFO"
+
+[modules]
+
+[modules.file-monitoring]
+enabled = false
+extras = ["file-monitoring"]
+
+[modules.local-embeddings]
+enabled = false
+extras = ["local-embeddings"]
+
+[modules.mcp]
+enabled = false
+extras = ["mcp"]
+
+[modules.mcp-rest]
+enabled = false
+extras = ["mcp-rest"]
+
+[modules.parsers]
+enabled = false
+extras = ["parsers"]
+
+[modules.rag]
+enabled = false
+extras = ["rag"]
