@@ -49,7 +49,7 @@
   - [x] Add configuration model that loads packaged defaults, overlays user `raggd.toml`, env vars, and CLI flags per precedence, and emits commented templates.
   - [x] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init seeds both defaults and rendered user config.
   - [x] Configure structlog with rich console handler and rotating file handler, exposing a reusable `get_logger` helper.
-  - [ ] Implement module registry with `ModuleDescriptor` definitions, dependency availability checks, enable/disable evaluation, and capability `emit()` seam plus logging of decisions.
+  - [x] Implement module registry with `ModuleDescriptor` definitions, dependency availability checks, enable/disable evaluation, and capability `emit()` seam plus logging of decisions.
   - [ ] Build Typer CLI app with shared options, `init` command wiring into core utilities, and structured success/error outputs including module summaries.
   - [ ] Document CLI usage + env vars + module toggles in README and ensure generated config includes comments.
   - [ ] Implement automated tests (unit + integration) covering behaviors listed above, including precedence resolver and module registry toggling under missing/present extras.
@@ -67,6 +67,14 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
+### 2025-10-02 05:50 UTC
+**Summary**
+Implemented dependency-aware module registry evaluation.
+**Changes**
+- Added descriptor lifecycle helpers with availability checks, status reporting, and logging integration.
+- Introduced unit tests covering enablement precedence, missing extras, unknown modules, and emit hooks.
+- Ran `uv run pytest tests/modules/test_registry.py` (fails overall coverage until remaining CLI stubs are implemented).
+
 ### 2025-10-02 05:37 UTC
 **Summary**
 Configured structlog/rich logging with rotating file output.
