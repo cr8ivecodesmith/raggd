@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
+from raggd.cli import create_app
+
 
 def main() -> None:
     """Execute the CLI application.
 
     Example:
         >>> from raggd.__main__ import main
-        >>> main()
-        Traceback (most recent call last):
-        ...
-        NotImplementedError: CLI wiring will be implemented during bootstrap.
-
-    Raises:
-        NotImplementedError: Until the Typer application wiring is completed.
+        >>> main()  # doctest: +SKIP
     """
 
-    raise NotImplementedError(
-        "CLI wiring will be implemented during the bootstrap milestone."
-    )
+    app = create_app()
+    app(prog_name="raggd")
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised via console script
+    main()
 
 
 __all__ = ["main"]

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Any, Iterable, Mapping
+
+import tomllib
 
 from raggd.core.config import (
     AppConfig,
@@ -35,12 +37,35 @@ def _normalize_module_overrides(
     return {name: {"enabled": bool(enabled)} for name, enabled in overrides.items()}
 
 
+def _load_existing_user_config(
+    path: Path,
+    *,
+    refresh: bool,
+) -> dict[str, Any] | None:
+    """Read an existing ``raggd.toml`` when refresh is disabled.
+
+    Args:
+        path: Location of the user configuration file.
+        refresh: Whether the caller requested a refresh (skip reading when ``True``).
+
+    Returns:
+        Parsed TOML data or ``None`` when the file is absent.
+    """
+
+    if refresh or not path.exists():
+        return None
+
+    text = path.read_text(encoding="utf-8")
+    return tomllib.loads(text)
+
+
 def init_workspace(
     *,
     workspace: Path,
     refresh: bool = False,
     log_level: str | None = None,
     module_overrides: Mapping[str, bool] | None = None,
+    env_overrides: Mapping[str, Any] | None = None,
     extra_messages: Iterable[str] | None = None,
 ) -> AppConfig:
     """Bootstrap the workspace directory and supporting artifacts.
@@ -56,6 +81,8 @@ def init_workspace(
         refresh: Whether to archive/refresh an existing workspace.
         log_level: Optional override for the configured logging level.
         module_overrides: Optional mapping that forces module enablement state.
+        env_overrides: Environment-derived settings that should sit between the
+            user config and CLI overrides in the precedence stack.
         extra_messages: Additional log lines to emit after success.
 
     Returns:
@@ -79,8 +106,17 @@ def init_workspace(
 
     normalized_module_overrides = _normalize_module_overrides(module_overrides)
 
+    user_config = _load_existing_user_config(
+        paths.config_file,
+        refresh=refresh,
+    )
+
+    env_config = dict(env_overrides or {})
+
     config = load_config(
         defaults=defaults,
+        user_config=user_config,
+        env_config=env_config or None,
         cli_overrides=cli_overrides,
         module_overrides=normalized_module_overrides,
     )

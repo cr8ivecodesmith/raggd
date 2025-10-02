@@ -127,3 +127,32 @@ def test_registry_rejects_duplicate_descriptors() -> None:
     descriptor = ModuleDescriptor(name="dup", description="duplicate")
     with pytest.raises(ValueError):
         ModuleRegistry([descriptor, ModuleDescriptor(name="dup", description="copy")])
+
+
+def test_descriptor_post_init_applies_default_extras() -> None:
+    descriptor = ModuleDescriptor(
+        name="gamma",
+        description="Test descriptor",
+        extras=("gamma", "gamma"),
+        default_toggle=ModuleToggle(enabled=True),
+    )
+
+    assert descriptor.default_toggle.extras == ("gamma",)
+
+
+def test_descriptor_is_available_handles_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    descriptor = ModuleDescriptor(name="delta", description="Delta module", extras=("delta",))
+
+    assert descriptor.is_available({"delta"}) is True
+    assert descriptor.is_available(None, override=ModuleToggle(enabled=True, extras=("delta",))) is False
+
+    no_extra = ModuleDescriptor(name="plain", description="Plain module")
+    assert no_extra.is_available(None) is True
+
+
+def test_registry_iter_descriptors_returns_sequence() -> None:
+    descriptor = ModuleDescriptor(name="epsilon", description="Epsilon")
+    registry = ModuleRegistry([descriptor])
+
+    items = list(registry.iter_descriptors())
+    assert items == [descriptor]

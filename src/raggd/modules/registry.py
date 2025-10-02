@@ -188,7 +188,7 @@ class ModuleRegistry:
                 if required:
                     reason = "missing extras: " + ", ".join(missing)
                 else:
-                    reason = "unavailable"
+                    reason = "unavailable"  # pragma: no cover - defensive guard
             else:
                 reason = "enabled"
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import tomlkit
+
 from raggd.cli.init import init_workspace
 from raggd.core.config import DEFAULTS_RESOURCE_NAME
 
@@ -67,3 +69,39 @@ def test_init_workspace_respects_overrides_and_refresh(tmp_path) -> None:
     assert "raggd.toml" in archived_names
     assert DEFAULTS_RESOURCE_NAME in archived_names
 
+
+def test_init_workspace_reuses_existing_config_without_refresh(tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+
+    config_path = workspace / "raggd.toml"
+    rendered = tomlkit.loads(config_path.read_text(encoding="utf-8"))
+    rendered["log_level"] = "WARNING"
+    rendered["modules"]["mcp"]["enabled"] = True
+    config_path.write_text(tomlkit.dumps(rendered), encoding="utf-8")
+
+    config = init_workspace(workspace=workspace)
+
+    assert config.log_level == "WARNING"
+    assert config.modules["mcp"].enabled is True
+
+    reread = tomlkit.loads(config_path.read_text(encoding="utf-8"))
+    assert reread["log_level"] == "WARNING"
+
+
+def test_init_workspace_applies_env_before_cli(tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+
+    config_env = init_workspace(
+        workspace=workspace,
+        env_overrides={"log_level": "warning"},
+    )
+    assert config_env.log_level == "WARNING"
+
+    config_cli = init_workspace(
+        workspace=workspace,
+        env_overrides={"log_level": "warning"},
+        log_level="debug",
+    )
+    assert config_cli.log_level == "DEBUG"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -120,3 +121,64 @@ def test_archive_workspace_raises_on_non_directory(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         archive_workspace(paths)
+
+
+def test_workspace_paths_iter_all() -> None:
+    paths = WorkspacePaths(
+        workspace=Path("/tmp/workspace"),
+        config_file=Path("/tmp/workspace/raggd.toml"),
+        logs_dir=Path("/tmp/workspace/logs"),
+        archives_dir=Path("/tmp/workspace/archives"),
+    )
+
+    names = {path.name for path in paths.iter_all()}
+    assert names == {"workspace", "raggd.toml", "logs", "archives"}
+
+
+def test_archive_workspace_generates_unique_suffixes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    archives = workspace / "archives"
+    workspace.mkdir()
+    (workspace / "config.txt").write_text("a")
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("raggd.core.paths.datetime", FixedDateTime)
+
+    paths = WorkspacePaths(
+        workspace=workspace,
+        config_file=workspace / "raggd.toml",
+        logs_dir=workspace / "logs",
+        archives_dir=archives,
+    )
+
+    first_archive = archive_workspace(paths)
+    assert first_archive is not None
+
+    (workspace / "config.txt").write_text("b")
+    second_archive = archive_workspace(paths)
+
+    assert second_archive is not None
+    assert second_archive.name.endswith("-01")
+
+
+def test_archive_workspace_cleans_empty_archives(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    archives = workspace / "archives"
+    workspace.mkdir()
+    archives.mkdir()
+
+    paths = WorkspacePaths(
+        workspace=workspace,
+        config_file=workspace / "raggd.toml",
+        logs_dir=workspace / "logs",
+        archives_dir=archives,
+    )
+
+    result = archive_workspace(paths)
+
+    assert result is None
+    assert not archives.exists()

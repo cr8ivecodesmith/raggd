@@ -9,6 +9,10 @@ import pytest
 from raggd.core.config import (
     AppConfig,
     ModuleToggle,
+    _apply_module_overrides,
+    _coerce_toggle,
+    _normalize_modules,
+    iter_module_configs,
     load_config,
     load_packaged_defaults,
     render_user_config,
@@ -103,3 +107,22 @@ def test_load_packaged_defaults_resource() -> None:
     assert isinstance(modules, dict)
     assert modules["file-monitoring"]["extras"] == ["file-monitoring"]
 
+
+def test_internal_module_helpers_cover_branches() -> None:
+    toggle = _coerce_toggle(True)
+    assert isinstance(toggle, ModuleToggle)
+    assert toggle.enabled is True
+
+    assert _normalize_modules(None) == {}
+
+    base = {"alpha": ModuleToggle(enabled=False, extras=("alpha",))}
+    overrides = {"beta": True}
+    updated = _apply_module_overrides(base, overrides)
+    assert "beta" in updated and updated["beta"].enabled is True
+
+    layered = _apply_module_overrides(base, {"alpha": ModuleToggle(enabled=True)})
+    assert layered["alpha"].extras == ("alpha",)
+
+    config = load_config(defaults={"modules": {"alpha": False}})
+    pairs = list(iter_module_configs(config))
+    assert pairs and pairs[0][0] == "alpha"

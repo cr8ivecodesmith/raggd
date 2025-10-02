@@ -50,7 +50,7 @@
   - [x] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init seeds both defaults and rendered user config.
   - [x] Configure structlog with rich console handler and rotating file handler, exposing a reusable `get_logger` helper.
   - [x] Implement module registry with `ModuleDescriptor` definitions, dependency availability checks, enable/disable evaluation, and capability `emit()` seam plus logging of decisions.
-  - [ ] Build Typer CLI app with shared options, `init` command wiring into core utilities, and structured success/error outputs including module summaries.
+  - [x] Build Typer CLI app with shared options, `init` command wiring into core utilities, and structured success/error outputs including module summaries.
   - [ ] Document CLI usage + env vars + module toggles in README and ensure generated config includes comments.
   - [ ] Implement automated tests (unit + integration) covering behaviors listed above, including precedence resolver and module registry toggling under missing/present extras.
   - [ ] Perform manual verification of CLI flows and capture notes for future runbook.
@@ -74,6 +74,14 @@ Implemented dependency-aware module registry evaluation.
 - Added descriptor lifecycle helpers with availability checks, status reporting, and logging integration.
 - Introduced unit tests covering enablement precedence, missing extras, unknown modules, and emit hooks.
 - Ran `uv run pytest tests/modules/test_registry.py` (fails overall coverage until remaining CLI stubs are implemented).
+
+### 2025-10-02 06:17 UTC
+**Summary**
+Wired the Typer-based CLI entry point and covered workspace init flows via integration tests.
+**Changes**
+- Implemented `create_app`, Typer options/parsing, module status reporting, and console output formatting.
+- Added CLI integration tests (including env overrides, refresh/existing notes, module override errors) plus helper/unit coverage for registry/config/path utilities.
+- Updated test suite to maintain 100% coverage and exercised `uv run pytest` successfully.
 
 ### 2025-10-02 05:37 UTC
 **Summary**
