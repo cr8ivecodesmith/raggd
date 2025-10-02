@@ -46,7 +46,7 @@
   - [x] Ensure uv packaging includes `src/raggd/resources/**/*` (defaults + templates) in both sdist and wheel artifacts.
   - [x] Scaffold package directories (`cli`, `core`, `modules`, `resources`) with docstring-rich modules and type hints.
   - [x] Implement workspace path resolver + `--workspace`/`RAGGD_WORKSPACE` precedence logic and refresh archiving helper.
-  - [ ] Add configuration model that loads packaged defaults, overlays user `raggd.toml`, env vars, and CLI flags per precedence, and emits commented templates.
+  - [x] Add configuration model that loads packaged defaults, overlays user `raggd.toml`, env vars, and CLI flags per precedence, and emits commented templates.
   - [ ] Introduce `src/raggd/resources/raggd.defaults.toml` and ensure init seeds both defaults and rendered user config.
   - [ ] Configure structlog with rich console handler and rotating file handler, exposing a reusable `get_logger` helper.
   - [ ] Implement module registry with `ModuleDescriptor` definitions, dependency availability checks, enable/disable evaluation, and capability `emit()` seam plus logging of decisions.
@@ -67,6 +67,14 @@
 - Runbooks / revert steps: removing the workspace directory reverts bootstrap; include note about `--refresh` recovering from corruption.
 
 ## History
+### 2025-10-02 02:48 UTC
+**Summary**
+Implemented configuration loader and renderer with precedence-aware module overrides.
+**Changes**
+- Added deep-merge stacking for defaults, user config, env vars, and CLI overrides plus module toggle normalization.
+- Introduced TOML renderer emitting annotated `raggd.toml` scaffolds and unit tests covering precedence/serialization.
+- Ran `uv run pytest tests/core/test_config.py` (fails global coverage due to remaining stubs; expected until later steps).
+
 ### 2025-10-02 02:41 UTC
 **Summary**
 Implemented workspace resolver and archive helper with supporting tests.
