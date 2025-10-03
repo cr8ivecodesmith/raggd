@@ -11,6 +11,96 @@ import tomlkit
 from pydantic import BaseModel, Field, model_validator
 
 from raggd.resources import get_resource
+from raggd.source.models import WorkspaceSourceConfig
+
+
+class WorkspaceSettings(BaseModel):
+    """Workspace-level configuration values and managed sources."""
+
+    root: Path = Field(
+        default_factory=lambda: Path("~/.raggd").expanduser(),
+        description="Absolute path to the workspace root.",
+    )
+    sources: dict[str, WorkspaceSourceConfig] = Field(
+        default_factory=dict,
+        description="Registered workspace sources keyed by normalized name.",
+    )
+
+    model_config = {
+        "str_strip_whitespace": True,
+        "validate_assignment": True,
+        "populate_by_name": True,
+    }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_raw(
+        cls,
+        value: Any,
+    ) -> "WorkspaceSettings" | Mapping[str, Any] | Any:
+        """Support legacy scalar workspace values when loading configs."""
+
+        if value is None or isinstance(value, (WorkspaceSettings, MappingABC)):
+            return value
+        if isinstance(value, (str, Path)):
+            return {"root": value}
+        msg = f"Unsupported workspace configuration payload: {value!r}"
+        raise TypeError(msg)
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "WorkspaceSettings":
+        """Normalize root path and ensure source keys mirror model names."""
+
+        object.__setattr__(self, "root", self.root.expanduser())
+
+        normalized_sources: dict[str, WorkspaceSourceConfig] = {}
+        for name, source in self.sources.items():
+            if source.name != name:
+                source = source.model_copy(update={"name": name})
+            normalized_sources[name] = source
+        object.__setattr__(self, "sources", normalized_sources)
+        return self
+
+    @classmethod
+    def from_mapping(
+        cls,
+        raw: Mapping[str, Any] | None,
+    ) -> "WorkspaceSettings":
+        """Instantiate settings from a raw mapping payload."""
+
+        if raw is None:
+            return cls()
+
+        data = dict(raw)
+        sources_raw = data.get("sources", {})
+        normalized_sources: dict[str, WorkspaceSourceConfig] = {}
+        if isinstance(sources_raw, MappingABC):
+            for key, value in sources_raw.items():
+                if isinstance(value, WorkspaceSourceConfig):
+                    source_model = value
+                elif isinstance(value, MappingABC):
+                    payload = dict(value)
+                    payload.setdefault("name", key)
+                    source_model = WorkspaceSourceConfig(**payload)
+                else:
+                    raise TypeError(
+                        f"Unsupported source configuration for {key!r}: {value!r}"
+                    )
+                normalized_sources[key] = source_model
+        elif sources_raw:
+            raise TypeError(
+                f"Unsupported sources payload: {sources_raw!r}"
+            )
+
+        result_data: dict[str, Any] = {"sources": normalized_sources}
+        if "root" in data:
+            result_data["root"] = data["root"]
+        return cls(**result_data)
+
+    def iter_sources(self) -> Iterable[tuple[str, WorkspaceSourceConfig]]:
+        """Iterate over registered sources."""
+
+        return self.sources.items()
 
 
 class ModuleToggle(BaseModel):
@@ -51,9 +141,10 @@ class ModuleToggle(BaseModel):
 class AppConfig(BaseModel):
     """Root configuration for the :mod:`raggd` application."""
 
-    workspace: Path = Field(
-        default_factory=lambda: Path("~/.raggd").expanduser(),
-        description="Absolute path to the workspace root.",
+    workspace_settings: WorkspaceSettings = Field(
+        default_factory=WorkspaceSettings,
+        description="Workspace-level configuration including managed sources.",
+        alias="workspace",
     )
     log_level: str = Field(
         default="INFO",
@@ -67,15 +158,32 @@ class AppConfig(BaseModel):
     model_config = {
         "str_strip_whitespace": True,
         "validate_assignment": True,
+        "populate_by_name": True,
     }
 
     @model_validator(mode="after")
     def _post_process(self) -> "AppConfig":
         """Normalize fields after validation."""
 
-        object.__setattr__(self, "workspace", self.workspace.expanduser())
         object.__setattr__(self, "log_level", self.log_level.upper())
         return self
+
+    @property
+    def workspace(self) -> Path:
+        """Return the configured workspace root path."""
+
+        return self.workspace_settings.root
+
+    @property
+    def workspace_sources(self) -> dict[str, WorkspaceSourceConfig]:
+        """Return registered workspace sources keyed by name."""
+
+        return self.workspace_settings.sources
+
+    def iter_workspace_sources(self) -> Iterable[tuple[str, WorkspaceSourceConfig]]:
+        """Iterate over registered workspace sources."""
+
+        return self.workspace_settings.iter_sources()
 
 
 DEFAULTS_RESOURCE_NAME = "raggd.defaults.toml"
@@ -213,6 +321,17 @@ def load_config(
     modules = _apply_module_overrides(modules, module_overrides)
     stack["modules"] = modules
 
+    workspace_raw = stack.pop("workspace", None)
+    if isinstance(workspace_raw, WorkspaceSettings):
+        workspace_settings = workspace_raw
+    elif isinstance(workspace_raw, MappingABC):
+        workspace_settings = WorkspaceSettings.from_mapping(workspace_raw)
+    elif workspace_raw is None:
+        workspace_settings = WorkspaceSettings()
+    else:
+        workspace_settings = WorkspaceSettings(root=workspace_raw)
+    stack["workspace"] = workspace_settings
+
     return AppConfig(**stack)
 
 
@@ -245,7 +364,21 @@ def render_user_config(
         document.add(tomlkit.comment("  RAGGD_LOG_LEVEL=info"))
         document.add(tomlkit.nl())
 
-    document["workspace"] = str(config.workspace)
+    workspace_table = tomlkit.table()
+    workspace_table["root"] = str(config.workspace)
+
+    if config.workspace_sources:
+        sources_table = tomlkit.table(is_super_table=True)
+        for name, source in sorted(config.iter_workspace_sources()):
+            entry = tomlkit.table()
+            entry["enabled"] = source.enabled
+            entry["path"] = str(source.path)
+            if source.target is not None:
+                entry["target"] = str(source.target)
+            sources_table.add(name, entry)
+        workspace_table.add("sources", sources_table)
+
+    document["workspace"] = workspace_table
     document["log_level"] = config.log_level
 
     if config.modules:
@@ -272,11 +405,21 @@ def iter_module_configs(
     return config.modules.items()
 
 
+def iter_workspace_sources(
+    config: AppConfig,
+) -> Iterable[tuple[str, WorkspaceSourceConfig]]:
+    """Iterate over workspace source configurations."""
+
+    return config.iter_workspace_sources()
+
+
 __all__ = [
     "AppConfig",
     "ModuleToggle",
+    "WorkspaceSettings",
     "DEFAULTS_RESOURCE_NAME",
     "iter_module_configs",
+    "iter_workspace_sources",
     "load_config",
     "load_packaged_defaults",
     "read_packaged_defaults_text",

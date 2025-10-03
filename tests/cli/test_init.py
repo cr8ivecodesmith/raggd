@@ -26,10 +26,10 @@ def test_init_workspace_seeds_config_without_copying_defaults(tmp_path) -> None:
     assert (workspace / "archives").is_dir()
 
     rendered = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    assert rendered["workspace"].endswith("workspace")
+    assert rendered["workspace"]["root"].endswith("workspace")
     assert rendered["log_level"] == "INFO"
 
-    assert config.workspace == Path(rendered["workspace"]).expanduser()
+    assert config.workspace == Path(rendered["workspace"]["root"]).expanduser()
     assert config.log_level == "INFO"
 
 
@@ -40,7 +40,7 @@ def test_init_workspace_respects_overrides_and_refresh(tmp_path) -> None:
     defaults_path = workspace / DEFAULTS_RESOURCE_NAME
     config_path = workspace / "raggd.toml"
 
-    config_path.write_text('workspace = "/tmp/elsewhere"\n', encoding="utf-8")
+    config_path.write_text('[workspace]\nroot = "/tmp/elsewhere"\n', encoding="utf-8")
 
     config = init_workspace(
         workspace=workspace,
