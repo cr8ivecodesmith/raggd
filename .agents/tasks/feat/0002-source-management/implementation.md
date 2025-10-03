@@ -42,8 +42,8 @@
 - Architecture/pattern choices: keep CLI thin by delegating to a `SourceService` living in `raggd/source/service.py`, modeled after seam-first guidance; reuse `structlog` logging and `typer.confirm` for UX consistency; expose health checks through an explicit `HealthRegistry` wired off `modules.registry` so each module registers a read-only callable returning typed `HealthReport` records (fields: `name`, `status`, `summary`, `actions`, `last_refresh_at`), keeping `raggd checkhealth` side-effect free while allowing service flows to do the mutating work, aligned with `patterns_and_architecture.md` recommendations for module seams. Define the shared contract as `ModuleHealthHook = Callable[[WorkspaceHandle], Sequence[HealthReport]]` and surface it via an optional `health_hook` attribute on `ModuleDescriptor`, letting the registry assemble deterministic module-order iteration for the aggregator.
 - DI & boundaries: inject workspace paths/config into services instead of performing global reads; let `SourceConfigStore` wrap `core.config.AppConfig` so mutations travel through the existing config facade; expose file operations behind helper methods for testability; register health hooks via the shared `HealthRegistry` attached to `ModuleDescriptor` metadata so the aggregator can enumerate modules without each command constructing hooks ad hoc, with hooks required to remain side-effect free. Reference `engineering-guide.md` to keep dependencies flowing inward.
 - Stepwise checklist:
-  - [ ] Extend `WorkspacePaths` with `sources_dir` (and helper factories) plus unit coverage.
-  - [ ] Model `WorkspaceSourceConfig`/`SourceManifest` Pydantic dataclasses and JSON schema helpers.
+  - [x] Extend `WorkspacePaths` with `sources_dir` (and helper factories) plus unit coverage.
+  - [x] Model `WorkspaceSourceConfig`/`SourceManifest` Pydantic dataclasses and JSON schema helpers.
   - [ ] Introduce `SourceConfigStore` utilities that compose with `core.config.AppConfig` (wrapping its load/update helpers) to keep a single config model, use `tomlkit` for structure-aware edits, and persist changes through atomic temp-file writes followed by `os.replace`; if either the temp write or replace fails, emit structured errors, keep the on-disk config untouched, and surface the failure so the CLI can abort without partial state.
   - [ ] Implement slug normalization + path validation helpers (and determine whether to vendor `python-slugify`).
   - [ ] Scaffold `SourceService` with init/target/refresh/rename/remove/list/enable/disable methods wired to config + filesystem, ensuring `init` creates the source directory + `db.sql` stub, writes config/manifest entries, and auto-enables + refreshes when a validated `--target` is provided (leaving new sources disabled otherwise). Refresh clears managed artifacts, recreates `db.sql`, stamps manifests, and respects confirmation/force semantics; rename/remove keep manifests/config in sync; enable runs the health check to report current status without auto-disabling on `degraded`/`error`, while target/refresh/rename/remove flows toggle `enabled=false` when non-forced checks fail.
@@ -70,9 +70,23 @@
 - Runbooks / revert steps: capture manual steps to disable/remove a problematic source, delete `.health.json`, and roll back module toggle; note that disabling the `modules.source` toggle removes CLI registration after revert.
 
 ## History
+### 2025-10-04 00:50 PST
+**Summary**
+Confirmed the WorkspacePaths sources directory helpers landed and marked the checklist item complete.
+**Changes**
+- Verified paths, CLI init scaffolding, and tests cover the new sources directory support.
+- Updated the stepwise checklist to reflect completion.
+
 ### 2025-10-04 11:15 PST
 **Summary**
 Initial implementation blueprint drafted from feat/0002 spec.
 **Changes**
 - Captured requirements understanding, risks, and dependencies for source management tooling.
 - Outlined architecture plan, stepwise checklist, and comprehensive test/operability strategy.
+
+### 2025-10-04 14:10 PST
+**Summary**
+Added source configuration and manifest models with supporting tests.
+**Changes**
+- Created Pydantic models for workspace source config, manifest data, and health snapshots plus JSON schema helpers.
+- Introduced unit tests covering default normalization behavior and schema structure for the new models.

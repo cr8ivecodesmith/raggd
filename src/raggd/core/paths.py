@@ -29,6 +29,7 @@ class WorkspacePaths:
         ...     config_file=Path("/tmp/raggd/raggd.toml"),
         ...     logs_dir=Path("/tmp/raggd/logs"),
         ...     archives_dir=Path("/tmp/raggd/archives"),
+        ...     sources_dir=Path("/tmp/raggd/sources"),
         ... )
         >>> paths.logs_dir.name
         'logs'
@@ -38,6 +39,7 @@ class WorkspacePaths:
     config_file: Path
     logs_dir: Path
     archives_dir: Path
+    sources_dir: Path
 
     def iter_all(self) -> Iterable[Path]:
         """Yield every path managed within the workspace.
@@ -50,9 +52,10 @@ class WorkspacePaths:
             ...     config_file=Path("/tmp/raggd/raggd.toml"),
             ...     logs_dir=Path("/tmp/raggd/logs"),
             ...     archives_dir=Path("/tmp/raggd/archives"),
+            ...     sources_dir=Path("/tmp/raggd/sources"),
             ... )
             >>> [p.name for p in paths.iter_all()]
-            ['raggd', 'raggd.toml', 'logs', 'archives']
+            ['raggd', 'raggd.toml', 'logs', 'archives', 'sources']
         """
 
         yield from (
@@ -60,7 +63,23 @@ class WorkspacePaths:
             self.config_file,
             self.logs_dir,
             self.archives_dir,
+            self.sources_dir,
         )
+
+    def source_dir(self, name: str) -> Path:
+        """Return the directory for a named source."""
+
+        return self.sources_dir / name
+
+    def source_manifest_path(self, name: str) -> Path:
+        """Return the manifest path for a named source."""
+
+        return self.source_dir(name) / "manifest.json"
+
+    def source_database_path(self, name: str) -> Path:
+        """Return the SQLite database path for a named source."""
+
+        return self.source_dir(name) / "db.sql"
 
 
 def resolve_workspace(
@@ -98,12 +117,14 @@ def resolve_workspace(
     config_file = workspace / "raggd.toml"
     logs_dir = workspace / "logs"
     archives_dir = workspace / "archives"
+    sources_dir = workspace / "sources"
 
     return WorkspacePaths(
         workspace=workspace,
         config_file=config_file,
         logs_dir=logs_dir,
         archives_dir=archives_dir,
+        sources_dir=sources_dir,
     )
 
 
@@ -171,6 +192,7 @@ def archive_workspace(paths: WorkspacePaths) -> Path | None:
         ...     config_file=root / "raggd.toml",
         ...     logs_dir=root / "logs",
         ...     archives_dir=root / "archives",
+        ...     sources_dir=root / "sources",
         ... )
         >>> root.mkdir(parents=True, exist_ok=True)
         >>> _ = (root / "logs").mkdir(exist_ok=True)

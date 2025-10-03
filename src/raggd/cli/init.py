@@ -26,6 +26,7 @@ def _ensure_directories(paths: WorkspacePaths) -> None:
     paths.workspace.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
     paths.archives_dir.mkdir(parents=True, exist_ok=True)
+    paths.sources_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _normalize_module_overrides(

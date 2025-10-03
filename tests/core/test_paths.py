@@ -32,6 +32,7 @@ def test_resolve_workspace_defaults_to_home_dot_raggd(
     assert paths.config_file == expected / "raggd.toml"
     assert paths.logs_dir == expected / "logs"
     assert paths.archives_dir == expected / "archives"
+    assert paths.sources_dir == expected / "sources"
 
 
 def test_resolve_workspace_prefers_cli_override(
@@ -99,6 +100,7 @@ def test_archive_workspace_moves_contents(tmp_path: Path) -> None:
         config_file=workspace / "raggd.toml",
         logs_dir=workspace / "logs",
         archives_dir=workspace / "archives",
+        sources_dir=workspace / "sources",
     )
 
     archive_path = archive_workspace(paths)
@@ -122,6 +124,7 @@ def test_archive_workspace_returns_none_for_empty(tmp_path: Path) -> None:
         config_file=workspace / "raggd.toml",
         logs_dir=workspace / "logs",
         archives_dir=workspace / "archives",
+        sources_dir=workspace / "sources",
     )
 
     assert archive_workspace(paths) is None
@@ -138,6 +141,7 @@ def test_archive_workspace_raises_on_non_directory(tmp_path: Path) -> None:
         config_file=workspace / "raggd.toml",
         logs_dir=workspace / "logs",
         archives_dir=workspace / "archives",
+        sources_dir=workspace / "sources",
     )
 
     with pytest.raises(ValueError):
@@ -150,10 +154,26 @@ def test_workspace_paths_iter_all() -> None:
         config_file=Path("/tmp/workspace/raggd.toml"),
         logs_dir=Path("/tmp/workspace/logs"),
         archives_dir=Path("/tmp/workspace/archives"),
+        sources_dir=Path("/tmp/workspace/sources"),
     )
 
     names = {path.name for path in paths.iter_all()}
-    assert names == {"workspace", "raggd.toml", "logs", "archives"}
+    assert names == {"workspace", "raggd.toml", "logs", "archives", "sources"}
+
+
+def test_workspace_paths_source_helpers() -> None:
+    paths = WorkspacePaths(
+        workspace=Path("/tmp/workspace"),
+        config_file=Path("/tmp/workspace/raggd.toml"),
+        logs_dir=Path("/tmp/workspace/logs"),
+        archives_dir=Path("/tmp/workspace/archives"),
+        sources_dir=Path("/tmp/workspace/sources"),
+    )
+
+    source_root = paths.source_dir("demo")
+    assert source_root == Path("/tmp/workspace/sources/demo")
+    assert paths.source_manifest_path("demo") == source_root / "manifest.json"
+    assert paths.source_database_path("demo") == source_root / "db.sql"
 
 
 def test_archive_workspace_generates_unique_suffixes(
@@ -177,6 +197,7 @@ def test_archive_workspace_generates_unique_suffixes(
         config_file=workspace / "raggd.toml",
         logs_dir=workspace / "logs",
         archives_dir=archives,
+        sources_dir=workspace / "sources",
     )
 
     first_archive = archive_workspace(paths)
@@ -200,6 +221,7 @@ def test_archive_workspace_cleans_empty_archives(tmp_path: Path) -> None:
         config_file=workspace / "raggd.toml",
         logs_dir=workspace / "logs",
         archives_dir=archives,
+        sources_dir=workspace / "sources",
     )
 
     result = archive_workspace(paths)
@@ -220,6 +242,7 @@ def test_archive_workspace_preserves_existing_archives(tmp_path: Path) -> None:
         config_file=workspace / "raggd.toml",
         logs_dir=workspace / "logs",
         archives_dir=archives,
+        sources_dir=workspace / "sources",
     )
 
     assert archive_workspace(paths) is None
