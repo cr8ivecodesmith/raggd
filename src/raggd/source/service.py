@@ -20,6 +20,7 @@ from raggd.source.errors import (
     SourceHealthCheckError,
     SourceNotFoundError,
 )
+from raggd.source.health import evaluate_source_health
 from raggd.source.models import (
     SourceHealthSnapshot,
     SourceHealthStatus,
@@ -62,8 +63,10 @@ class SourceService:
     ) -> None:
         self._paths = workspace
         self._config_store = config_store
-        self._health_evaluator = health_evaluator or self._default_health_evaluator
         self._now = now or self._default_now
+        self._health_evaluator = (
+            health_evaluator or self._build_default_health_evaluator()
+        )
 
     def init(
         self,
@@ -425,13 +428,19 @@ class SourceService:
         db_path.touch()
         return db_path
 
-    def _default_health_evaluator(
-        self,
-        *,
-        config: WorkspaceSourceConfig,
-        manifest: SourceManifest,
-    ) -> SourceHealthSnapshot:
-        return SourceHealthSnapshot(status=SourceHealthStatus.UNKNOWN)
+    def _build_default_health_evaluator(self) -> SourceHealthEvaluator:
+        def _evaluate(
+            *,
+            config: WorkspaceSourceConfig,
+            manifest: SourceManifest,
+        ) -> SourceHealthSnapshot:
+            return evaluate_source_health(
+                config=config,
+                manifest=manifest,
+                now=self._now,
+            )
+
+        return _evaluate
 
     @staticmethod
     def _default_now() -> datetime:
@@ -443,4 +452,3 @@ class SourceService:
         if not extracted:
             raise SourceNotFoundError("At least one source name must be provided.")
         return extracted
-

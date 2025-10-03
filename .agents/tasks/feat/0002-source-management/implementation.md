@@ -47,7 +47,7 @@
   - [x] Introduce `SourceConfigStore` utilities that compose with `core.config.AppConfig` (wrapping its load/update helpers) to keep a single config model, use `tomlkit` for structure-aware edits, and persist changes through atomic temp-file writes followed by `os.replace`; if either the temp write or replace fails, emit structured errors, keep the on-disk config untouched, and surface the failure so the CLI can abort without partial state.
   - [x] Implement slug normalization + path validation helpers (and determine whether to vendor `python-slugify`).
   - [x] Scaffold `SourceService` with init/target/refresh/rename/remove/list/enable/disable methods wired to config + filesystem, ensuring `init` creates the source directory + `db.sql` stub, writes config/manifest entries, and auto-enables + refreshes when a validated `--target` is provided (leaving new sources disabled otherwise). Refresh clears managed artifacts, recreates `db.sql`, stamps manifests, and respects confirmation/force semantics; rename/remove keep manifests/config in sync; enable runs the health check to report current status without auto-disabling on `degraded`/`error`, while target/refresh/rename/remove flows toggle `enabled=false` when non-forced checks fail.
-  - [ ] Build health evaluation routines that run per-source checks (target existence/readability, manifest freshness, disabled markers), update manifest status metadata when invoked from mutating flows, and leave the read-only `HealthHook` path untouched. Mutating flows record a `last_health` block with status/summary/actions stamps every time they trigger checks; successful refresh/target changes also update `last_refresh_at`, while failed checks preserve the previous refresh timestamp but capture the degraded/error status for auditability.
+  - [x] Build health evaluation routines that run per-source checks (target existence/readability, manifest freshness, disabled markers), update manifest status metadata when invoked from mutating flows, and leave the read-only `HealthHook` path untouched. Mutating flows record a `last_health` block with status/summary/actions stamps every time they trigger checks; successful refresh/target changes also update `last_refresh_at`, while failed checks preserve the previous refresh timestamp but capture the degraded/error status for auditability.
   - [ ] Wire command-triggered health gating/auto-disable semantics into service methods with shared guard logic.
   - [ ] Create Typer command group for `raggd source`, mapping CLI options to service operations and confirmations, validating mutually exclusive `target` inputs (`--clear` vs `<dir>`), and enforcing exit codes (e.g., `list` returns non-zero when any source status is `unknown`/`degraded`/`error`).
   - [ ] Update module registry/defaults to include a `source` module toggle and dependency extras.
@@ -114,3 +114,10 @@ Scaffolded the SourceService with filesystem/config wiring and comprehensive uni
 - Added `raggd.source.service` with lifecycle methods (init/target/refresh/rename/remove/list/enable/disable), manifest management, and health gating hooks.
 - Introduced `raggd.source.errors` and expanded package exports for new service APIs.
 - Authored extensive `tests/source/test_service.py` covering happy-path and error scenarios, achieving 100% coverage via full `pytest` run.
+
+### 2025-10-05 13:20 PST
+**Summary**
+Implemented source health evaluation routines and supporting tests.
+**Changes**
+- Added `raggd.source.health` with per-source checks, default evaluator wiring, and manifest status updates.
+- Expanded source tests to cover health scenarios and updated the implementation checklist for this milestone.

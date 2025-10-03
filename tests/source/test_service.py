@@ -299,7 +299,9 @@ def test_enable_requires_names(tmp_path: Path) -> None:
         service.enable()
 
 
-def test_default_health_evaluator_returns_unknown(tmp_path: Path) -> None:
+def test_default_health_evaluator_reports_degraded_when_target_missing(
+    tmp_path: Path,
+) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace=workspace)
     paths = _make_paths(workspace)
@@ -309,7 +311,7 @@ def test_default_health_evaluator_returns_unknown(tmp_path: Path) -> None:
     service.init("demo")
     [state] = service.enable("demo")
 
-    assert state.manifest.last_health.status == SourceHealthStatus.UNKNOWN
+    assert state.manifest.last_health.status == SourceHealthStatus.DEGRADED
 
     refreshed = service.refresh("demo", force=True)
     assert refreshed.manifest.last_refresh_at is not None
