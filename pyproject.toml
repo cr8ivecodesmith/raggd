@@ -163,7 +163,13 @@ combine-as-imports = true
 force-wrap-aliases = true
 known-first-party = ["raggd"]
 detect-same-package = true
-section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
 order-by-type = true
 
 [tool.ruff.lint.pycodestyle]
