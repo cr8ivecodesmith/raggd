@@ -45,7 +45,7 @@
   - [x] Extend `WorkspacePaths` with `sources_dir` (and helper factories) plus unit coverage.
   - [x] Model `WorkspaceSourceConfig`/`SourceManifest` Pydantic dataclasses and JSON schema helpers.
   - [x] Introduce `SourceConfigStore` utilities that compose with `core.config.AppConfig` (wrapping its load/update helpers) to keep a single config model, use `tomlkit` for structure-aware edits, and persist changes through atomic temp-file writes followed by `os.replace`; if either the temp write or replace fails, emit structured errors, keep the on-disk config untouched, and surface the failure so the CLI can abort without partial state.
-  - [ ] Implement slug normalization + path validation helpers (and determine whether to vendor `python-slugify`).
+  - [x] Implement slug normalization + path validation helpers (and determine whether to vendor `python-slugify`).
   - [ ] Scaffold `SourceService` with init/target/refresh/rename/remove/list/enable/disable methods wired to config + filesystem, ensuring `init` creates the source directory + `db.sql` stub, writes config/manifest entries, and auto-enables + refreshes when a validated `--target` is provided (leaving new sources disabled otherwise). Refresh clears managed artifacts, recreates `db.sql`, stamps manifests, and respects confirmation/force semantics; rename/remove keep manifests/config in sync; enable runs the health check to report current status without auto-disabling on `degraded`/`error`, while target/refresh/rename/remove flows toggle `enabled=false` when non-forced checks fail.
   - [ ] Build health evaluation routines that run per-source checks (target existence/readability, manifest freshness, disabled markers), update manifest status metadata when invoked from mutating flows, and leave the read-only `HealthHook` path untouched. Mutating flows record a `last_health` block with status/summary/actions stamps every time they trigger checks; successful refresh/target changes also update `last_refresh_at`, while failed checks preserve the previous refresh timestamp but capture the degraded/error status for auditability.
   - [ ] Wire command-triggered health gating/auto-disable semantics into service methods with shared guard logic.
@@ -98,3 +98,11 @@ Implemented workspace source config store and reshaped core config schema for so
 - Refactored `core.config` to manage `WorkspaceSettings` with nested sources, updated rendering, and ensured existing CLI callers integrate transparently.
 - Added `SourceConfigStore` with atomic writes, error handling, and comprehensive unit coverage for legacy and fresh config scenarios.
 - Expanded config tests to exercise new schema helpers, iteration utilities, and rendering paths while preserving 100% coverage.
+
+### 2025-10-04 21:05 PST
+**Summary**
+Added slug normalization and path validation helpers with full test coverage.
+**Changes**
+- Introduced `raggd.source.utils` providing slug normalization, workspace path guards, and target resolution utilities with dedicated errors.
+- Exported the helpers via `raggd.source` and exercised edge cases in new `tests/source/test_utils.py`.
+- Updated the implementation checklist to record completion of the slug/path validation milestone.

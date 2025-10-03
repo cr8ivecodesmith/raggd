@@ -12,6 +12,13 @@ from .models import (
     source_manifest_schema,
     workspace_source_config_schema,
 )
+from .utils import (
+    SourcePathError,
+    SourceSlugError,
+    ensure_workspace_path,
+    normalize_source_slug,
+    resolve_target_path,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - imports only used for typing
     from .config import (
@@ -29,6 +36,11 @@ __all__ = [
     "WorkspaceSourceConfig",
     "source_manifest_schema",
     "workspace_source_config_schema",
+    "SourceSlugError",
+    "SourcePathError",
+    "normalize_source_slug",
+    "ensure_workspace_path",
+    "resolve_target_path",
     "SourceConfigError",
     "SourceConfigSnapshot",
     "SourceConfigStore",
