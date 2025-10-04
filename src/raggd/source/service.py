@@ -11,6 +11,7 @@ from typing import Callable, Iterable, Protocol, Sequence
 from raggd.core.logging import Logger, get_logger
 
 from raggd.core.paths import WorkspacePaths
+from raggd.modules.db import DbLifecycleService
 from raggd.modules.manifest import (
     ManifestService,
     ManifestSettings,
@@ -75,6 +76,7 @@ class SourceService:
         config_store: SourceConfigStore,
         manifest_service: ManifestService | None = None,
         manifest_settings: ManifestSettings | None = None,
+        db_service: DbLifecycleService | None = None,
         health_evaluator: SourceHealthEvaluator | None = None,
         now: Callable[[], datetime] | None = None,
         logger: Logger | None = None,
@@ -92,6 +94,14 @@ class SourceService:
             else ManifestService(
                 workspace=workspace,
                 settings=manifest_settings,
+            )
+        )
+        self._db = (
+            db_service
+            if db_service is not None
+            else DbLifecycleService(
+                workspace=workspace,
+                manifest_service=self._manifest,
             )
         )
         modules_key, db_module_key = manifest_db_namespace(
@@ -152,7 +162,7 @@ class SourceService:
         manifest.last_health = SourceHealthSnapshot()
         self._write_manifest(manifest)
 
-        self._write_database_stub(normalized)
+        self._db.ensure(normalized)
 
         if target_path is not None or force_refresh:
             # ``force=True`` bypasses gating during bootstrap scenarios.
@@ -332,10 +342,7 @@ class SourceService:
         else:
             snapshot = self._guard_operation(config, manifest, force=force)
 
-        db_path = self._paths.source_database_path(name)
-        if db_path.exists():
-            db_path.unlink()
-        self._write_database_stub(name)
+        self._db.ensure(name)
 
         manifest.last_refresh_at = self._now()
         manifest.last_health = snapshot
@@ -486,12 +493,6 @@ class SourceService:
             )
 
         return snapshot
-
-    def _write_database_stub(self, name: str) -> Path:
-        db_path = self._paths.source_database_path(name)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        db_path.touch()
-        return db_path
 
     def _build_default_health_evaluator(self) -> SourceHealthEvaluator:
         def _evaluate(

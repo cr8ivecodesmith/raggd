@@ -10,6 +10,7 @@ from structlog.testing import capture_logs
 
 from raggd.cli.init import init_workspace
 from raggd.core.paths import WorkspacePaths
+from raggd.modules.db import DbLifecycleService
 from raggd.modules.manifest import ManifestService, ManifestSettings
 from raggd.modules.manifest.migrator import MODULES_VERSION
 from raggd.source import (
@@ -40,6 +41,18 @@ class StubHealthEvaluator:
         return SourceHealthSnapshot(status=self.status)
 
 
+class RecordingDbLifecycleService:
+    """Record ``ensure`` calls while delegating to a real service."""
+
+    def __init__(self, delegate: DbLifecycleService) -> None:
+        self._delegate = delegate
+        self.calls: list[str] = []
+
+    def ensure(self, source: str) -> Path:
+        self.calls.append(source)
+        return self._delegate.ensure(source)
+
+
 def _make_paths(root: Path) -> WorkspacePaths:
     return WorkspacePaths(
         workspace=root,
@@ -56,6 +69,7 @@ def _make_service(
     *,
     workspace_paths: WorkspacePaths | None = None,
     manifest_service: ManifestService | None = None,
+    db_service: DbLifecycleService | None = None,
     logger=None,
 ) -> tuple[SourceService, WorkspacePaths]:
     if workspace_paths is None:
@@ -71,6 +85,7 @@ def _make_service(
         workspace=paths,
         config_store=store,
         manifest_service=manifest_service,
+        db_service=db_service,
         health_evaluator=health,
         now=lambda: fixed_now,
         logger=logger,
@@ -129,6 +144,28 @@ def test_init_creates_source_without_target(tmp_path: Path) -> None:
     assert snapshot.data["modules_version"] == MODULES_VERSION
 
 
+def test_init_invokes_db_lifecycle(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+    manifest = ManifestService(workspace=paths)
+    delegate = DbLifecycleService(workspace=paths, manifest_service=manifest)
+    recorder = RecordingDbLifecycleService(delegate=delegate)
+
+    service, _ = _make_service(
+        tmp_path,
+        health,
+        workspace_paths=paths,
+        manifest_service=manifest,
+        db_service=recorder,
+    )
+
+    service.init("demo")
+
+    assert recorder.calls == ["demo"]
+
+
 def test_init_with_target_enables_and_refreshes(tmp_path: Path) -> None:
     health = StubHealthEvaluator()
     service, paths = _make_service(tmp_path, health)
@@ -156,6 +193,31 @@ def test_init_with_target_enables_and_refreshes(tmp_path: Path) -> None:
     assert source_module is not None
     assert source_module["enabled"] is True
     assert source_module["target"] == str(target_dir)
+
+
+def test_refresh_invokes_db_lifecycle(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+    manifest = ManifestService(workspace=paths)
+    delegate = DbLifecycleService(workspace=paths, manifest_service=manifest)
+    recorder = RecordingDbLifecycleService(delegate=delegate)
+
+    service, _ = _make_service(
+        tmp_path,
+        health,
+        workspace_paths=paths,
+        manifest_service=manifest,
+        db_service=recorder,
+    )
+
+    service.init("demo")
+    recorder.calls.clear()
+
+    service.refresh("demo", force=True)
+
+    assert recorder.calls == ["demo"]
 
 
 def test_init_rejects_duplicate_name(tmp_path: Path) -> None:

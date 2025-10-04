@@ -63,7 +63,7 @@
   - [x] Provide manifest fixtures and contract tests to ensure the `source` module can read/write via the service without touching raw JSON.
   - [x] Expose shared helpers for `modules.db` key calculation and manifest settings; document usage for consuming modules.
 - **Phase 2 — Source module integration**
-  - [ ] Refactor `src/raggd/source/*` to depend on `ManifestService` and `DbLifecycleService.ensure()` for database readiness, replacing direct SQLite + manifest file manipulation.
+  - [x] Refactor `src/raggd/source/*` to depend on `ManifestService` and `DbLifecycleService.ensure()` for database readiness, replacing direct SQLite + manifest file manipulation.
   - [ ] Update source module tests to cover delegation, manifest migration triggers, and failure rollback semantics.
   - [ ] Wire manifest helpers/settings into the source module configuration layer.
 - **Phase 3 — Database module delivery**
@@ -145,3 +145,14 @@ Wrapped Phase 1 manifest fixtures and helper work
 **Tests**
 - `UV_CACHE_DIR=.tmp/uv-cache uv run pytest`
 - `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`
+
+### 2025-10-05 00:15 PST
+**Summary**
+Refactored the source service to delegate database readiness to `DbLifecycleService`
+**Changes**
+- Added a stub `DbLifecycleService` that scaffolds per-source databases via the manifest service
+- Updated `SourceService` to use the lifecycle service instead of touching SQLite files directly
+- Extended source tests with a recording lifecycle stub and added db-module unit coverage for argument validation
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest`
