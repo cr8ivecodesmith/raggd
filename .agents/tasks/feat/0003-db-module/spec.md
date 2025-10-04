@@ -176,16 +176,16 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - To revert, disable the feature toggle, restore backups of manifests (or run a provided rollback helper that flattens `modules` back to the legacy layout), and re-enable the previous `source` module behavior that inlines database creation (via Git revert).
 
 ## Definition of Done
-- [ ] `raggd db` command group implements `ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, and `reset` behaviors with consistent logging and parameter handling.
-- [ ] Workspace sources exclusively use `<source>/db.sqlite3`; the database module owns creation, migrations, and destructive operations via `DbLifecycleService`, and the source module delegates through the abstraction.
-- [ ] Bootstrap migration (first migration file), checksum drift detection, and migration application (including short UUID7 shortening validation + ordering tests) are covered by unit tests and documented for contributors.
-- [ ] `raggd db info --schema` and manifest strictness behaviors are verified by CLI/contract tests, including failure paths when manifest writes fail under the default configuration.
-- [ ] Health integration surfaces missing databases, schema drift, manifest/database desync, and stale vacuum timestamps with CLI/health tests verifying exit codes and messaging.
-- [ ] `manifest.json.modules.db` persists authoritative database metadata (`bootstrap_shortuuid7`, `head_migration_uuid7`, `head_migration_shortuuid7`, ledger checksum, last vacuum timestamp, pending migrations) via lifecycle hooks, with regression tests ensuring the `source` module consumes the ensure signal without bypassing the service, uses the shared `manifest_*` settings when reading/writing manifests, and that legacy manifests are migrated into the `modules` layout.
-- [ ] `raggd.modules.manifest` provides a documented, tested service abstraction for discovery, migrations, locking, backups, and atomic writes. Both the `source` and `db` modules call only into this service for manifest interactions, with contract tests demonstrating delegation and failure handling.
-- [ ] Developer docs updated to cover new commands, bootstrap migration expectations, and maintenance workflows; manual smoke notes captured per workflow.
-- [ ] Test coverage includes unit tests for lifecycle services, functional tests for CLI subcommands (with `.tmp` workspaces), migration upgrade/downgrade flows, and concurrency coverage for vacuum operations.
-- [ ] Packaging and activation paths updated: `pyproject.toml` declares the `uuid7` dependency and `db` optional extra, migrations are included in package data, and the module registry exposes a `db` descriptor wired to the health aggregator.
+- [x] `raggd db` command group implements `ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, and `reset` behaviors with consistent logging and parameter handling.
+- [x] Workspace sources exclusively use `<source>/db.sqlite3`; the database module owns creation, migrations, and destructive operations via `DbLifecycleService`, and the source module delegates through the abstraction.
+- [x] Bootstrap migration (first migration file), checksum drift detection, and migration application (including short UUID7 shortening validation + ordering tests) are covered by unit tests and documented for contributors.
+- [x] `raggd db info --schema` and manifest strictness behaviors are verified by CLI/contract tests, including failure paths when manifest writes fail under the default configuration.
+- [x] Health integration surfaces missing databases, schema drift, manifest/database desync, and stale vacuum timestamps with CLI/health tests verifying exit codes and messaging.
+- [x] `manifest.json.modules.db` persists authoritative database metadata (`bootstrap_shortuuid7`, `head_migration_uuid7`, `head_migration_shortuuid7`, ledger checksum, last vacuum timestamp, pending migrations) via lifecycle hooks, with regression tests ensuring the `source` module consumes the ensure signal without bypassing the service, uses the shared `manifest_*` settings when reading/writing manifests, and that legacy manifests are migrated into the `modules` layout.
+- [x] `raggd.modules.manifest` provides a documented, tested service abstraction for discovery, migrations, locking, backups, and atomic writes. Both the `source` and `db` modules call only into this service for manifest interactions, with contract tests demonstrating delegation and failure handling.
+- [x] Developer docs updated to cover new commands, bootstrap migration expectations, and maintenance workflows; manual smoke notes captured per workflow.
+- [x] Test coverage includes unit tests for lifecycle services, functional tests for CLI subcommands (with `.tmp` workspaces), migration upgrade/downgrade flows, and concurrency coverage for vacuum operations.
+- [x] Packaging and activation paths updated: `pyproject.toml` declares the `db` optional extra, migrations are included in package data, the module registry exposes a `db` descriptor wired to the health aggregator, and UUID7 helpers ship in-tree (no external dependency required).
 
 ## Ownership
 - Owner: @matt
