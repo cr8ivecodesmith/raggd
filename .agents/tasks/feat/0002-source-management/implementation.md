@@ -56,7 +56,7 @@
   - [x] Implement `raggd checkhealth [module]` CLI entry using the health registry, ensuring filtered runs only update the requested module keys and logging when data is carried forward unchanged for others.
   - [x] Ensure logging captures key actions (success/failure, enablement toggles, forced operations).
   - [x] Add CLI + unit tests for all new behaviors, including error paths and force overrides.
-  - [ ] Refresh documentation (workspace guide) and update DoD artifacts (Typer CLI help strings added).
+  - [x] Refresh documentation (workspace guide) and update DoD artifacts (Typer CLI help strings added).
 
 ## Test Plan
 - Unit: source model normalization, config store read/write round-trip, manifest serialization, health evaluator status mapping, slug/path validators, `.health.json` writer.
@@ -207,3 +207,19 @@ Closed the remaining CLI coverage gaps and exercised config parsing edge cases.
 - Added focused CLI helper tests to cover status normalization, health guidance fallbacks, and empty-config handling for `checkhealth`.
 - Simplified source CLI color mapping and state summaries so raw manifest statuses drive styling while keeping normalized messaging.
 - Re-ran `uv run pytest` (100% coverage) and attempted `uv run ruff check` (fails on pre-existing line-length rules) to document readiness for follow-up lint cleanup.
+
+### 2025-10-06 09:10 PST
+**Summary**
+Updated workspace documentation and marked the feature DoD complete.
+**Changes**
+- Expanded `docs/learn/workspace.md` with `raggd source` and `raggd checkhealth` guidance, including Typer `--help` references.
+- Documented the new workspace layout for source manifests, `db.sql`, and `.health.json` outputs.
+- Checked off the implementation checklist item covering documentation/DoD updates.
+
+### 2025-10-06 10:15 PST
+**Summary**
+Captured manual smoke run confirming health gating behavior against the checkhealth CLI.
+**Changes**
+- Scoped an isolated workspace via `RAGGD_WORKSPACE=.raggd-workspace` (with `UV_CACHE_DIR=.uv-cache`) and ran `uv run raggd init --workspace .raggd-workspace` to provision config locally.
+- Executed `uv run raggd source init smoke-source --target $(pwd)/tmp/smoke-source-target --force-refresh`, removed the target, then piped `yes` into `uv run raggd source refresh smoke-source` to accept the prompt and observed the command auto-disable the source after the health check raised a `Target path does not exist` error.
+- Ran `uv run raggd checkhealth --workspace .raggd-workspace` and verified it reported the `smoke-source` failure without flipping enablement, with a follow-up `uv run raggd source list` still showing the source disabled. Cleaned up the temporary workspace artifacts afterward.

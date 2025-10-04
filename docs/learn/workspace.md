@@ -6,11 +6,16 @@ idempotent—running it multiple times only refreshes files when you ask it to.
 
 ## Command overview
 
+Every command ships with Typer-powered help text, so append `--help` whenever
+you need the authoritative options or subcommand list.
+
+### Initialize a workspace
+
 ```console
-$ raggd init [OPTIONS]
+$ raggd init --help
 ```
 
-Available options:
+Key options:
 - `--workspace / -w <path>`: Override the workspace directory. Defaults to
   `~/.raggd`, or `RAGGD_WORKSPACE` when the environment variable is set.
 - `--refresh`: Archive the current workspace (if present) into
@@ -23,7 +28,45 @@ Available options:
 - `--disable-module / -D <module>`: Force-disable modules for this run. Accepts
   multiple flags, just like `--enable-module`.
 
-> Tip: Use `raggd init --help` to see the authoritative set of options.
+### Manage sources
+
+```console
+$ raggd source --help
+```
+
+Sources let you track workspaces, document trees, or other targets you want to
+refresh and query. The command group provides:
+- `init <raw-name> [--target <dir>]`: Create a normalized source (e.g.,
+  `docs` → `docs` or `Product Notes` → `product-notes`), scaffold
+  `<workspace>/sources/<name>` with a manifest and `db.sql`, and optionally seed
+  the target directory. When a valid `--target` is supplied the source is
+  immediately enabled and refreshed; otherwise it stays disabled until you fix
+  the target and enable it.
+- `target <name> <dir|--clear>`: Point a source at a new directory (or clear
+  the association with `--clear`). The CLI validates readability, prompts
+  before refreshing unless `--force` is provided, and records `last_refresh_at`.
+- `refresh <name>`: Rebuild cached artifacts for a source. Disabled or unhealthy
+  sources block refreshes unless you add `--force`, which is useful when you are
+  actively fixing an issue the health check found.
+- `rename <old> <new>` / `remove <name>`: Rename or delete sources after
+  passing the same health guard as other lifecycle commands. Use `--force` to
+  perform remediation when the source is currently unhealthy.
+- `enable <name>` / `disable <name>`: Toggle the `enabled` flag, optionally
+  recording actions suggested by health checks before you re-enable a source.
+- `list`: Report every configured source along with enablement, target, and the
+  most recent health status. The command exits non-zero if any source is
+  degraded or unknown so scripts can detect issues quickly.
+
+### Check workspace health
+
+```console
+$ raggd checkhealth --help
+```
+
+Runs health hooks registered by enabled modules and writes aggregated findings
+to `.health.json`. Provide a module name to limit the update to a single module
+(`raggd checkhealth source`, for example) while carrying forward prior results
+for untouched modules.
 
 ## Configuration precedence
 
@@ -45,8 +88,13 @@ Running `raggd init` creates the following structure:
 ```
 ~/.raggd/
 ├── raggd.toml              # Editable user configuration with comments
+├── .health.json            # Aggregated health snapshot from raggd checkhealth
 ├── logs/                   # Rolling log files (gzip rotated)
-└── archives/               # Timestamped ZIP archives created by --refresh
+├── archives/               # Timestamped ZIP archives created by --refresh
+└── sources/
+    └── <name>/
+        ├── db.sql          # SQLite stub reserved for future embeddings
+        └── manifest.json   # Target metadata, health status, refresh history
 ```
 
 The packaged defaults live inside the application bundle as
@@ -54,7 +102,8 @@ The packaged defaults live inside the application bundle as
 not copied into the workspace.
 
 Use `--workspace` or `RAGGD_WORKSPACE` to pick a different base directory—the
-layout remains the same.
+layout remains the same. Source directories are created on demand when you run
+`raggd source init`.
 
 ## Environment variables
 
@@ -82,6 +131,18 @@ You can enable or disable modules either by editing `raggd.toml`, running the
 CLI with `--enable-module` / `--disable-module`, or adding future automation
 that writes to the config file. When the CLI runs, it reports which modules are
 active and why others are disabled (e.g., missing optional dependencies).
+
+## Source lifecycle and health
+
+The source module is on by default. Each lifecycle command performs a health
+check before mutating state, automatically disabling a source if the check
+fails so you can remediate without carrying stale data forward. Review
+`manifest.json` or `raggd source list` for summaries and suggested follow-up
+actions, then rerun `raggd source enable <name>` once the target looks good.
+
+Run `raggd checkhealth` periodically (or from automation) to refresh
+`.health.json`. The file keeps the latest status emitted by every module so you
+can diff runs, feed the data into dashboards, or debug user reports.
 
 ## Next steps
 

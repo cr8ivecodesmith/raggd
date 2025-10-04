@@ -64,12 +64,12 @@ Introduce CLI-managed "sources" representing workspace project or documentation 
 - Introduce a `modules.source` toggle default-on for new workspaces and document how to disable it. Rollout entails new CLI commands, config schemas, and documentation updates (no automated migrations; existing workspaces adopt manually). Reverting removes the module toggle, CLI command group, config entries/manifests, and ensures commands fail gracefully if the module is disabled. Provide cleanup guidance for leftover directories.
 
 ## Definition of Done
-- [ ] `raggd source` command group implements described flows (init, target, refresh, rename, remove) with normalization, confirmations, and force overrides
-- [ ] `raggd source list|enable|disable` commands respect config toggles and health gating semantics (mutating flows auto-disable on health failures; enable remains advisory)
-- [ ] Health gating and `raggd checkhealth` integration covered by unit/CLI tests and manual smoke notes, verifying that command-triggered checks toggle enablement while the standalone health tool remains read-only
-- [ ] Workspace config schema, manifest format, and user/dev docs updated (including logging guidance)
-- [ ] Legacy source code/tests removed or refactored to match new workflows
-- [ ] Dependency grouping and configuration toggles verified in `pyproject.toml` and defaults
+- [x] `raggd source` command group implements described flows (init, target, refresh, rename, remove) with normalization, confirmations, and force overrides
+- [x] `raggd source list|enable|disable` commands respect config toggles and health gating semantics (mutating flows auto-disable on health failures; enable remains advisory)
+- [x] Health gating and `raggd checkhealth` integration covered by unit/CLI tests and manual smoke notes, verifying that command-triggered checks toggle enablement while the standalone health tool remains read-only
+- [x] Workspace config schema, manifest format, and user/dev docs updated (including logging guidance)
+- [x] Legacy source code/tests removed or refactored to match new workflows
+- [x] Dependency grouping and configuration toggles verified in `pyproject.toml` and defaults
 
 ## Ownership
 - Owner: @matt
