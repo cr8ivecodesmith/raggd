@@ -97,3 +97,59 @@ def test_backend_applies_migrations_and_updates_manifest(tmp_path: Path) -> None
     modules = manifest.ensure_module(manifest_service.settings.db_module_key)
     assert modules["head_migration_shortuuid7"] == next_short
     assert modules["pending_migrations"] == []
+
+
+def test_backend_uses_packaged_migrations(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    service = DbLifecycleService(
+        workspace=paths,
+        manifest_settings=ManifestSettings(),
+        db_settings=DbModuleSettings(),
+    )
+
+    db_path = service.ensure("alpha")
+    assert db_path.exists()
+
+    manifest_service = ManifestService(workspace=paths)
+    manifest = manifest_service.load("alpha", apply_migrations=True)
+    modules = manifest.ensure_module(manifest_service.settings.db_module_key)
+
+    assert modules["bootstrap_shortuuid7"] == "066C4MFM01VQ"
+    assert modules["head_migration_shortuuid7"] == "066CEY2G01SG"
+    assert modules["pending_migrations"] == []
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        table_names = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_schema WHERE type IN ('table', 'view')"
+            )
+        }
+        expected_tables = {
+            "schema_meta",
+            "schema_migrations",
+            "batches",
+            "embedding_models",
+            "vdbs",
+            "files",
+            "symbols",
+            "chunks",
+            "chunk_fts",
+            "edges",
+            "vectors",
+            "sources",
+            "migrations_audit",
+        }
+        assert expected_tables.issubset(table_names)
+
+        trigger_names = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_schema WHERE type = 'trigger'"
+            )
+        }
+        assert {"chunks_ai", "chunks_ad", "chunks_au"}.issubset(trigger_names)

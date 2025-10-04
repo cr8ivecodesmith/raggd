@@ -131,6 +131,7 @@ include-package-data = true
 "raggd" = [
     "resources/**/*.toml",
     "resources/**/*.j2",
+    "modules/db/resources/**/*.sql",
 ]
 
 [tool.uv]

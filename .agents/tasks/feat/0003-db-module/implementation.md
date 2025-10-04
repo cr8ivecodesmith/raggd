@@ -70,7 +70,7 @@
   - [x] Scaffold `raggd.modules.db` package with Typer command group exposed in the root CLI and backed by `DbLifecycleService`.
   - [x] Implement lifecycle commands (`ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, `reset`) with manifest mirroring via the shared service and cohesive error handling.
   - [x] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation while persisting both canonical UUID7 and shortened forms into `schema_meta`, the ledger, and manifest mirrors.
-  - [ ] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
+  - [x] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
   - [ ] Register the database module and health provider in `modules/registry.py`; integrate with `raggd checkhealth` and settings defaults (`config.db.*`).
   - [ ] Update `pyproject.toml` (`uuid7` dependency, `db` extra, package data), `raggd.defaults.toml`, CLI docs, and capture manual smoke verifications.
   - [ ] Finalize test matrix across unit, contract, CLI, and packaging validations per the test plan.
@@ -206,3 +206,12 @@ Implemented migration runner, SQLite lifecycle backend, and supporting tests
 - Wired CLI/source services to new db settings and introduced targeted backend, migrations, and CLI regression tests
 **Tests**
 - `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/db/test_uuid7.py tests/modules/db/test_migrations.py tests/modules/db/test_backend.py tests/modules/db/test_lifecycle.py tests/cli/test_db.py tests/source/test_service.py`
+
+### 2025-10-05 00:55 PST
+**Summary**
+Seeded bundled migrations and packaging so defaults work end-to-end
+**Changes**
+- Expanded the bootstrap migration schema to include domain tables, indexes, FTS triggers, and graph primitives alongside metadata scaffolding
+- Refreshed the exemplar migration with source metadata/audit tables and added packaging/test coverage for bundled SQL assets
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/db/test_backend.py`
