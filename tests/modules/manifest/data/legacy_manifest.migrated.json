@@ -1,0 +1,32 @@
+{
+  "modules": {
+    "db": {
+      "bootstrap_shortuuid7": null,
+      "head_migration_uuid7": null,
+      "head_migration_shortuuid7": null,
+      "last_ensure_at": null,
+      "last_vacuum_at": null,
+      "ledger_checksum": null,
+      "pending_migrations": []
+    },
+    "source": {
+      "enabled": true,
+      "last_health": {
+        "actions": [
+          "monitor"
+        ],
+        "checked_at": "2024-01-02T03:04:06Z",
+        "status": "ok",
+        "summary": "healthy"
+      },
+      "last_refresh_at": "2024-01-02T03:04:05Z",
+      "name": "alpha",
+      "path": "/workspace/sources/alpha",
+      "target": "/repos/alpha"
+    }
+  },
+  "modules_version": 1,
+  "notes": {
+    "owner": "ops"
+  }
+}

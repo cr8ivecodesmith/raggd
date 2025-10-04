@@ -59,7 +59,7 @@
 - Stepwise checklist:
 - **Phase 1 — Manifest subsystem**
   - [x] Scaffold `raggd.modules.manifest` package with `ManifestService`, migrator, backups, locking helpers, and config adapters surfaced through a lean public API.
-  - [ ] Implement legacy-manifest migration into the `modules.*` layout (including `.bak` rotation and `modules_version` stamping) with accompanying unit + golden tests.
+  - [x] Implement legacy-manifest migration into the `modules.*` layout (including `.bak` rotation and `modules_version` stamping) with accompanying unit + golden tests.
   - [ ] Provide manifest fixtures and contract tests to ensure the `source` module can read/write via the service without touching raw JSON.
   - [ ] Expose shared helpers for `modules.db` key calculation and manifest settings; document usage for consuming modules.
 - **Phase 2 — Source module integration**
@@ -128,3 +128,10 @@ Scaffolded manifest subsystem foundations
 **Changes**
 - Implemented manifest service, migrator, backups, locks, and config adapters with transactional semantics
 - Added manifest module tests exercising locking, backups, migrations, serialization, and error handling
+
+### 2025-10-04 21:28 PST
+**Summary**
+Completed legacy manifest migration with backups and version stamping
+**Changes**
+- Expanded `ManifestMigrator` to nest legacy payloads under `modules.source`, seed `modules.db`, stamp `modules_version`, and rotate backups
+- Added golden fixtures and regression tests validating migration idempotency and backup persistence

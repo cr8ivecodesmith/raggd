@@ -216,11 +216,34 @@ def test_manifest_service_load_with_migration(tmp_path: Path) -> None:
     ref.ensure_directories()
     ref.manifest_path.write_text('{"name": "epsilon"}', encoding="utf-8")
 
+    backups_before = list(ref.manifest_path.parent.glob("manifest.json.*.bak"))
+
     snapshot = service.load(ref, apply_migrations=True)
-    assert service.load(ref).module("source") is None
+    fresh = service.load(ref)
+    assert snapshot.data["modules_version"] == 1
+    assert "name" not in snapshot.data
+
+    modules = snapshot.data["modules"]
+    source_module = modules["source"]
+    assert source_module["name"] == "epsilon"
+    assert fresh.module("source")["name"] == "epsilon"
+
+    db_module = modules["db"]
+    assert db_module == {
+        "bootstrap_shortuuid7": None,
+        "head_migration_uuid7": None,
+        "head_migration_shortuuid7": None,
+        "ledger_checksum": None,
+        "last_vacuum_at": None,
+        "last_ensure_at": None,
+        "pending_migrations": [],
+    }
+
     data = json.loads(ref.manifest_path.read_text(encoding="utf-8"))
-    assert "modules" in data
-    assert snapshot.data["name"] == "epsilon"
+    assert data == snapshot.data
+
+    backups_after = list(ref.manifest_path.parent.glob("manifest.json.*.bak"))
+    assert len(backups_after) == len(backups_before) + 1
 
 
 def test_manifest_service_load_with_migration_dry_run(tmp_path: Path) -> None:
@@ -448,3 +471,37 @@ def test_manifest_migrator_direct_application(tmp_path: Path) -> None:
     migrator = ManifestMigrator(settings=ManifestSettings())
     result = migrator.migrate(source=ref, data={}, dry_run=False)
     assert result.applied is True
+    assert result.data["modules_version"] == 1
+    modules = result.data["modules"]
+    assert modules["source"] == {}
+    assert modules["db"]["pending_migrations"] == []
+
+
+def test_manifest_migrator_idempotent(tmp_path: Path) -> None:
+    service = ManifestService(workspace=_build_workspace(tmp_path))
+    ref = service.resolve("idempotent")
+    migrator = ManifestMigrator(settings=ManifestSettings())
+    initial = migrator.migrate(source=ref, data={}, dry_run=False)
+    assert initial.applied is True
+
+    second = migrator.migrate(source=ref, data=initial.data, dry_run=False)
+    assert second.applied is False
+
+
+def test_manifest_migrator_golden(tmp_path: Path) -> None:
+    workspace = _build_workspace(tmp_path)
+    service = ManifestService(workspace=workspace)
+    ref = service.resolve("alpha")
+    legacy_path = Path(__file__).parent / "data" / "legacy_manifest.json"
+    expected_path = Path(__file__).parent / "data" / "legacy_manifest.migrated.json"
+
+    legacy_payload = json.loads(legacy_path.read_text(encoding="utf-8"))
+    expected_payload = json.loads(
+        expected_path.read_text(encoding="utf-8")
+    )
+
+    migrator = ManifestMigrator(settings=ManifestSettings())
+    result = migrator.migrate(source=ref, data=legacy_payload, dry_run=True)
+
+    assert result.applied is True
+    assert result.data == expected_payload
