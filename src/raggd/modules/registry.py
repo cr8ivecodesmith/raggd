@@ -3,10 +3,58 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Iterator, Mapping, MutableMapping
+from datetime import datetime
+from enum import StrEnum
+from typing import (
+    Callable,
+    Iterable,
+    Iterator,
+    Mapping,
+    MutableMapping,
+    Protocol,
+    Sequence,
+    TYPE_CHECKING,
+)
 
 from raggd.core.config import ModuleToggle
 from raggd.core.logging import get_logger
+
+
+class WorkspaceHandle(Protocol):
+    """Describe the workspace context passed to health hooks."""
+
+    paths: "WorkspacePaths"
+    config: "AppConfig"
+
+
+class HealthStatus(StrEnum):
+    """Normalized health states supported by module hooks."""
+
+    OK = "ok"
+    DEGRADED = "degraded"
+    ERROR = "error"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class HealthReport:
+    """Structured health report returned by module hooks."""
+
+    name: str
+    status: HealthStatus
+    summary: str | None = None
+    actions: tuple[str, ...] = ()
+    last_refresh_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        normalized_actions = tuple(str(action).strip() for action in self.actions)
+        object.__setattr__(self, "actions", normalized_actions)
+        if self.summary is not None:
+            object.__setattr__(self, "summary", self.summary.strip() or None)
+        object.__setattr__(self, "name", self.name.strip())
+
+
+ModuleHealthHook = Callable[[WorkspaceHandle], Sequence[HealthReport]]
 
 
 @dataclass(slots=True)
@@ -18,6 +66,7 @@ class ModuleDescriptor:
         description: Short human-readable description of the capability.
         extras: Optional dependency group names required for activation.
         default_toggle: Baseline toggle applied when no user config exists.
+        health_hook: Optional callable providing read-only health reports.
 
     Example:
         >>> descriptor = ModuleDescriptor(
@@ -36,6 +85,7 @@ class ModuleDescriptor:
     default_toggle: ModuleToggle = field(
         default_factory=ModuleToggle,
     )
+    health_hook: ModuleHealthHook | None = None
 
     def __post_init__(self) -> None:
         normalized_extras = tuple(
@@ -124,11 +174,17 @@ class ModuleRegistry:
         self._descriptor_index = {
             descriptor.name: descriptor for descriptor in self._descriptors
         }
+        self._health_registry = HealthRegistry(self._descriptors)
 
     def iter_descriptors(self) -> Iterator[ModuleDescriptor]:
         """Iterate over registered descriptors in declaration order."""
 
         return iter(self._descriptors)
+
+    def health_registry(self) -> "HealthRegistry":
+        """Return a view exposing registered module health hooks."""
+
+        return self._health_registry
 
     def evaluate(
         self,
@@ -225,4 +281,44 @@ class ModuleRegistry:
         return results
 
 
-__all__ = ["ModuleDescriptor", "ModuleRegistry"]
+class HealthRegistry(Mapping[str, ModuleHealthHook]):
+    """Read-only view exposing module health hooks in declaration order."""
+
+    def __init__(self, descriptors: Iterable[ModuleDescriptor]):
+        hooks: dict[str, ModuleHealthHook] = {}
+        for descriptor in descriptors:
+            if descriptor.health_hook is None:
+                continue
+            hooks[descriptor.name] = descriptor.health_hook
+        self._hooks = hooks
+
+    def __getitem__(self, key: str) -> ModuleHealthHook:
+        return self._hooks[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._hooks)
+
+    def __len__(self) -> int:
+        return len(self._hooks)
+
+    def iter_hooks(self) -> Iterator[tuple[str, ModuleHealthHook]]:
+        """Iterate over module name and hook pairs."""
+
+        for name, hook in self._hooks.items():
+            yield name, hook
+
+
+__all__ = [
+    "HealthRegistry",
+    "HealthReport",
+    "HealthStatus",
+    "ModuleDescriptor",
+    "ModuleHealthHook",
+    "ModuleRegistry",
+    "WorkspaceHandle",
+]
+
+
+if TYPE_CHECKING:  # pragma: no cover
+    from raggd.core.config import AppConfig
+    from raggd.core.paths import WorkspacePaths

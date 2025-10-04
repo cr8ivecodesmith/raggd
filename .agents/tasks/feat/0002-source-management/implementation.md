@@ -51,7 +51,7 @@
   - [x] Wire command-triggered health gating/auto-disable semantics into service methods with shared guard logic.
   - [x] Create Typer command group for `raggd source`, mapping CLI options to service operations and confirmations, validating mutually exclusive `target` inputs (`--clear` vs `<dir>`), and enforcing exit codes (e.g., `list` returns non-zero when any source status is `unknown`/`degraded`/`error`).
   - [x] Update module registry/defaults to include a `source` module toggle and dependency extras.
-  - [ ] Extend the modules registry to publish a `HealthRegistry` view that exposes the `ModuleDescriptor.health_hook` contract for `checkhealth`.
+  - [x] Extend the modules registry to publish a `HealthRegistry` view that exposes the `ModuleDescriptor.health_hook` contract for `checkhealth`.
   - [ ] Design `.health.json` aggregator format and persistence helpers (read/merge/write with timestamps) that emit the payload shape defined in `spec.md` (`{"sources": {"checked_at": iso8601, "status": enum, "details": [{"name": str, "status": enum, "summary": str|None, "actions": [str], "last_refresh_at": iso8601|None}]}}`), derive the module-level `status` as the highest-severity entry in `details`, and persist via temp-file + `os.replace` to avoid partial writes; per-run outputs replace the entire module block for modules that provided data while preserving untouched module sections from the previous file, and modules are responsible for returning their full canonical payload so overlapping fields never interleave across modules. Failed writes keep the prior file intact and surface structured errors.
   - [ ] Implement `raggd checkhealth [module]` CLI entry using the health registry, ensuring filtered runs only update the requested module keys and logging when data is carried forward unchanged for others.
   - [ ] Ensure logging captures key actions (success/failure, enablement toggles, forced operations).
@@ -70,6 +70,14 @@
 - Runbooks / revert steps: capture manual steps to disable/remove a problematic source, delete `.health.json`, and roll back module toggle; note that disabling the `modules.source` toggle removes CLI registration after revert.
 
 ## History
+### 2025-10-05 16:00 PST
+**Summary**
+Exposed health hooks via the module registry.
+**Changes**
+- Added typed health status/report primitives and a `HealthRegistry` view that enumerates module hooks in declaration order.
+- Extended `ModuleDescriptor` to carry optional `health_hook` callables and surfaced the new registry view through package exports.
+- Backed the behavior with unit tests and noted the checklist completion.
+
 ### 2025-10-05 14:45 PST
 **Summary**
 Registered the source module toggle and synced dependency metadata.

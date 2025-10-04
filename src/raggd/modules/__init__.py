@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
-from .registry import ModuleDescriptor, ModuleRegistry
+from .registry import (
+    HealthRegistry,
+    HealthReport,
+    HealthStatus,
+    ModuleDescriptor,
+    ModuleHealthHook,
+    ModuleRegistry,
+    WorkspaceHandle,
+)
 
-__all__ = ["ModuleDescriptor", "ModuleRegistry"]
+__all__ = [
+    "HealthRegistry",
+    "HealthReport",
+    "HealthStatus",
+    "ModuleDescriptor",
+    "ModuleHealthHook",
+    "ModuleRegistry",
+    "WorkspaceHandle",
+]

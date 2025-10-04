@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Sequence
 
 import pytest
 
 from raggd.core.config import ModuleToggle
-from raggd.modules.registry import ModuleDescriptor, ModuleRegistry
+from raggd.modules.registry import (
+    HealthRegistry,
+    HealthReport,
+    HealthStatus,
+    ModuleDescriptor,
+    ModuleRegistry,
+)
 
 
 @dataclass(slots=True)
@@ -187,3 +193,54 @@ def test_registry_iter_descriptors_returns_sequence() -> None:
 
     items = list(registry.iter_descriptors())
     assert items == [descriptor]
+
+
+def test_health_registry_exposes_hooks_in_declaration_order() -> None:
+    def alpha_hook(handle: object) -> Sequence[HealthReport]:  # pragma: no cover - exercised indirectly
+        return ()
+
+    def gamma_hook(handle: object) -> Sequence[HealthReport]:  # pragma: no cover - exercised indirectly
+        return ()
+
+    descriptors = (
+        ModuleDescriptor(
+            name="alpha",
+            description="Alpha",
+            health_hook=alpha_hook,
+        ),
+        ModuleDescriptor(
+            name="beta",
+            description="Beta",
+        ),
+        ModuleDescriptor(
+            name="gamma",
+            description="Gamma",
+            health_hook=gamma_hook,
+        ),
+    )
+
+    registry = ModuleRegistry(descriptors)
+    health = registry.health_registry()
+
+    assert isinstance(health, HealthRegistry)
+    assert list(health) == ["alpha", "gamma"]
+    assert health["alpha"] is alpha_hook
+    assert health.get("gamma") is gamma_hook
+    assert "beta" not in health
+    assert list(health.iter_hooks()) == [
+        ("alpha", alpha_hook),
+        ("gamma", gamma_hook),
+    ]
+
+
+def test_health_report_normalizes_fields() -> None:
+    report = HealthReport(
+        name="  demo  ",
+        status=HealthStatus.OK,
+        summary="  All good ",
+        actions=("  act  ",),
+    )
+
+    assert report.name == "demo"
+    assert report.summary == "All good"
+    assert report.actions == ("act",)
