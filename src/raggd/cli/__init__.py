@@ -21,6 +21,7 @@ from typing import Iterable, Mapping, Sequence
 import typer
 
 from raggd.cli.init import init_workspace
+from raggd.cli.source import create_source_app
 from raggd.core.config import AppConfig, ModuleToggle, DEFAULTS_RESOURCE_NAME
 from raggd.core.logging import configure_logging, get_logger
 from raggd.core.paths import resolve_workspace
@@ -254,6 +255,8 @@ def create_app() -> "typer.Typer":
         invoke_without_command=False,
         cls=typer.core.TyperGroup,
     )
+
+    app.add_typer(create_source_app(), name="source")
 
     registry = ModuleRegistry(_DEFAULT_MODULE_DESCRIPTORS)
 

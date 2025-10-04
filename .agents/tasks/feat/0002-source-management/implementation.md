@@ -49,7 +49,7 @@
   - [x] Scaffold `SourceService` with init/target/refresh/rename/remove/list/enable/disable methods wired to config + filesystem, ensuring `init` creates the source directory + `db.sql` stub, writes config/manifest entries, and auto-enables + refreshes when a validated `--target` is provided (leaving new sources disabled otherwise). Refresh clears managed artifacts, recreates `db.sql`, stamps manifests, and respects confirmation/force semantics; rename/remove keep manifests/config in sync; enable runs the health check to report current status without auto-disabling on `degraded`/`error`, while target/refresh/rename/remove flows toggle `enabled=false` when non-forced checks fail.
   - [x] Build health evaluation routines that run per-source checks (target existence/readability, manifest freshness, disabled markers), update manifest status metadata when invoked from mutating flows, and leave the read-only `HealthHook` path untouched. Mutating flows record a `last_health` block with status/summary/actions stamps every time they trigger checks; successful refresh/target changes also update `last_refresh_at`, while failed checks preserve the previous refresh timestamp but capture the degraded/error status for auditability.
   - [x] Wire command-triggered health gating/auto-disable semantics into service methods with shared guard logic.
-  - [ ] Create Typer command group for `raggd source`, mapping CLI options to service operations and confirmations, validating mutually exclusive `target` inputs (`--clear` vs `<dir>`), and enforcing exit codes (e.g., `list` returns non-zero when any source status is `unknown`/`degraded`/`error`).
+  - [x] Create Typer command group for `raggd source`, mapping CLI options to service operations and confirmations, validating mutually exclusive `target` inputs (`--clear` vs `<dir>`), and enforcing exit codes (e.g., `list` returns non-zero when any source status is `unknown`/`degraded`/`error`).
   - [ ] Update module registry/defaults to include a `source` module toggle and dependency extras.
   - [ ] Extend the modules registry to publish a `HealthRegistry` view that exposes the `ModuleDescriptor.health_hook` contract for `checkhealth`.
   - [ ] Design `.health.json` aggregator format and persistence helpers (read/merge/write with timestamps) that emit the payload shape defined in `spec.md` (`{"sources": {"checked_at": iso8601, "status": enum, "details": [{"name": str, "status": enum, "summary": str|None, "actions": [str], "last_refresh_at": iso8601|None}]}}`), derive the module-level `status` as the highest-severity entry in `details`, and persist via temp-file + `os.replace` to avoid partial writes; per-run outputs replace the entire module block for modules that provided data while preserving untouched module sections from the previous file, and modules are responsible for returning their full canonical payload so overlapping fields never interleave across modules. Failed writes keep the prior file intact and surface structured errors.
@@ -70,6 +70,14 @@
 - Runbooks / revert steps: capture manual steps to disable/remove a problematic source, delete `.health.json`, and roll back module toggle; note that disabling the `modules.source` toggle removes CLI registration after revert.
 
 ## History
+### 2025-10-05 13:20 PST
+**Summary**
+Hooked up the Typer-based `raggd source` command group.
+**Changes**
+- Added CLI plumbing for init/target/refresh/rename/remove/list/enable/disable with shared confirmations, logging, and health-aware error handling.
+- Registered the new command group with the top-level CLI pending module toggle/registry work.
+- Noted outstanding testing and registry wiring to tackle in the next checklist items.
+
 ### 2025-10-04 00:50 PST
 **Summary**
 Confirmed the WorkspacePaths sources directory helpers landed and marked the checklist item complete.
