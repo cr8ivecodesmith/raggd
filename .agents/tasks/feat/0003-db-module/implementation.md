@@ -73,7 +73,7 @@
   - [x] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
   - [x] Register the database module and health provider in `modules/registry.py`; integrate with `raggd checkhealth` and settings defaults (`config.db.*`).
   - [x] Update `pyproject.toml` (`uuid7` dependency, `db` extra, package data), `raggd.defaults.toml`, CLI docs, and capture manual smoke verifications.
-  - [ ] Finalize test matrix across unit, contract, CLI, and packaging validations per the test plan.
+  - [x] Finalize test matrix across unit, contract, CLI, and packaging validations per the test plan.
 
 ## Test Plan
 - Unit: `ManifestService` locking/backup/atomic-write operations, `ManifestMigrator` legacy-to-modules transforms, `DbLifecycleService` behaviors (ensure/upgrade/downgrade/vacuum), `MigrationRunner` ordering and failure handling, `uuid7` shortening utility, manifest sync rollback, and schema-meta/manifest persistence of canonical + short UUID7 values.
@@ -238,3 +238,14 @@ Closed packaging/docs line item and confirmed uuid7 dependency is internal
 - `UV_CACHE_DIR=.tmp/uv-cache uv run raggd init --workspace .tmp/manual-db`
 - `RAGGD_WORKSPACE=.tmp/manual-db UV_CACHE_DIR=.tmp/uv-cache uv run raggd db ensure`
 - `RAGGD_WORKSPACE=.tmp/manual-db UV_CACHE_DIR=.tmp/uv-cache uv run raggd checkhealth`
+
+### 2025-10-05 02:52 PST
+**Summary**
+Closed remaining coverage gaps and completed the full test/packaging matrix
+**Changes**
+- Added tests covering db manifest datetime parsing branches, config db-settings pass-through, health drift edge cases, and migration ordering validation
+- Exercised health inspection fallbacks for missing schema tables and manifest action defaults
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest`
+- `UV_CACHE_DIR=.tmp/uv-cache uv build`

@@ -10,6 +10,7 @@ import pytest
 
 from raggd.core.config import (
     AppConfig,
+    DbSettings,
     ModuleToggle,
     WorkspaceSettings,
     _apply_module_overrides,
@@ -87,6 +88,24 @@ def test_load_config_invalid_override_type(defaults: dict[str, object]) -> None:
         )
 
 
+def test_load_config_invalid_db_payload(defaults: dict[str, object]) -> None:
+    defaults_with_db = {**defaults, "db": "invalid"}
+
+    with pytest.raises(TypeError):
+        load_config(defaults=defaults_with_db)
+
+
+def test_load_config_accepts_db_settings_instance(
+    defaults: dict[str, object],
+) -> None:
+    defaults_with_db = {**defaults, "db": DbSettings(run_allow_outside=False)}
+
+    config = load_config(defaults=defaults_with_db)
+
+    assert isinstance(config.db, DbSettings)
+    assert config.db.run_allow_outside is False
+
+
 def test_render_user_config_includes_comments(
     defaults: dict[str, object],
 ) -> None:
@@ -151,6 +170,12 @@ def test_internal_module_helpers_cover_branches() -> None:
         {"alpha": ModuleToggle(enabled=True)},
     )
     assert layered["alpha"].extras == ("alpha",)
+
+    replaced = _apply_module_overrides(
+        base,
+        {"alpha": ModuleToggle(enabled=True, extras=("gamma",))},
+    )
+    assert replaced["alpha"].extras == ("gamma",)
 
     config = load_config(defaults={"modules": {"alpha": False}})
     pairs = list(iter_module_configs(config))

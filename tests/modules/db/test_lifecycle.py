@@ -10,6 +10,8 @@ from raggd.cli.init import init_workspace
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.db import (
     DbLifecycleError,
+    DbLifecycleNotImplementedError,
+    DbManifestSyncError,
     DbOperationError,
     DbLifecycleService,
 )
@@ -23,7 +25,11 @@ from raggd.modules.db.backend import (
     DbVacuumOutcome,
 )
 from raggd.modules.db.models import DbManifestState
-from raggd.modules.manifest import ManifestService, ManifestSettings
+from raggd.modules.manifest import (
+    ManifestError,
+    ManifestService,
+    ManifestSettings,
+)
 from raggd.modules.manifest.migrator import MODULES_VERSION
 
 
@@ -238,6 +244,100 @@ def test_upgrade_applies_backend_state(tmp_path: Path) -> None:
     assert modules["head_migration_uuid7"] == (
         "00000000-0000-7000-8000-000000000002"
     )
+
+
+def test_info_returns_payload_and_metadata(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    backend = RecordingBackend()
+    backend.info_status = DbManifestState(
+        head_migration_shortuuid7="0003-info",
+    )
+    backend.info_schema = "CREATE TABLE example(...);\n"
+    backend.info_metadata = {"applied_migrations": ["0001", "0002"]}
+
+    service = DbLifecycleService(workspace=paths, backend=backend)
+    service.ensure("demo")
+    payload = service.info("demo", include_schema=True)
+
+    assert payload["manifest"]["head_migration_shortuuid7"] == "0003-info"
+    assert "CREATE TABLE" in (payload.get("schema") or "")
+    assert payload["metadata"]["applied_migrations"] == ["0001", "0002"]
+    assert backend.calls[-1][0] == "info"
+
+
+def test_reset_updates_manifest_timestamp(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    backend = RecordingBackend()
+    now = datetime(2025, 4, 1, 12, tzinfo=timezone.utc)
+    backend.reset_status = DbManifestState(pending_migrations=("next",))
+
+    service = DbLifecycleService(
+        workspace=paths,
+        backend=backend,
+        now=lambda: now,
+    )
+    service.ensure("demo")
+    service.reset("demo", force=True)
+
+    manifest_service = ManifestService(workspace=paths)
+    manifest = manifest_service.load("demo", apply_migrations=True)
+    modules = manifest.ensure_module(manifest_service.settings.db_module_key)
+    assert modules["pending_migrations"] == ["next"]
+    assert modules["last_ensure_at"] == now.isoformat()
+
+
+def test_manifest_sync_error_raises(tmp_path: Path) -> None:
+    class FailingManifestService:
+        def __init__(self) -> None:
+            self.settings = ManifestSettings()
+
+        class _Txn:
+            def __enter__(self):
+                raise ManifestError("sync failed")
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+        def with_transaction(self, *_: object, **__: object):
+            return self._Txn()
+
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    backend = RecordingBackend()
+    manifest = FailingManifestService()
+    service = DbLifecycleService(
+        workspace=paths,
+        backend=backend,
+        manifest_service=manifest,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(DbManifestSyncError) as exc:
+        service.ensure("demo")
+
+    assert "sync failed" in str(exc.value)
+
+
+def test_backend_errors_propagate(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    backend = RecordingBackend()
+    backend.raise_for["downgrade"] = DbLifecycleNotImplementedError("todo")
+
+    service = DbLifecycleService(workspace=paths, backend=backend)
+    service.ensure("demo")
+
+    with pytest.raises(DbLifecycleNotImplementedError):
+        service.downgrade("demo")
 
 
 def test_vacuum_tracks_timestamp(tmp_path: Path) -> None:

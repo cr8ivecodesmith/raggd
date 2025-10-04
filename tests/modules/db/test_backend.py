@@ -4,9 +4,17 @@ from datetime import datetime, timezone
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from raggd.cli.init import init_workspace
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.db import DbLifecycleService
+from raggd.modules.db.backend import _from_iso, _to_iso
+from raggd.modules.db.migrations import (
+    Migration,
+    MigrationLoadError,
+    MigrationPlan,
+)
 from raggd.modules.db.settings import DbModuleSettings
 from raggd.modules.db.uuid7 import generate_uuid7, short_uuid7
 from raggd.modules.manifest import ManifestService, ManifestSettings
@@ -170,3 +178,127 @@ def test_backend_uses_packaged_migrations(tmp_path: Path) -> None:
             )
         }
         assert {"chunks_ai", "chunks_ad", "chunks_au"}.issubset(trigger_names)
+
+
+def test_backend_info_vacuum_run_reset(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    service = DbLifecycleService(
+        workspace=paths,
+        manifest_settings=ManifestSettings(),
+        db_settings=DbModuleSettings(),
+    )
+
+    db_path = service.ensure("alpha")
+    assert db_path.exists()
+
+    info = service.info("alpha", include_schema=True)
+    assert info["source"] == "alpha"
+    assert "schema_meta" in info["schema"]
+    metadata = info["metadata"]
+    assert metadata["applied_migrations"]
+
+    service.vacuum("alpha", concurrency=2)
+    manifest_service = ManifestService(workspace=paths)
+    manifest = manifest_service.load("alpha", apply_migrations=True)
+    module_payload = manifest.ensure_module(
+        manifest_service.settings.db_module_key
+    )
+    assert module_payload["last_vacuum_at"] is not None
+
+    sql_path = tmp_path / "manual.sql"
+    sql_path.write_text(
+        "CREATE TABLE IF NOT EXISTS manual_runs(id INTEGER PRIMARY KEY);\n",
+        encoding="utf-8",
+    )
+    service.run("alpha", sql_path=sql_path, autocommit=False)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        tables = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_schema WHERE name = 'manual_runs'"
+            )
+        }
+        assert "manual_runs" in tables
+
+    service.reset("alpha", force=True)
+    assert db_path.exists()
+
+    manifest_after = manifest_service.load("alpha", apply_migrations=True)
+    module_after = manifest_after.ensure_module(
+        manifest_service.settings.db_module_key
+    )
+    assert module_after["pending_migrations"] == []
+
+
+def test_backend_apply_upgrades_empty_plan(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    service = DbLifecycleService(
+        workspace=paths,
+        manifest_settings=ManifestSettings(),
+        db_settings=DbModuleSettings(),
+    )
+    db_path = service.ensure("alpha")
+    backend = service._backend  # type: ignore[attr-defined]
+
+    with sqlite3.connect(db_path) as conn:
+        plan = MigrationPlan(())
+        result = backend._apply_upgrades(  # type: ignore[attr-defined]
+            conn,
+            plan,
+            datetime.now(timezone.utc),
+        )
+
+    assert result == []
+
+
+def test_backend_apply_downgrades_missing_script(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    service = DbLifecycleService(
+        workspace=paths,
+        manifest_settings=ManifestSettings(),
+        db_settings=DbModuleSettings(),
+    )
+    db_path = service.ensure("alpha")
+    backend = service._backend  # type: ignore[attr-defined]
+
+    identifier = generate_uuid7(when=datetime(2024, 2, 1, tzinfo=timezone.utc))
+    short = short_uuid7(identifier)
+    migration = Migration(
+        uuid=identifier,
+        short=short,
+        up_sql="SELECT 1;",
+        down_sql=None,
+        checksum_up="sha256:deadbeef",
+        checksum_down=None,
+    )
+    plan = MigrationPlan((migration,))
+
+    with sqlite3.connect(db_path) as conn, pytest.raises(MigrationLoadError):
+        backend._apply_downgrades(  # type: ignore[attr-defined]
+            conn,
+            plan,
+            datetime.now(timezone.utc),
+        )
+
+
+def test_backend_iso_helpers_handle_naive_values() -> None:
+    assert _to_iso(None) is None
+
+    naive = datetime(2025, 1, 1, 12, 0)
+    encoded = _to_iso(naive)
+    assert encoded.endswith("+00:00")
+
+    parsed = _from_iso("2025-01-01T12:00:00")
+    assert parsed.tzinfo is timezone.utc
+    assert parsed.hour == 12

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import uuid
+
 import pytest
 
 from raggd.modules.db.uuid7 import (
@@ -25,6 +27,11 @@ def test_generate_uuid7_short_form_roundtrip() -> None:
     assert uuid7_timestamp(value) == instant
 
 
+def test_generate_uuid7_uses_current_time() -> None:
+    value = generate_uuid7()
+    assert isinstance(value, uuid.UUID)
+
+
 def test_validate_short_uuid7_rejects_invalid_length() -> None:
     with pytest.raises(ValueError):
         validate_short_uuid7("abc")
@@ -42,3 +49,9 @@ def test_short_uuid7_preserves_ordering() -> None:
         for index in range(10)
     ]
     assert ensure_short_uuid7_order(uuids)
+
+
+def test_generate_uuid7_rejects_negative_timestamp() -> None:
+    before_epoch = datetime(1960, 1, 1, tzinfo=timezone.utc)
+    with pytest.raises(ValueError):
+        generate_uuid7(when=before_epoch)
