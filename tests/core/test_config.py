@@ -118,6 +118,8 @@ def test_load_packaged_defaults_resource() -> None:
     assert defaults["log_level"] == "INFO"
     modules = defaults.get("modules")
     assert isinstance(modules, dict)
+    assert modules["source"]["enabled"] is True
+    assert modules["source"]["extras"] == []
     assert modules["file-monitoring"]["extras"] == ["file-monitoring"]
 
 

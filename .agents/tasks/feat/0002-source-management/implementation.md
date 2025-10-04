@@ -50,7 +50,7 @@
   - [x] Build health evaluation routines that run per-source checks (target existence/readability, manifest freshness, disabled markers), update manifest status metadata when invoked from mutating flows, and leave the read-only `HealthHook` path untouched. Mutating flows record a `last_health` block with status/summary/actions stamps every time they trigger checks; successful refresh/target changes also update `last_refresh_at`, while failed checks preserve the previous refresh timestamp but capture the degraded/error status for auditability.
   - [x] Wire command-triggered health gating/auto-disable semantics into service methods with shared guard logic.
   - [x] Create Typer command group for `raggd source`, mapping CLI options to service operations and confirmations, validating mutually exclusive `target` inputs (`--clear` vs `<dir>`), and enforcing exit codes (e.g., `list` returns non-zero when any source status is `unknown`/`degraded`/`error`).
-  - [ ] Update module registry/defaults to include a `source` module toggle and dependency extras.
+  - [x] Update module registry/defaults to include a `source` module toggle and dependency extras.
   - [ ] Extend the modules registry to publish a `HealthRegistry` view that exposes the `ModuleDescriptor.health_hook` contract for `checkhealth`.
   - [ ] Design `.health.json` aggregator format and persistence helpers (read/merge/write with timestamps) that emit the payload shape defined in `spec.md` (`{"sources": {"checked_at": iso8601, "status": enum, "details": [{"name": str, "status": enum, "summary": str|None, "actions": [str], "last_refresh_at": iso8601|None}]}}`), derive the module-level `status` as the highest-severity entry in `details`, and persist via temp-file + `os.replace` to avoid partial writes; per-run outputs replace the entire module block for modules that provided data while preserving untouched module sections from the previous file, and modules are responsible for returning their full canonical payload so overlapping fields never interleave across modules. Failed writes keep the prior file intact and surface structured errors.
   - [ ] Implement `raggd checkhealth [module]` CLI entry using the health registry, ensuring filtered runs only update the requested module keys and logging when data is carried forward unchanged for others.
@@ -70,6 +70,14 @@
 - Runbooks / revert steps: capture manual steps to disable/remove a problematic source, delete `.health.json`, and roll back module toggle; note that disabling the `modules.source` toggle removes CLI registration after revert.
 
 ## History
+### 2025-10-05 14:45 PST
+**Summary**
+Registered the source module toggle and synced dependency metadata.
+**Changes**
+- Added a `source` descriptor to the module registry so the CLI can evaluate and announce source tooling enablement by default.
+- Seeded packaged defaults with a `[modules.source]` entry and wired optional dependency groups/extras (including lockfile updates) for the new module.
+- Extended configuration tests to cover the new default and reran targeted CLI/config suites.
+
 ### 2025-10-05 13:20 PST
 **Summary**
 Hooked up the Typer-based `raggd source` command group.

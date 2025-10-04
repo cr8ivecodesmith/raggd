@@ -36,6 +36,11 @@ _app_help = (
 
 _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
     ModuleDescriptor(
+        name="source",
+        description="Workspace source management commands and services.",
+        default_toggle=ModuleToggle(enabled=True),
+    ),
+    ModuleDescriptor(
         name="file-monitoring",
         description="File system change detection watchers.",
         extras=("file-monitoring",),
@@ -95,6 +100,7 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
 
 
 _EXTRA_SENTINELS: Mapping[str, tuple[str, ...]] = {
+    "source": (),
     "file-monitoring": ("watchdog",),
     "local-embeddings": ("onnxruntime", "sentence_transformers"),
     "mcp": ("mcp",),

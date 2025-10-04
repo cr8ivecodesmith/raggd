@@ -2203,7 +2203,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'mcp-rest'", specifier = ">=0.30" },
     { name = "watchdog", marker = "extra == 'file-monitoring'", specifier = ">=4" },
 ]
-provides-extras = ["file-monitoring", "local-embeddings", "mcp", "mcp-rest", "parsers", "rag"]
+provides-extras = ["file-monitoring", "local-embeddings", "mcp", "mcp-rest", "parsers", "rag", "source"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2272,6 +2272,7 @@ rag = [
     { name = "rapidfuzz", specifier = ">=3" },
     { name = "tiktoken", specifier = ">=0.7" },
 ]
+source = []
 test = [
     { name = "coverage" },
     { name = "pytest" },
