@@ -1,6 +1,7 @@
 -- uuid7: 018cc251-f400-7775-8df3-60bda8412761
 PRAGMA foreign_keys = ON;
 
+-- Table: schema_meta - Stores ledger metadata and the active migration head.
 CREATE TABLE IF NOT EXISTS schema_meta (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     bootstrap_shortuuid7 TEXT NOT NULL,
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     last_sql_run_at TEXT
 );
 
+-- Table: schema_migrations - Captures applied migration scripts with checksums.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     uuid7 TEXT UNIQUE NOT NULL,
@@ -25,6 +27,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 CREATE INDEX IF NOT EXISTS idx_schema_migrations_short
     ON schema_migrations(shortuuid7);
 
+-- Table: batches - One record per ingest batch or source version.
 CREATE TABLE IF NOT EXISTS batches (
     id TEXT PRIMARY KEY,
     ref TEXT,
@@ -32,6 +35,7 @@ CREATE TABLE IF NOT EXISTS batches (
     notes TEXT
 );
 
+-- Table: embedding_models - Declares embedding providers and vector dimensions.
 CREATE TABLE IF NOT EXISTS embedding_models (
     id INTEGER PRIMARY KEY,
     provider TEXT NOT NULL,
@@ -40,6 +44,7 @@ CREATE TABLE IF NOT EXISTS embedding_models (
     UNIQUE (provider, name)
 );
 
+-- Table: vdbs - Named vector indexes tied to batches and embedding models.
 CREATE TABLE IF NOT EXISTS vdbs (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
@@ -56,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_vdbs_batch
 CREATE INDEX IF NOT EXISTS idx_vdbs_model
     ON vdbs(embedding_model_id);
 
+-- Table: files - Tracks file level metadata within a batch snapshot.
 CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY,
     batch_id TEXT NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
@@ -73,6 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_files_batch_path
 CREATE INDEX IF NOT EXISTS idx_files_lang
     ON files(lang);
 
+-- Table: symbols - Describes code or document symbols extracted from files.
 CREATE TABLE IF NOT EXISTS symbols (
     id INTEGER PRIMARY KEY,
     file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
@@ -102,6 +109,7 @@ CREATE INDEX IF NOT EXISTS idx_symbols_symbol_path
 CREATE INDEX IF NOT EXISTS idx_symbols_kind
     ON symbols(kind);
 
+-- Table: chunks - Embeddable text slices associated with symbols and VDBs.
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY,
     symbol_id INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
@@ -118,6 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_vdb
 CREATE INDEX IF NOT EXISTS idx_chunks_symbol
     ON chunks(symbol_id);
 
+-- Table: chunk_fts - FTS5 mirror of chunk text for keyword search.
 CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(
     header_md,
     body_text,
@@ -142,6 +151,7 @@ CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
     VALUES (new.id, new.header_md, new.body_text);
 END;
 
+-- Table: edges - Stores relationships between chunks for impact analysis.
 CREATE TABLE IF NOT EXISTS edges (
     src_chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
     dst_chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
@@ -159,6 +169,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst
 CREATE INDEX IF NOT EXISTS idx_edges_kind
     ON edges(kind);
 
+-- Table: vectors - Records vector metadata when chunks are materialized externally.
 CREATE TABLE IF NOT EXISTS vectors (
     chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
     vdb_id INTEGER NOT NULL REFERENCES vdbs(id) ON DELETE CASCADE,

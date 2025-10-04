@@ -15,12 +15,23 @@ manifest_lock_suffix = ".lock"
 manifest_backup_suffix = ".bak"
 manifest_strict = true
 manifest_backups_enabled = true
+migrations_path = "resources/db/migrations"
+ensure_auto_upgrade = true
+vacuum_max_stale_days = 7
+vacuum_concurrency = "auto"
+run_allow_outside = true
+run_autocommit_default = false
+drift_warning_seconds = 0
 
 [modules]
 
 [modules.source]
 enabled = true
 extras = []
+
+[modules.db]
+enabled = true
+extras = ["db"]
 
 [modules.file-monitoring]
 enabled = false

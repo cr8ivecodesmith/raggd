@@ -71,7 +71,7 @@
   - [x] Implement lifecycle commands (`ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, `reset`) with manifest mirroring via the shared service and cohesive error handling.
   - [x] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation while persisting both canonical UUID7 and shortened forms into `schema_meta`, the ledger, and manifest mirrors.
   - [x] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
-  - [ ] Register the database module and health provider in `modules/registry.py`; integrate with `raggd checkhealth` and settings defaults (`config.db.*`).
+  - [x] Register the database module and health provider in `modules/registry.py`; integrate with `raggd checkhealth` and settings defaults (`config.db.*`).
   - [ ] Update `pyproject.toml` (`uuid7` dependency, `db` extra, package data), `raggd.defaults.toml`, CLI docs, and capture manual smoke verifications.
   - [ ] Finalize test matrix across unit, contract, CLI, and packaging validations per the test plan.
 
@@ -215,3 +215,10 @@ Seeded bundled migrations and packaging so defaults work end-to-end
 - Refreshed the exemplar migration with source metadata/audit tables and added packaging/test coverage for bundled SQL assets
 **Tests**
 - `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/db/test_backend.py`
+
+### 2025-10-05 01:44 PST
+**Summary**
+Confirmed registry/health integration and documented schema tables
+**Changes**
+- Verified module registry wiring, health hook coverage, and defaults to close Phase 3 line item 74
+- Annotated migration DDL with schema-reference comments for future maintainers

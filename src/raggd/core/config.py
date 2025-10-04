@@ -488,6 +488,13 @@ def render_user_config(
     db_table["manifest_backup_suffix"] = config.db.manifest_backup_suffix
     db_table["manifest_strict"] = config.db.manifest_strict
     db_table["manifest_backups_enabled"] = config.db.manifest_backups_enabled
+    db_table["migrations_path"] = config.db.migrations_path
+    db_table["ensure_auto_upgrade"] = config.db.ensure_auto_upgrade
+    db_table["vacuum_max_stale_days"] = config.db.vacuum_max_stale_days
+    db_table["vacuum_concurrency"] = config.db.vacuum_concurrency
+    db_table["run_allow_outside"] = config.db.run_allow_outside
+    db_table["run_autocommit_default"] = config.db.run_autocommit_default
+    db_table["drift_warning_seconds"] = config.db.drift_warning_seconds
     document["db"] = db_table
 
     if config.modules:

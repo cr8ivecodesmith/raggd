@@ -24,6 +24,7 @@ from raggd.cli.checkhealth import register_checkhealth_command
 from raggd.cli.db import create_db_app
 from raggd.cli.init import init_workspace
 from raggd.cli.source import create_source_app
+from raggd.modules.db import db_health_hook
 from raggd.source import source_health_hook
 from raggd.core.config import AppConfig, ModuleToggle, DEFAULTS_RESOURCE_NAME
 from raggd.core.logging import configure_logging, get_logger
@@ -43,6 +44,16 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
         description="Workspace source management commands and services.",
         default_toggle=ModuleToggle(enabled=True),
         health_hook=source_health_hook,
+    ),
+    ModuleDescriptor(
+        name="db",
+        description="Workspace database lifecycle management.",
+        extras=("db",),
+        default_toggle=ModuleToggle(
+            enabled=True,
+            extras=("db",),
+        ),
+        health_hook=db_health_hook,
     ),
     ModuleDescriptor(
         name="file-monitoring",
@@ -105,6 +116,7 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
 
 _EXTRA_SENTINELS: Mapping[str, tuple[str, ...]] = {
     "source": (),
+    "db": ("uuid7",),
     "file-monitoring": ("watchdog",),
     "local-embeddings": ("onnxruntime", "sentence_transformers"),
     "mcp": ("mcp",),

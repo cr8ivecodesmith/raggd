@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .health import db_health_hook
 from .lifecycle import (
     DbLifecycleError,
     DbLifecycleNotImplementedError,
@@ -12,6 +13,7 @@ from .lifecycle import (
 from .settings import DbModuleSettings, db_settings_from_mapping
 
 __all__ = [
+    "db_health_hook",
     "DbLifecycleError",
     "DbLifecycleNotImplementedError",
     "DbManifestSyncError",

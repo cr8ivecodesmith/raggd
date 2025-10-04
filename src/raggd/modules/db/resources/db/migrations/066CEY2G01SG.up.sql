@@ -1,6 +1,7 @@
 -- uuid7: 018cc778-5000-730a-b8e0-d0be029acc0a
 PRAGMA foreign_keys = ON;
 
+-- Table: sources - Workspace sources mirrored into the database ledger.
 CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
     display_name TEXT,
@@ -9,6 +10,7 @@ CREATE TABLE IF NOT EXISTS sources (
     last_batch_id TEXT REFERENCES batches(id) ON DELETE SET NULL
 );
 
+-- Table: migrations_audit - Audit trail of lifecycle operations per source.
 CREATE TABLE IF NOT EXISTS migrations_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,

@@ -20,6 +20,7 @@ from raggd.core.config import ModuleToggle
 from raggd.core.paths import WorkspacePaths, resolve_workspace
 from raggd.health import HealthDocumentError
 from raggd.modules import ModuleDescriptor, ModuleRegistry
+from raggd.modules.db import DbLifecycleService
 from raggd.source import SourceConfigStore
 from raggd.source.models import (
     SourceHealthSnapshot,
@@ -87,10 +88,18 @@ def _prepare_workspace(
         )
     )
 
+    manifest_path = paths.source_manifest_path("demo")
+
     if include_manifest:
         _write_manifest(paths, status=status)
     else:
-        manifest_path = paths.source_manifest_path("demo")
+        manifest_path.unlink(missing_ok=True)
+
+    lifecycle = DbLifecycleService(workspace=paths)
+    lifecycle.ensure("demo")
+    lifecycle.vacuum("demo")
+
+    if not include_manifest:
         manifest_path.unlink(missing_ok=True)
 
     return workspace, paths
@@ -136,6 +145,7 @@ def test_checkhealth_generates_health_document(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.stdout
     assert "source: ok" in result.stdout
+    assert "db: ok" in result.stdout
     assert "  - demo: ok" in result.stdout
 
     document_path = workspace / ".health.json"
@@ -145,6 +155,10 @@ def test_checkhealth_generates_health_document(tmp_path: Path) -> None:
     [detail] = payload["source"]["details"]
     assert detail["name"] == "demo"
     assert detail["status"] == "ok"
+    assert payload["db"]["status"] == "ok"
+    db_detail = payload["db"]["details"][0]
+    assert db_detail["name"] == "demo"
+    assert db_detail["status"] == "ok"
 
 
 def test_checkhealth_accepts_module_filter(tmp_path: Path) -> None:
@@ -159,6 +173,7 @@ def test_checkhealth_accepts_module_filter(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "source: ok" in result.stdout
+    assert "db:" not in result.stdout
 
 
 def test_checkhealth_reports_unknown_module(tmp_path: Path) -> None:
@@ -185,13 +200,15 @@ def test_checkhealth_handles_missing_manifest(tmp_path: Path) -> None:
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "source: unknown" in result.stdout
     assert "Manifest missing" in result.stdout
+    assert "db: error" in result.stdout
 
     manifest_text = (workspace / ".health.json").read_text(encoding="utf-8")
     payload = json.loads(manifest_text)
     assert payload["source"]["status"] == "unknown"
+    assert payload["db"]["status"] == "error"
 
 
 def test_load_app_config_handles_empty_file(tmp_path: Path) -> None:
