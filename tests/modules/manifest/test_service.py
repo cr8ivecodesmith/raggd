@@ -545,15 +545,11 @@ def test_manifest_migrator_golden(tmp_path: Path) -> None:
     ref = service.resolve("alpha")
     legacy_path = Path(__file__).parent / "data" / "legacy_manifest.json"
     expected_path = (
-        Path(__file__).parent
-        / "data"
-        / "legacy_manifest.migrated.json"
+        Path(__file__).parent / "data" / "legacy_manifest.migrated.json"
     )
 
     legacy_payload = json.loads(legacy_path.read_text(encoding="utf-8"))
-    expected_payload = json.loads(
-        expected_path.read_text(encoding="utf-8")
-    )
+    expected_payload = json.loads(expected_path.read_text(encoding="utf-8"))
 
     migrator = ManifestMigrator(settings=ManifestSettings())
     result = migrator.migrate(source=ref, data=legacy_payload, dry_run=True)

@@ -41,4 +41,3 @@ def manifest_db_namespace(
 
     effective = settings or ManifestSettings()
     return effective.modules_key, effective.db_module_key
-

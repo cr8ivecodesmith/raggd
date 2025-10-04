@@ -60,8 +60,8 @@
 - **Phase 1 — Manifest subsystem**
   - [x] Scaffold `raggd.modules.manifest` package with `ManifestService`, migrator, backups, locking helpers, and config adapters surfaced through a lean public API.
   - [x] Implement legacy-manifest migration into the `modules.*` layout (including `.bak` rotation and `modules_version` stamping) with accompanying unit + golden tests.
-  - [ ] Provide manifest fixtures and contract tests to ensure the `source` module can read/write via the service without touching raw JSON.
-  - [ ] Expose shared helpers for `modules.db` key calculation and manifest settings; document usage for consuming modules.
+  - [x] Provide manifest fixtures and contract tests to ensure the `source` module can read/write via the service without touching raw JSON.
+  - [x] Expose shared helpers for `modules.db` key calculation and manifest settings; document usage for consuming modules.
 - **Phase 2 — Source module integration**
   - [ ] Refactor `src/raggd/source/*` to depend on `ManifestService` and `DbLifecycleService.ensure()` for database readiness, replacing direct SQLite + manifest file manipulation.
   - [ ] Update source module tests to cover delegation, manifest migration triggers, and failure rollback semantics.
@@ -135,3 +135,13 @@ Completed legacy manifest migration with backups and version stamping
 **Changes**
 - Expanded `ManifestMigrator` to nest legacy payloads under `modules.source`, seed `modules.db`, stamp `modules_version`, and rotate backups
 - Added golden fixtures and regression tests validating migration idempotency and backup persistence
+
+### 2025-10-04 22:42 PST
+**Summary**
+Wrapped Phase 1 manifest fixtures and helper work
+**Changes**
+- Marked the manifest fixture and helper checklist items complete after verifying Source ↔ Manifest coverage
+- Confirmed no additional code changes are required for this step
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest`
+- `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`
