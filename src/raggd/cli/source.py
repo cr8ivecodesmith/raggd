@@ -201,7 +201,10 @@ def configure_source_commands(
     )
 
 
-@_source_app.command("init")
+@_source_app.command(
+    "init",
+    help="Create a new source and optionally seed it from a target directory.",
+)
 def init_source(
     ctx: typer.Context,
     name: str = typer.Argument(..., metavar="NAME", help="Name for the new source."),
@@ -240,7 +243,10 @@ def init_source(
         _emit_state_summary(state)
 
 
-@_source_app.command("target")
+@_source_app.command(
+    "target",
+    help="Set or clear the target directory for a source and trigger refresh handling.",
+)
 def update_target(
     ctx: typer.Context,
     name: str = typer.Argument(..., metavar="NAME"),
@@ -296,7 +302,10 @@ def update_target(
         _emit_state_summary(state)
 
 
-@_source_app.command("refresh")
+@_source_app.command(
+    "refresh",
+    help="Refresh cached artifacts for a source, respecting health gating unless forced.",
+)
 def refresh_source(
     ctx: typer.Context,
     name: str = typer.Argument(..., metavar="NAME"),
@@ -324,7 +333,10 @@ def refresh_source(
         _emit_state_summary(state)
 
 
-@_source_app.command("rename")
+@_source_app.command(
+    "rename",
+    help="Rename an existing source and update its configuration and manifests.",
+)
 def rename_source(
     ctx: typer.Context,
     current: str = typer.Argument(..., metavar="CURRENT"),
@@ -352,7 +364,10 @@ def rename_source(
         _emit_state_summary(state)
 
 
-@_source_app.command("remove")
+@_source_app.command(
+    "remove",
+    help="Delete a source and its managed artifacts, bypassing health gating with --force.",
+)
 def remove_source(
     ctx: typer.Context,
     name: str = typer.Argument(..., metavar="NAME"),
@@ -380,7 +395,10 @@ def remove_source(
         typer.secho(f"Removed source {name}", fg=typer.colors.GREEN)
 
 
-@_source_app.command("enable")
+@_source_app.command(
+    "enable",
+    help="Enable one or more sources after running their health checks.",
+)
 def enable_sources(
     ctx: typer.Context,
     names: list[str] = typer.Argument(..., metavar="NAME...", min=1),
@@ -402,7 +420,10 @@ def enable_sources(
             _emit_state_summary(state)
 
 
-@_source_app.command("disable")
+@_source_app.command(
+    "disable",
+    help="Disable one or more sources to prevent guarded operations.",
+)
 def disable_sources(
     ctx: typer.Context,
     names: list[str] = typer.Argument(..., metavar="NAME...", min=1),
@@ -424,7 +445,10 @@ def disable_sources(
             _emit_state_summary(state)
 
 
-@_source_app.command("list")
+@_source_app.command(
+    "list",
+    help="List configured sources with their health summaries and exit codes.",
+)
 def list_sources(ctx: typer.Context) -> None:
     context = _require_context(ctx)
 

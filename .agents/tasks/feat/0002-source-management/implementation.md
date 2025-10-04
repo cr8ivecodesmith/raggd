@@ -56,7 +56,7 @@
   - [ ] Implement `raggd checkhealth [module]` CLI entry using the health registry, ensuring filtered runs only update the requested module keys and logging when data is carried forward unchanged for others.
   - [ ] Ensure logging captures key actions (success/failure, enablement toggles, forced operations).
   - [ ] Add CLI + unit tests for all new behaviors, including error paths and force overrides.
-  - [ ] Refresh documentation (workspace guide, CLI help strings) and update DoD artifacts.
+  - [ ] Refresh documentation (workspace guide) and update DoD artifacts (Typer CLI help strings added).
 
 ## Test Plan
 - Unit: source model normalization, config store read/write round-trip, manifest serialization, health evaluator status mapping, slug/path validators, `.health.json` writer.
@@ -77,6 +77,13 @@ Hooked up the Typer-based `raggd source` command group.
 - Added CLI plumbing for init/target/refresh/rename/remove/list/enable/disable with shared confirmations, logging, and health-aware error handling.
 - Registered the new command group with the top-level CLI pending module toggle/registry work.
 - Noted outstanding testing and registry wiring to tackle in the next checklist items.
+
+### 2025-10-04 11:28 PST
+**Summary**
+Added help descriptions for `raggd source` commands.
+**Changes**
+- Populated Typer command metadata so `raggd source --help` surfaces purpose statements for each subcommand.
+- Updated the documentation checklist to reflect that CLI help strings now exist, leaving broader docs for a later pass.
 
 ### 2025-10-04 00:50 PST
 **Summary**
