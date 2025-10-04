@@ -167,6 +167,16 @@ def test_cli_init_refresh_note(
     assert "archived previous workspace before refresh" in result.output
 
 
+def test_cli_help_lists_db_command(
+    runner: CliRunner,
+) -> None:
+    app = create_app()
+    result = runner.invoke(app, ["--help"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "db" in result.stdout
+
+
 def test_build_module_overrides_sanitizes_names() -> None:
     result = _build_module_overrides(["rag", " "], ["file_monitoring"])
     assert result == {"rag": True, "file-monitoring": False}

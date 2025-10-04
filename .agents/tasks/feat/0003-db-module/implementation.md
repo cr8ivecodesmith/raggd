@@ -176,3 +176,13 @@ Aligned source configuration with manifest helpers/settings and extended regress
 - Stored manifest settings on SourceService to drive namespace resolution
 **Tests**
 - `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/source/test_config_store.py tests/source/test_service.py`
+
+### 2025-10-04 23:40 PST
+**Summary**
+Sketched the `raggd db` CLI surface and lifecycle placeholders
+**Changes**
+- Introduced `src/raggd/cli/db.py` providing Typer-backed `db` commands, shared context wiring, and root CLI registration with targeted tests
+- Added lifecycle error scaffolding plus stubbed command handlers on `DbLifecycleService` pending Phase 3 implementations
+- Swapped workspace database filenames to `db.sqlite3` and refreshed path/documentation expectations
+**Tests**
+- `uv run pytest --no-cov tests/cli/test_db.py tests/modules/db/test_lifecycle.py tests/core/test_paths.py`

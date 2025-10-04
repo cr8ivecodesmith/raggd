@@ -79,7 +79,7 @@ class WorkspacePaths:
     def source_database_path(self, name: str) -> Path:
         """Return the SQLite database path for a named source."""
 
-        return self.source_dir(name) / "db.sql"
+        return self.source_dir(name) / "db.sqlite3"
 
 
 def resolve_workspace(

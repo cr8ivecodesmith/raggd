@@ -6,7 +6,10 @@ import pytest
 
 from raggd.cli.init import init_workspace
 from raggd.core.paths import WorkspacePaths
-from raggd.modules.db import DbLifecycleService
+from raggd.modules.db import (
+    DbLifecycleNotImplementedError,
+    DbLifecycleService,
+)
 from raggd.modules.manifest import ManifestService, ManifestSettings
 
 
@@ -32,3 +35,51 @@ def test_db_lifecycle_rejects_conflicting_manifest_args(tmp_path: Path) -> None:
             manifest_service=manifest,
             manifest_settings=ManifestSettings(),
         )
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "upgrade",
+        "downgrade",
+        "info",
+        "vacuum",
+        "run",
+        "reset",
+    ],
+)
+def test_db_lifecycle_placeholder_methods_raise(
+    tmp_path: Path,
+    method: str,
+) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+    service = DbLifecycleService(workspace=paths)
+
+    args: tuple[object, ...]
+    kwargs: dict[str, object]
+
+    if method == "info":
+        args = ("demo",)
+        kwargs = {"include_schema": False}
+    elif method == "vacuum":
+        args = ("demo",)
+        kwargs = {"concurrency": None}
+    elif method == "run":
+        args = ("demo",)
+        kwargs = {"sql_path": paths.workspace / "script.sql"}
+    elif method == "reset":
+        args = ("demo",)
+        kwargs = {"force": True}
+    elif method == "downgrade":
+        args = ("demo",)
+        kwargs = {"steps": 1}
+    elif method == "upgrade":
+        args = ("demo",)
+        kwargs = {"steps": None}
+    else:  # pragma: no cover - defensive fallback
+        raise AssertionError(f"Unknown method {method}")
+
+    with pytest.raises(DbLifecycleNotImplementedError):
+        getattr(service, method)(*args, **kwargs)

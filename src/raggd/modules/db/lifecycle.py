@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+__all__ = [
+    "DbLifecycleError",
+    "DbLifecycleNotImplementedError",
+    "DbLifecycleService",
+]
+
 from raggd.core.logging import Logger, get_logger
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.manifest import (
@@ -13,6 +19,14 @@ from raggd.modules.manifest import (
     manifest_db_namespace,
 )
 from raggd.modules.manifest.migrator import MODULES_VERSION
+
+
+class DbLifecycleError(RuntimeError):
+    """Base error for database lifecycle operations."""
+
+
+class DbLifecycleNotImplementedError(DbLifecycleError):
+    """Raised when a lifecycle command has not been implemented yet."""
 
 
 class DbLifecycleService:
@@ -71,3 +85,65 @@ class DbLifecycleService:
             created=created,
         )
         return db_path
+
+    def upgrade(self, source: str, *, steps: int | None = None) -> None:
+        """Apply pending migrations for ``source`` (placeholder)."""
+
+        raise DbLifecycleNotImplementedError(
+            f"upgrade not yet implemented for {source!r} (steps={steps!r})"
+        )
+
+    def downgrade(self, source: str, *, steps: int = 1) -> None:
+        """Rollback migrations for ``source`` (placeholder)."""
+
+        raise DbLifecycleNotImplementedError(
+            f"downgrade not yet implemented for {source!r} (steps={steps})"
+        )
+
+    def info(self, source: str, *, include_schema: bool = False) -> dict[str, object]:
+        """Return manifest/database info for ``source`` (placeholder)."""
+
+        raise DbLifecycleNotImplementedError(
+            (
+                "info not yet implemented for "
+                f"{source!r} (include_schema={include_schema})"
+            )
+        )
+
+    def vacuum(
+        self,
+        source: str,
+        *,
+        concurrency: int | str | None = None,
+    ) -> None:
+        """Perform vacuum maintenance for ``source`` (placeholder)."""
+
+        raise DbLifecycleNotImplementedError(
+            (
+                "vacuum not yet implemented for "
+                f"{source!r} (concurrency={concurrency!r})"
+            )
+        )
+
+    def run(
+        self,
+        source: str,
+        *,
+        sql_path: Path,
+        autocommit: bool = False,
+    ) -> None:
+        """Execute manual SQL for ``source`` (placeholder)."""
+
+        raise DbLifecycleNotImplementedError(
+            (
+                "run not yet implemented for "
+                f"{source!r} (sql_path={sql_path}, autocommit={autocommit})"
+            )
+        )
+
+    def reset(self, source: str, *, force: bool = False) -> None:
+        """Reset the database for ``source`` (placeholder)."""
+
+        raise DbLifecycleNotImplementedError(
+            f"reset not yet implemented for {source!r} (force={force})"
+        )

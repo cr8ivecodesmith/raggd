@@ -173,7 +173,7 @@ def test_workspace_paths_source_helpers() -> None:
     source_root = paths.source_dir("demo")
     assert source_root == Path("/tmp/workspace/sources/demo")
     assert paths.source_manifest_path("demo") == source_root / "manifest.json"
-    assert paths.source_database_path("demo") == source_root / "db.sql"
+    assert paths.source_database_path("demo") == source_root / "db.sqlite3"
 
 
 def test_archive_workspace_generates_unique_suffixes(

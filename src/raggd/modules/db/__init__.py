@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
-from .lifecycle import DbLifecycleService
+from .lifecycle import (
+    DbLifecycleError,
+    DbLifecycleNotImplementedError,
+    DbLifecycleService,
+)
 
 __all__ = [
+    "DbLifecycleError",
+    "DbLifecycleNotImplementedError",
     "DbLifecycleService",
 ]

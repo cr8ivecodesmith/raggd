@@ -38,7 +38,7 @@ Sources let you track workspaces, document trees, or other targets you want to
 refresh and query. The command group provides:
 - `init <raw-name> [--target <dir>]`: Create a normalized source (e.g.,
   `docs` → `docs` or `Product Notes` → `product-notes`), scaffold
-  `<workspace>/sources/<name>` with a manifest and `db.sql`, and optionally seed
+  `<workspace>/sources/<name>` with a manifest and `db.sqlite3`, and optionally seed
   the target directory. When a valid `--target` is supplied the source is
   immediately enabled and refreshed; otherwise it stays disabled until you fix
   the target and enable it.
@@ -93,7 +93,7 @@ Running `raggd init` creates the following structure:
 ├── archives/               # Timestamped ZIP archives created by --refresh
 └── sources/
     └── <name>/
-        ├── db.sql          # SQLite stub reserved for future embeddings
+        ├── db.sqlite3      # SQLite stub reserved for future embeddings
         └── manifest.json   # Target metadata, health status, refresh history
 ```
 
