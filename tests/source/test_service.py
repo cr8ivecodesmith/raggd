@@ -173,6 +173,55 @@ def test_refresh_disables_source_on_failed_health(tmp_path: Path) -> None:
     assert state.manifest.last_refresh_at == datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
 
 
+def test_set_target_blocks_when_health_fails_without_force(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    service, paths = _make_service(tmp_path, health)
+
+    target_dir = paths.workspace / "data" / "demo"
+    target_dir.mkdir(parents=True)
+    service.init("demo", target=target_dir)
+
+    replacement = paths.workspace / "data" / "replacement"
+    replacement.mkdir(parents=True)
+
+    health.status = SourceHealthStatus.ERROR
+    with pytest.raises(SourceHealthCheckError):
+        service.set_target("demo", replacement)
+
+    [state] = service.list()
+    assert state.config.enabled is False
+
+    manifest_data = json.loads(paths.source_manifest_path("demo").read_text(encoding="utf-8"))
+    assert manifest_data["enabled"] is False
+    assert manifest_data["last_health"]["status"] == "error"
+
+
+def test_set_target_force_allows_remediation_after_health_failure(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    service, paths = _make_service(tmp_path, health)
+
+    target_dir = paths.workspace / "data" / "demo"
+    target_dir.mkdir(parents=True)
+    service.init("demo", target=target_dir)
+
+    replacement = paths.workspace / "data" / "replacement"
+    replacement.mkdir(parents=True)
+
+    health.status = SourceHealthStatus.ERROR
+    with pytest.raises(SourceHealthCheckError):
+        service.refresh("demo")
+
+    health.status = SourceHealthStatus.OK
+
+    state = service.set_target("demo", replacement, force=True)
+
+    assert state.config.target == replacement
+    assert state.manifest.target == replacement
+    assert state.manifest.last_refresh_at == datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
+    assert state.manifest.last_health.status == SourceHealthStatus.OK
+    assert state.config.enabled is False
+
+
 def test_rename_updates_configuration_and_filesystem(tmp_path: Path) -> None:
     health = StubHealthEvaluator()
     service, paths = _make_service(tmp_path, health)
@@ -250,6 +299,53 @@ def test_remove_prunes_config_and_directory(tmp_path: Path) -> None:
 
     assert directory.exists() is False
     assert service.list() == []
+
+
+def test_rename_blocks_when_health_fails_without_force(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    service, paths = _make_service(tmp_path, health)
+
+    target_dir = paths.workspace / "data" / "demo"
+    target_dir.mkdir(parents=True)
+    service.init("demo", target=target_dir)
+
+    health.status = SourceHealthStatus.ERROR
+    with pytest.raises(SourceHealthCheckError):
+        service.rename("demo", "renamed")
+
+    [state] = service.list()
+    assert state.config.enabled is False
+    manifest_data = json.loads(paths.source_manifest_path("demo").read_text(encoding="utf-8"))
+    assert manifest_data["enabled"] is False
+    assert manifest_data["last_health"]["status"] == "error"
+
+
+def test_remove_requires_force_when_health_fails(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    service, paths = _make_service(tmp_path, health)
+
+    target_dir = paths.workspace / "data" / "demo"
+    target_dir.mkdir(parents=True)
+    service.init("demo", target=target_dir)
+
+    health.status = SourceHealthStatus.ERROR
+    with pytest.raises(SourceHealthCheckError):
+        service.remove("demo")
+
+    manifest_data = json.loads(paths.source_manifest_path("demo").read_text(encoding="utf-8"))
+    assert manifest_data["enabled"] is False
+    assert manifest_data["last_health"]["status"] == "error"
+    assert (paths.sources_dir / "demo").exists()
+
+
+def test_remove_blocks_when_disabled(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    service, _ = _make_service(tmp_path, health)
+
+    service.init("demo")
+
+    with pytest.raises(SourceDisabledError):
+        service.remove("demo")
 
 
 def test_enable_and_disable_update_state(tmp_path: Path) -> None:

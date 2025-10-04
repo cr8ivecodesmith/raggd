@@ -48,7 +48,7 @@
   - [x] Implement slug normalization + path validation helpers (and determine whether to vendor `python-slugify`).
   - [x] Scaffold `SourceService` with init/target/refresh/rename/remove/list/enable/disable methods wired to config + filesystem, ensuring `init` creates the source directory + `db.sql` stub, writes config/manifest entries, and auto-enables + refreshes when a validated `--target` is provided (leaving new sources disabled otherwise). Refresh clears managed artifacts, recreates `db.sql`, stamps manifests, and respects confirmation/force semantics; rename/remove keep manifests/config in sync; enable runs the health check to report current status without auto-disabling on `degraded`/`error`, while target/refresh/rename/remove flows toggle `enabled=false` when non-forced checks fail.
   - [x] Build health evaluation routines that run per-source checks (target existence/readability, manifest freshness, disabled markers), update manifest status metadata when invoked from mutating flows, and leave the read-only `HealthHook` path untouched. Mutating flows record a `last_health` block with status/summary/actions stamps every time they trigger checks; successful refresh/target changes also update `last_refresh_at`, while failed checks preserve the previous refresh timestamp but capture the degraded/error status for auditability.
-  - [ ] Wire command-triggered health gating/auto-disable semantics into service methods with shared guard logic.
+  - [x] Wire command-triggered health gating/auto-disable semantics into service methods with shared guard logic.
   - [ ] Create Typer command group for `raggd source`, mapping CLI options to service operations and confirmations, validating mutually exclusive `target` inputs (`--clear` vs `<dir>`), and enforcing exit codes (e.g., `list` returns non-zero when any source status is `unknown`/`degraded`/`error`).
   - [ ] Update module registry/defaults to include a `source` module toggle and dependency extras.
   - [ ] Extend the modules registry to publish a `HealthRegistry` view that exposes the `ModuleDescriptor.health_hook` contract for `checkhealth`.
@@ -76,6 +76,13 @@ Confirmed the WorkspacePaths sources directory helpers landed and marked the che
 **Changes**
 - Verified paths, CLI init scaffolding, and tests cover the new sources directory support.
 - Updated the stepwise checklist to reflect completion.
+
+### 2025-10-04 10:43 PST
+**Summary**
+Validated service guard semantics and added gate coverage tests.
+**Changes**
+- Added source service tests exercising guard-driven auto-disable flows for target updates, rename, and removal commands.
+- Confirmed forced remediation paths bypass disabled state while preserving manifest updates and persisted enablement.
 
 ### 2025-10-04 11:15 PST
 **Summary**
