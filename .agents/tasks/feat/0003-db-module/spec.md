@@ -7,12 +7,12 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - Deliver a Typer-powered `raggd db <command>` group with `ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, and `reset` subcommands that mirror the ergonomics of existing CLI modules.
 - Standardize per-source database layout to `<workspace>/sources/<name>/db.sqlite3`, treating this as the only supported filename for new workspaces.
 - Move all database lifecycle operations (bootstrap, migrations, maintenance) out of the `source` module into a dedicated database service that exposes inversion-friendly hooks (`DbLifecycleService`), keeping the source module dependent on abstractions.
-- Treat the first ordered migration (`resources/db/migrations/<shortuuid7>_bootstrap.up.sql`) as the bootstrap schema so new databases are created by running migrations end-to-end instead of applying a separate seed file; record the bootstrap migration identifier in metadata for traceability.
+- Treat the lexicographically first migration (`resources/db/migrations/<shortuuid7>.up.sql`) as the bootstrap schema so new databases are created by running migrations end-to-end instead of applying a separate seed file; record the bootstrap migration identifier in metadata for traceability.
 - Keep an idempotent `ensure` entry point for operators while clarifying that the `source` module primarily needs an "ensure" signal via `DbLifecycleService.ensure()` to guarantee database readiness without owning SQLite logic directly.
 - Reshape per-source manifests to host module-owned state beneath a shared `modules` map (e.g., `modules.source`, `modules.db`) so future modules can persist authoritative metadata without clobbering the source layout; provide a first-run migration path for existing manifests.
 - Promote manifest handling into a reusable infrastructure layer by introducing `raggd.modules.manifest`, giving modules a shared API for discovery, migrations, locking, and atomic writes while the `source` and `db` modules depend on its abstractions.
 - Mirror database health metadata (bootstrap identifier, current migration, last vacuum, checksum) into each source manifest's `modules.db` entry through lifecycle hooks so downstream modules can observe state without opening the database file, while retaining the database ledger as the source of truth.
-- Provide a lightweight migration runner that discovers files named `<shortuuid7>_<slug>.up.sql` / `<shortuuid7>_<slug>.down.sql`, executes them in order, and records applied migrations for `upgrade`/`downgrade` commands.
+- Provide a lightweight migration runner that discovers files named `<shortuuid7>.up.sql` / `<shortuuid7>.down.sql`, executes them in order, and records applied migrations for `upgrade`/`downgrade` commands.
 - Integrate with `raggd checkhealth` to surface missing databases, schema drift, or stale maintenance signals (vacuum cadence) while allowing future modules to add checks without tight coupling.
 - Document operator expectations (when to run `ensure`, `upgrade`, `downgrade`, `reset`, `vacuum`, how to author SQL snippets) while keeping the migration runner lightweight to avoid unnecessary complexity in this greenfield scope.
 
@@ -23,8 +23,8 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - Introducing an ORM or SQL templating DSL beyond a lightweight loader for `.sql` files.
 
 ## Behavior (BDD-ish)
-- Given a workspace with configured sources, when the user runs `raggd db ensure [<name> ...]`, then the command ensures `<source>/db.sqlite3` exists by running migrations from the bootstrap file forward (no standalone seed), writes or refreshes `schema_meta` rows containing `bootstrap_shortuuid7`, `head_migration`, `ledger_checksum`, `created_at`, and `updated_at`, mirrors the latest migration metadata into the source manifest's `modules.db` entry via `ManifestService`, and exits zero if every database is reconciled.
-- Given a source database, when the user runs `raggd db upgrade [<name> ...]`, then the CLI reads unapplied migration files (named `<shortuuid7>_<slug>.up.sql`), executes them in order while recording success in a migrations ledger, mirrors the new head migration into the source manifest's `modules.db` entry, and stops with exit code `1` if any migration fails.
+- Given a workspace with configured sources, when the user runs `raggd db ensure [<name> ...]`, then the command ensures `<source>/db.sqlite3` exists by running migrations from the bootstrap file forward (no standalone seed), writes or refreshes `schema_meta` rows containing `bootstrap_shortuuid7`, `head_migration_uuid7`, `head_migration_shortuuid7`, `ledger_checksum`, `created_at`, and `updated_at`, mirrors the latest migration metadata into the source manifest's `modules.db` entry via `ManifestService`, and exits zero if every database is reconciled.
+- Given a source database, when the user runs `raggd db upgrade [<name> ...]`, then the CLI reads unapplied migration files (named `<shortuuid7>.up.sql`), executes them in order while recording success in a migrations ledger, mirrors the new head migration into the source manifest's `modules.db` entry, and stops with exit code `1` if any migration fails.
 - Given a source database, when the user runs `raggd db downgrade [<name> ...]`, then the CLI rolls back the most recent applied migration using the corresponding `.down.sql` file, supports multi-step downgrades via `--steps`, reconciles the `modules.db` manifest entry with the new head migration, and aborts with exit code `1` if the necessary down file is missing or fails.
 - Given a source database, when the user runs `raggd db info <name> [--json] [--schema]`, then the CLI reports the database path, `bootstrap_shortuuid7`, last applied migration, `last_vacuum_at`, ledger checksum, size on disk, and notes if the schema differs from the migration chain checksum or if pending migrations exist; `--schema` dumps the current schema (ordered by `sqlite_schema`) so operators can diff against migrations, and exit code `1` signals drift or staleness. The JSON view also surfaces the mirrored `modules.db` snapshot from `manifest.json` for observability.
 - Given a source database, when the user runs `raggd db reset <name> [--force]`, then the CLI optionally confirms destructive action, removes the existing file, reruns migrations starting at the bootstrap migration to rebuild the database, refreshes metadata (ledger checksum, timestamps) while preserving the original `bootstrap_shortuuid7`, and updates both `schema_meta` and the mirrored `modules.db` manifest entry; without `--force`, prompt in interactive terminals.
@@ -40,7 +40,7 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - Create `src/raggd/modules/db/` mirroring other CLI modules: `cli.py` (Typer command group), `service.py` (lifecycle interfaces + adapters), `migrations.py` (runner + file parsing), `health.py` (checkhealth hook), and `manifest.py` (manifest mirror utilities powered by `ManifestService`). Keep the public module export in `__init__.py` minimal so other packages depend on abstractions, not concrete helpers.
 - Stage migration assets under `resources/db/migrations/` and expose them via `importlib.resources.files`. Ensure packaging includes this directory.
 
--### Manifest service contract
+### Manifest service contract
 - Provide `ManifestService` as the single entry point for manifest consumers. Core capabilities:
   - `load(source: SourceRef) -> ManifestSnapshot` returning typed accessors for `modules.*` entries and legacy fallbacks.
   - `write(source: SourceRef, mutate: Callable[[ManifestSnapshot], None], *, backup: bool = True) -> ManifestSnapshot` performing locked, atomic writes with automatic `.bak` rotation and checksum verification.
@@ -57,21 +57,21 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
   - `reset(source: SourceRef, *, force: bool = False) -> EnsureResult`
   - `vacuum(source: SourceRef, *, analyze: bool = False) -> VacuumResult`
   - `run_sql(source: SourceRef, sql: str, params: Mapping[str, Any]) -> SqlRunResult`
-- `SourceRef` should encapsulate source name and resolved paths to avoid each caller recomputing layout. `EnsureResult` and friends should include `bootstrap_shortuuid7`, `head_migration`, `ledger_checksum`, and timestamps so manifest mirroring works without extra I/O.
+- `SourceRef` should encapsulate source name and resolved paths to avoid each caller recomputing layout. `EnsureResult` and friends should include `bootstrap_shortuuid7`, `head_migration_uuid7`, `head_migration_shortuuid7`, `ledger_checksum`, and timestamps so manifest mirroring works without extra I/O.
 
 ### Migration runner
-- Parse `<shortuuid7>_<slug>.<direction>.sql` filenames into `(uuid7_slug, slug, direction)` and validate:
+- Parse `<shortuuid7>.<direction>.sql` filenames into `(shortuuid7, direction)` and validate:
   - `shortuuid7` is a 12-char (Crockford base32) string derived from the third-party `uuid7` library. Persist both the canonical UUID7 and shortened form so we can assert ordering.
   - Add regression tests proving the shortened representation preserves the chronological ordering guarantees of UUID7 across thousands of samples.
-  - Require `.up` and `.down` pairs for every slug after bootstrap; the bootstrap migration deliberately omits `.down` so downgrades stop at the initial schema and `reset` remains the only way to drop the database entirely.
-- Store migrations in `schema_migrations` with columns: `id INTEGER PK`, `slug TEXT UNIQUE`, `direction TEXT CHECK(direction IN ('up','down'))`, `checksum TEXT NOT NULL`, `applied_at TEXT NOT NULL`, `shortuuid7 TEXT NOT NULL`. Maintain a composite index on `(slug, direction)` for rollback lookups.
+  - Require `.up` and `.down` pairs for every migration after bootstrap; the bootstrap migration deliberately omits `.down` so downgrades stop at the initial schema and `reset` remains the only way to drop the database entirely.
+- Store migrations in `schema_migrations` with columns: `id INTEGER PK`, `uuid7 TEXT UNIQUE NOT NULL`, `shortuuid7 TEXT UNIQUE NOT NULL`, `direction TEXT CHECK(direction IN ('up','down'))`, `checksum TEXT NOT NULL`, and `applied_at TEXT NOT NULL`. Maintain a composite index on `(uuid7, direction)` for rollback lookups.
 - Execute migrations inside a transaction per database. Wrap each migration in `BEGIN; ...; COMMIT;` and fall back to `ROLLBACK` on exceptions while surfacing the error to the CLI.
 - Compute migration checksums (e.g., SHA256 of normalized SQL content) when files are loaded; persist in ledger and compare on each run to detect drift.
 
 ### Schema metadata
-- `schema_meta` should store stable metadata in a single-row table (enforced by `CHECK(id = 1)`): `id INTEGER PRIMARY KEY DEFAULT 1`, `bootstrap_shortuuid7 TEXT NOT NULL`, `head_migration TEXT NOT NULL`, `ledger_checksum TEXT NOT NULL`, `created_at TEXT NOT NULL`, `updated_at TEXT NOT NULL`, `last_vacuum_at TEXT`, `last_sql_run_at TEXT`.
+- `schema_meta` should store stable metadata in a single-row table (enforced by `CHECK(id = 1)`): `id INTEGER PRIMARY KEY DEFAULT 1`, `bootstrap_shortuuid7 TEXT NOT NULL`, `head_migration_uuid7 TEXT NOT NULL`, `head_migration_shortuuid7 TEXT NOT NULL`, `ledger_checksum TEXT NOT NULL`, `created_at TEXT NOT NULL`, `updated_at TEXT NOT NULL`, `last_vacuum_at TEXT`, `last_sql_run_at TEXT`.
 - `bootstrap_shortuuid7` is derived from the bootstrap migration filename so operators can trace lineage without a separate slug field; it does not rotate across resets.
-- `ledger_checksum` is the hash of concatenated applied migrations (shortuuid7 + slug + checksum) and is used to detect manual tampering.
+- `ledger_checksum` is the hash of concatenated applied migrations (shortuuid7 + checksum) and is used to detect manual tampering.
 
 ### Manifest synchronization
 - Reshape each source `manifest.json` to introduce a top-level `"modules"` object that namespaces ownership. Existing source fields migrate into `modules.source`, while this feature adds a dedicated `modules.db` payload:
@@ -83,7 +83,8 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
       },
       "db": {
         "bootstrap_shortuuid7": "01HX8F7N9D0K",
-        "head_migration": "01HX8F7N9D0K_bootstrap",
+        "head_migration_uuid7": "0189b6aa-52f2-7a40-b1e1-bd7299c1f4d2",
+        "head_migration_shortuuid7": "01HX8F7N9D0K",
         "ledger_checksum": "sha256:...",
         "last_vacuum_at": "2025-10-04T18:30:00Z",
         "last_ensure_at": "2025-10-04T18:30:00Z",
@@ -142,11 +143,11 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 
 ## Constraints & Dependencies
 - Constraints: rely on bundled SQLite; commands operate offline; multi-process vacuum must default to a conservative worker count (`min(4, cpu_count())`); CLI output follows existing Typer formatting (rich tables + structured logs).
-- Migrations live in `resources/db/migrations/` and are ordered lexicographically by their `<shortuuid7>_<slug>` prefix; the runner must guard against duplicate slugs and checksum drift between `.up`/`.down` pairs.
+- Migrations live in `resources/db/migrations/` and are ordered lexicographically by their `<shortuuid7>` prefix; the runner must guard against duplicate identifiers and checksum drift between `.up`/`.down` pairs.
 - Architecture: the database module exposes interfaces (`DbLifecycleService`, `SqlRunner`, `DbHealthProvider`) registered with the module registry. The `source` module depends on these abstractions to maintain DIP, adopts the shared `manifest_*` settings when reading/writing `modules.source`, and allows swapping implementations for tests. The new `raggd.modules.manifest` package owns manifest IO plumbing (`ManifestService`, migrator, backups) so both modules interact through its seam instead of reimplementing JSON semantics.
-- Bootstrap migration lives in `resources/db/migrations/<shortuuid7>_bootstrap.up.sql`; checksum or hash used for drift detection should be reproducible across platforms and shared between the migrations ledger and manifest mirror.
-- `manifest.json` remains the authoritative per-source manifest; the database module contributes a `modules.db` payload (`bootstrap_shortuuid7`, head migration UUID7, last vacuum timestamp, ledger checksum, pending migrations) via lifecycle hooks while guarding against other modules editing those fields directly.
-- Maintain a migrations ledger table (`schema_migrations`) that stores applied `<shortuuid7>_<slug>`, applied direction, checksum, and applied timestamp for auditability.
+- Bootstrap migration corresponds to the lexicographically earliest `resources/db/migrations/<shortuuid7>.up.sql`; checksum or hash used for drift detection should be reproducible across platforms and shared between the migrations ledger and manifest mirror.
+- `manifest.json` remains the authoritative per-source manifest; the database module contributes a `modules.db` payload (`bootstrap_shortuuid7`, `head_migration_uuid7`, `head_migration_shortuuid7`, last vacuum timestamp, ledger checksum, pending migrations) via lifecycle hooks while guarding against other modules editing those fields directly.
+- Maintain a migrations ledger table (`schema_migrations`) that stores applied migration UUID7s, applied direction, checksum, and applied timestamp for auditability.
 
 ## Security & Privacy
 - Databases live within the user workspace; no external network access.
@@ -155,11 +156,11 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 
 ## Telemetry & Operability
 - Emit structured events (`db-ensure`, `db-upgrade`, `db-downgrade`, `db-reset`, `db-vacuum`, `db-run`) with source name, duration, worker id where relevant, and outcome status.
-- Record `created_at`, `last_vacuum_at`, optional `last_sql_run_at`, `bootstrap_shortuuid7`, and last applied migration in `schema_meta` (or equivalent view) for health introspection; expose the same data via `raggd db info --json` and mirror the values into `manifest.json.modules.db` for consumers that rely on manifest introspection.
+- Record `created_at`, `last_vacuum_at`, optional `last_sql_run_at`, `bootstrap_shortuuid7`, `head_migration_uuid7`, and `head_migration_shortuuid7` in `schema_meta` (or equivalent view) for health introspection; expose the same data via `raggd db info --json` and mirror the values into `manifest.json.modules.db` for consumers that rely on manifest introspection.
 - Provide exit codes (`0` success, `1` degraded/partial failure, `2` fatal error) and document them for automation.
 
 ## Decisions & Follow-ups
-- Adopt the third-party `uuid7` library for migration IDs; shorten to 12-character Crockford base32 strings, persist the canonical UUID7 alongside the slug, and add regression tests proving ordering is preserved after shortening.
+- Adopt the third-party `uuid7` library for migration IDs; shorten to 12-character Crockford base32 strings, persist the canonical UUID7 alongside the short form, and add regression tests proving ordering is preserved after shortening.
 - Drop the dedicated schema slug identifier; rely on the bootstrap migration identifier, head migration, and ledger checksum for correlation.
 - Treat the bootstrap migration as the floor for downgrades: `.down` files are optional for bootstrap, `downgrade` stops at that point, and destructive resets flow through `db reset`.
 - Allow `db run` to execute SQL from outside the workspace when the operator points to an absolute path; gate with `config.db.run_allow_outside` (default `true`) and retain `--autocommit` for long-running scripts with a configurable default.
@@ -177,10 +178,10 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 ## Definition of Done
 - [ ] `raggd db` command group implements `ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, and `reset` behaviors with consistent logging and parameter handling.
 - [ ] Workspace sources exclusively use `<source>/db.sqlite3`; the database module owns creation, migrations, and destructive operations via `DbLifecycleService`, and the source module delegates through the abstraction.
-- [ ] Bootstrap migration (first migration file), checksum drift detection, and migration application (including short UUID7 slug validation + shortened-ordering tests) are covered by unit tests and documented for contributors.
+- [ ] Bootstrap migration (first migration file), checksum drift detection, and migration application (including short UUID7 shortening validation + ordering tests) are covered by unit tests and documented for contributors.
 - [ ] `raggd db info --schema` and manifest strictness behaviors are verified by CLI/contract tests, including failure paths when manifest writes fail under the default configuration.
 - [ ] Health integration surfaces missing databases, schema drift, manifest/database desync, and stale vacuum timestamps with CLI/health tests verifying exit codes and messaging.
-- [ ] `manifest.json.modules.db` persists authoritative database metadata (`bootstrap_shortuuid7`, head migration UUID7, ledger checksum, last vacuum timestamp, pending migrations) via lifecycle hooks, with regression tests ensuring the `source` module consumes the ensure signal without bypassing the service, uses the shared `manifest_*` settings when reading/writing manifests, and that legacy manifests are migrated into the `modules` layout.
+- [ ] `manifest.json.modules.db` persists authoritative database metadata (`bootstrap_shortuuid7`, `head_migration_uuid7`, `head_migration_shortuuid7`, ledger checksum, last vacuum timestamp, pending migrations) via lifecycle hooks, with regression tests ensuring the `source` module consumes the ensure signal without bypassing the service, uses the shared `manifest_*` settings when reading/writing manifests, and that legacy manifests are migrated into the `modules` layout.
 - [ ] `raggd.modules.manifest` provides a documented, tested service abstraction for discovery, migrations, locking, backups, and atomic writes. Both the `source` and `db` modules call only into this service for manifest interactions, with contract tests demonstrating delegation and failure handling.
 - [ ] Developer docs updated to cover new commands, bootstrap migration expectations, and maintenance workflows; manual smoke notes captured per workflow.
 - [ ] Test coverage includes unit tests for lifecycle services, functional tests for CLI subcommands (with `.tmp` workspaces), migration upgrade/downgrade flows, and concurrency coverage for vacuum operations.
@@ -217,7 +218,7 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 ### 2025-10-04 19:16 PST
 **Summary** — Reintroduced migrations and full DB delegation
 **Changes**
-- Added `upgrade`/`downgrade` commands with `<shortuuid7>_<slug>.<up/down>.sql` naming convention and ledger expectations
+- Added `upgrade`/`downgrade` commands with `<shortuuid7>.<up/down>.sql` naming convention and ledger expectations
 - Clarified that all lifecycle operations leave the `source` module and flow through `DbLifecycleService`
 - Updated goals, behaviors, telemetry, constraints, and DoD to cover migration runner responsibilities
 

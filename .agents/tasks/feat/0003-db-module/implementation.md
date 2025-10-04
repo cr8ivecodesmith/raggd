@@ -69,16 +69,16 @@
 - **Phase 3 — Database module delivery**
   - [ ] Scaffold `raggd.modules.db` package with Typer command group exposed in the root CLI and backed by `DbLifecycleService`.
   - [ ] Implement lifecycle commands (`ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, `reset`) with manifest mirroring via the shared service and cohesive error handling.
-  - [ ] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation.
+  - [ ] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation while persisting both canonical UUID7 and shortened forms into `schema_meta`, the ledger, and manifest mirrors.
   - [ ] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
   - [ ] Register the database module and health provider in `modules/registry.py`; integrate with `raggd checkhealth` and settings defaults (`config.db.*`).
   - [ ] Update `pyproject.toml` (`uuid7` dependency, `db` extra, package data), `raggd.defaults.toml`, CLI docs, and capture manual smoke verifications.
   - [ ] Finalize test matrix across unit, contract, CLI, and packaging validations per the test plan.
 
 ## Test Plan
-- Unit: `ManifestService` locking/backup/atomic-write operations, `ManifestMigrator` legacy-to-modules transforms, `DbLifecycleService` behaviors (ensure/upgrade/downgrade/vacuum), `MigrationRunner` ordering and failure handling, `uuid7` shortening utility, manifest sync rollback.
+- Unit: `ManifestService` locking/backup/atomic-write operations, `ManifestMigrator` legacy-to-modules transforms, `DbLifecycleService` behaviors (ensure/upgrade/downgrade/vacuum), `MigrationRunner` ordering and failure handling, `uuid7` shortening utility, manifest sync rollback, and schema-meta/manifest persistence of canonical + short UUID7 values.
 - Contract: interface between `source` module and `DbLifecycleService`, ensuring `ensure` triggers migrations, consumes the shared manifest settings, and handles manifest migrations/mirroring without direct SQLite manipulation.
-- Integration/E2E: CLI tests for `db` subcommands across single/multiple sources, legacy manifest upgrade flows (backup + rewrite), health command outputs, vacuum concurrency across `auto` and explicit values, downgrade boundary at bootstrap.
+- Integration/E2E: CLI tests for `db` subcommands across single/multiple sources, legacy manifest upgrade flows (backup + rewrite), health command outputs, vacuum concurrency across `auto` and explicit values, downgrade boundary at bootstrap, and manifest snapshots showing both canonical and short UUID7 metadata.
 - Manual checks: Create a workspace in `.tmp`, run `uv run raggd init`, capture the pre-upgrade manifest, then exercise `raggd db ensure`, `upgrade`, `downgrade`, `info --schema`, `vacuum`, `run`, `reset`, confirm the manifest migrates into `modules.*` with a `.bak` backup, and finish with `uv run raggd checkhealth`; document results per DoD.
 - Packaging validation: verify a local build (e.g., `uv build`) advertises the `uuid7` dependency, includes `db` in the modules dependency group, and bundles migration SQL files.
 
