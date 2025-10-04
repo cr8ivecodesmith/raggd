@@ -54,7 +54,7 @@
   - [x] Extend the modules registry to publish a `HealthRegistry` view that exposes the `ModuleDescriptor.health_hook` contract for `checkhealth`.
   - [x] Design `.health.json` aggregator format and persistence helpers (read/merge/write with timestamps) that emit the payload shape defined in `spec.md` (`{"sources": {"checked_at": iso8601, "status": enum, "details": [{"name": str, "status": enum, "summary": str|None, "actions": [str], "last_refresh_at": iso8601|None}]}}`), derive the module-level `status` as the highest-severity entry in `details`, and persist via temp-file + `os.replace` to avoid partial writes; per-run outputs replace the entire module block for modules that provided data while preserving untouched module sections from the previous file, and modules are responsible for returning their full canonical payload so overlapping fields never interleave across modules. Failed writes keep the prior file intact and surface structured errors.
   - [x] Implement `raggd checkhealth [module]` CLI entry using the health registry, ensuring filtered runs only update the requested module keys and logging when data is carried forward unchanged for others.
-  - [ ] Ensure logging captures key actions (success/failure, enablement toggles, forced operations).
+  - [x] Ensure logging captures key actions (success/failure, enablement toggles, forced operations).
   - [ ] Add CLI + unit tests for all new behaviors, including error paths and force overrides.
   - [ ] Refresh documentation (workspace guide) and update DoD artifacts (Typer CLI help strings added).
 
@@ -176,3 +176,10 @@ Implemented the `raggd checkhealth` CLI and health hook wiring.
 - Built the Typer-powered `raggd checkhealth` command with health registry integration, `.health.json` persistence, module filtering, and structured terminal output.
 - Introduced unit and CLI regression tests for the hook and CLI, updated the implementation checklist, and ensured health document updates respect existing module snapshots.
 
+### 2025-10-05 21:50 PST
+**Summary**
+Added structured logging around source operations and covered the auto-disable path.
+**Changes**
+- Extended `SourceService` to emit `source-auto-disabled` events when health gating toggles a source off and threaded the CLI logger into the service.
+- Logged command-start metadata for each `raggd source` Typer command alongside existing success/failure records.
+- Added a regression test capturing the auto-disable log event and ran `python -m pytest --no-cov tests/source/test_service.py` to verify.

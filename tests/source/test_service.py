@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-import shutil
 
 import pytest
+from structlog import get_logger
+from structlog.testing import capture_logs
 
 from raggd.cli.init import init_workspace
 from raggd.core.paths import WorkspacePaths
@@ -47,7 +49,12 @@ def _make_paths(root: Path) -> WorkspacePaths:
     )
 
 
-def _make_service(tmp_path: Path, health: StubHealthEvaluator) -> tuple[SourceService, WorkspacePaths]:
+def _make_service(
+    tmp_path: Path,
+    health: StubHealthEvaluator,
+    *,
+    logger=None,
+) -> tuple[SourceService, WorkspacePaths]:
     workspace = tmp_path / "workspace"
     init_workspace(workspace=workspace)
     paths = _make_paths(workspace)
@@ -58,6 +65,7 @@ def _make_service(tmp_path: Path, health: StubHealthEvaluator) -> tuple[SourceSe
         config_store=store,
         health_evaluator=health,
         now=lambda: fixed_now,
+        logger=logger,
     )
     return service, paths
 
@@ -194,6 +202,31 @@ def test_set_target_blocks_when_health_fails_without_force(tmp_path: Path) -> No
     manifest_data = json.loads(paths.source_manifest_path("demo").read_text(encoding="utf-8"))
     assert manifest_data["enabled"] is False
     assert manifest_data["last_health"]["status"] == "error"
+
+
+def test_refresh_logs_auto_disable_event(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    with capture_logs() as logs:
+        service, paths = _make_service(
+            tmp_path,
+            health,
+            logger=get_logger(__name__),
+        )
+
+        target_dir = paths.workspace / "data" / "demo"
+        target_dir.mkdir(parents=True)
+        service.init("demo", target=target_dir)
+
+        health.status = SourceHealthStatus.ERROR
+
+        with pytest.raises(SourceHealthCheckError):
+            service.refresh("demo")
+
+    events = [entry for entry in logs if entry.get("event") == "source-auto-disabled"]
+    assert len(events) == 1
+    payload = events[0]
+    assert payload["source"] == "demo"
+    assert payload["status"] == "error"
 
 
 def test_set_target_force_allows_remediation_after_health_failure(tmp_path: Path) -> None:

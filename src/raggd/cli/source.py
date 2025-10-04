@@ -189,7 +189,12 @@ def configure_source_commands(
 
     configure_logging(level=config.log_level, workspace_path=config.workspace)
     logger = get_logger(__name__, command="source")
-    service = SourceService(workspace=paths, config_store=store)
+    service_logger = logger.bind(component="service")
+    service = SourceService(
+        workspace=paths,
+        config_store=store,
+        logger=service_logger,
+    )
     paths.sources_dir.mkdir(parents=True, exist_ok=True)
 
     ctx.obj = SourceCLIContext(
@@ -228,12 +233,20 @@ def init_source(
             f"This will refresh source {name!r} from {target_display}. Continue?",
         )
 
+    log = context.logger.bind(action="init")
+    log.info(
+        "source-command-start",
+        source=name,
+        target=str(target) if target is not None else None,
+        force_refresh=force_refresh,
+    )
+
     try:
         state = context.service.init(name, target=target, force_refresh=force_refresh)
     except (SourceError, SourceSlugError, SourcePathError) as exc:
         _handle_failure(context, action="init", error=exc, source=name)
     else:
-        context.logger.bind(action="init").info(
+        log.info(
             "source-init",
             source=state.config.name,
             target=str(state.config.target) if state.config.target else None,
@@ -287,12 +300,21 @@ def update_target(
                 f"This will refresh source {name!r} after updating the target. Continue?",
             )
 
+    log = context.logger.bind(action="target")
+    log.info(
+        "source-command-start",
+        source=name,
+        clear=clear,
+        target=str(directory) if directory is not None else None,
+        forced=force,
+    )
+
     try:
         state = context.service.set_target(name, target_arg, force=force)
     except (SourceError, SourcePathError) as exc:
         _handle_failure(context, action="target", error=exc, source=name)
     else:
-        context.logger.bind(action="target").info(
+        log.info(
             "source-target-updated",
             source=state.config.name,
             target=str(state.config.target) if state.config.target else None,
@@ -320,12 +342,19 @@ def refresh_source(
     if not force:
         _confirm(f"Refresh source {name!r}? This will reset cached artifacts.")
 
+    log = context.logger.bind(action="refresh")
+    log.info(
+        "source-command-start",
+        source=name,
+        forced=force,
+    )
+
     try:
         state = context.service.refresh(name, force=force)
     except SourceError as exc:
         _handle_failure(context, action="refresh", error=exc, source=name)
     else:
-        context.logger.bind(action="refresh").info(
+        log.info(
             "source-refresh",
             source=state.config.name,
             forced=force,
@@ -350,12 +379,20 @@ def rename_source(
 ) -> None:
     context = _require_context(ctx)
 
+    log = context.logger.bind(action="rename")
+    log.info(
+        "source-command-start",
+        source=current,
+        renamed_to=new,
+        forced=force,
+    )
+
     try:
         state = context.service.rename(current, new, force=force)
     except (SourceError, SourceSlugError) as exc:
         _handle_failure(context, action="rename", error=exc, source=current)
     else:
-        context.logger.bind(action="rename").info(
+        log.info(
             "source-rename",
             source=current,
             renamed_to=state.config.name,
@@ -382,12 +419,19 @@ def remove_source(
     if not force:
         _confirm(f"Remove source {name!r}? This deletes managed artifacts.")
 
+    log = context.logger.bind(action="remove")
+    log.info(
+        "source-command-start",
+        source=name,
+        forced=force,
+    )
+
     try:
         context.service.remove(name, force=force)
     except SourceError as exc:
         _handle_failure(context, action="remove", error=exc, source=name)
     else:
-        context.logger.bind(action="remove").info(
+        log.info(
             "source-remove",
             source=name,
             forced=force,
@@ -405,12 +449,18 @@ def enable_sources(
 ) -> None:
     context = _require_context(ctx)
 
+    log = context.logger.bind(action="enable")
+    log.info(
+        "source-command-start",
+        sources=names,
+    )
+
     try:
         states = context.service.enable(*names)
     except SourceError as exc:
         _handle_failure(context, action="enable", error=exc, source=names)
     else:
-        context.logger.bind(action="enable").info(
+        log.info(
             "source-enable",
             sources=names,
         )
@@ -430,12 +480,18 @@ def disable_sources(
 ) -> None:
     context = _require_context(ctx)
 
+    log = context.logger.bind(action="disable")
+    log.info(
+        "source-command-start",
+        sources=names,
+    )
+
     try:
         states = context.service.disable(*names)
     except SourceError as exc:
         _handle_failure(context, action="disable", error=exc, source=names)
     else:
-        context.logger.bind(action="disable").info(
+        log.info(
             "source-disable",
             sources=names,
         )
@@ -451,6 +507,9 @@ def disable_sources(
 )
 def list_sources(ctx: typer.Context) -> None:
     context = _require_context(ctx)
+
+    log = context.logger.bind(action="list")
+    log.info("source-command-start")
 
     try:
         states = context.service.list()
@@ -471,7 +530,7 @@ def list_sources(ctx: typer.Context) -> None:
         if status is not SourceHealthStatus.OK:
             exit_code = 1
 
-    context.logger.bind(action="list").info(
+    log.info(
         "source-list",
         sources=[state.config.name for state in states],
         exit_code=exit_code,

@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Protocol, Sequence
 
+from raggd.core.logging import Logger, get_logger
+
 from raggd.core.paths import WorkspacePaths
 from raggd.source.config import SourceConfigStore
 from raggd.source.errors import (
@@ -60,6 +62,7 @@ class SourceService:
         config_store: SourceConfigStore,
         health_evaluator: SourceHealthEvaluator | None = None,
         now: Callable[[], datetime] | None = None,
+        logger: Logger | None = None,
     ) -> None:
         self._paths = workspace
         self._config_store = config_store
@@ -67,6 +70,7 @@ class SourceService:
         self._health_evaluator = (
             health_evaluator or self._build_default_health_evaluator()
         )
+        self._logger = logger or get_logger(__name__, component="source-service")
 
     def init(
         self,
@@ -416,6 +420,18 @@ class SourceService:
             manifest.enabled = persisted.enabled
             manifest.last_health = snapshot
             self._write_manifest(manifest)
+            status_value = (
+                snapshot.status.value
+                if hasattr(snapshot.status, "value")
+                else str(snapshot.status)
+            )
+            self._logger.warning(
+                "source-auto-disabled",
+                source=config.name,
+                status=status_value,
+                summary=snapshot.summary,
+                actions=snapshot.actions,
+            )
             raise SourceHealthCheckError(
                 f"Health check for source {config.name!r} failed with status {snapshot.status}."
             )
