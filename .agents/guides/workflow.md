@@ -124,6 +124,8 @@ Templates are stored in:
 - Before marking a task done, capture a manual smoke run in the task history
   (`uv run raggd init` with default workspace, `--workspace`, `--refresh`, and
   the `RAGGD_WORKSPACE` override). The manual note is part of the DoD.
+- When tests or repro scripts need to create artifacts, use subdirectories under
+  the repo-root `.tmp/` folder; it already lives in `.gitignore`.
 - Keep the 100% pytest coverage gate enabled and lint with `uv run ruff check`
   before handing work back to the human.
 - Workspace refreshes compress the previous state into
