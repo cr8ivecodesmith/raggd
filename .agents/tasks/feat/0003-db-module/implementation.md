@@ -67,7 +67,7 @@
   - [x] Update source module tests to cover delegation, manifest migration triggers, and failure rollback semantics.
   - [x] Wire manifest helpers/settings into the source module configuration layer.
 - **Phase 3 — Database module delivery**
-  - [ ] Scaffold `raggd.modules.db` package with Typer command group exposed in the root CLI and backed by `DbLifecycleService`.
+  - [x] Scaffold `raggd.modules.db` package with Typer command group exposed in the root CLI and backed by `DbLifecycleService`.
   - [ ] Implement lifecycle commands (`ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, `reset`) with manifest mirroring via the shared service and cohesive error handling.
   - [ ] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation while persisting both canonical UUID7 and shortened forms into `schema_meta`, the ledger, and manifest mirrors.
   - [ ] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
