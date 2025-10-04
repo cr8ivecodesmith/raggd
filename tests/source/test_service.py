@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +24,7 @@ from raggd.source import (
     SourceNotFoundError,
     SourceService,
 )
-from raggd.source.models import SourceHealthSnapshot
+from raggd.source.models import SourceHealthSnapshot, WorkspaceSourceConfig
 
 
 class StubHealthEvaluator:
@@ -51,6 +52,18 @@ class RecordingDbLifecycleService:
     def ensure(self, source: str) -> Path:
         self.calls.append(source)
         return self._delegate.ensure(source)
+
+
+class FailingDbLifecycleService:
+    """Raise an error after recording ``ensure`` invocations."""
+
+    def __init__(self, exc: Exception | None = None) -> None:
+        self.calls: list[str] = []
+        self._exc = exc or RuntimeError("db ensure failed")
+
+    def ensure(self, source: str) -> Path:
+        self.calls.append(source)
+        raise self._exc
 
 
 def _make_paths(root: Path) -> WorkspacePaths:
@@ -218,6 +231,137 @@ def test_refresh_invokes_db_lifecycle(tmp_path: Path) -> None:
     service.refresh("demo", force=True)
 
     assert recorder.calls == ["demo"]
+
+
+def test_set_target_invokes_db_lifecycle(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+    manifest = ManifestService(workspace=paths)
+    delegate = DbLifecycleService(workspace=paths, manifest_service=manifest)
+    recorder = RecordingDbLifecycleService(delegate=delegate)
+
+    service, _ = _make_service(
+        tmp_path,
+        health,
+        workspace_paths=paths,
+        manifest_service=manifest,
+        db_service=recorder,
+    )
+
+    target_dir = paths.workspace / "data" / "demo"
+    target_dir.mkdir(parents=True)
+
+    service.init("demo")
+    service.enable("demo")
+    recorder.calls.clear()
+
+    service.set_target("demo", target_dir)
+
+    assert recorder.calls == ["demo"]
+
+
+def test_refresh_migrates_legacy_manifest(
+    manifest_workspace: WorkspacePaths,
+    manifest_service: ManifestService,
+    seed_manifest,
+    legacy_manifest_payload,
+) -> None:
+    init_workspace(workspace=manifest_workspace.workspace)
+    seed_manifest("legacy", legacy_manifest_payload)
+    store = SourceConfigStore(config_path=manifest_workspace.config_file)
+    store.upsert(
+        WorkspaceSourceConfig(
+            name="legacy",
+            path=manifest_workspace.source_dir("legacy"),
+            enabled=True,
+            target=None,
+        )
+    )
+    health = StubHealthEvaluator()
+    delegate = DbLifecycleService(
+        workspace=manifest_workspace,
+        manifest_service=manifest_service,
+    )
+    recorder = RecordingDbLifecycleService(delegate=delegate)
+    fixed_now = datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
+    service = SourceService(
+        workspace=manifest_workspace,
+        config_store=store,
+        manifest_service=manifest_service,
+        db_service=recorder,
+        health_evaluator=health,
+        now=lambda: fixed_now,
+    )
+
+    state = service.refresh("legacy", force=True)
+
+    assert recorder.calls == ["legacy"]
+    assert state.manifest.last_refresh_at == fixed_now
+    snapshot = manifest_service.load("legacy", apply_migrations=True)
+    assert snapshot.data["modules_version"] == MODULES_VERSION
+    modules = snapshot.data[manifest_service.settings.modules_key]
+    assert isinstance(modules, dict)
+    source_module = snapshot.module("source")
+    assert source_module is not None
+    assert source_module["name"] == "legacy"
+    assert source_module["path"] == str(manifest_workspace.source_dir("legacy"))
+    assert source_module["last_health"]["status"] == "ok"
+    db_module = snapshot.module(manifest_service.settings.db_module_key)
+    assert db_module is not None
+    assert set(db_module) >= {
+        "bootstrap_shortuuid7",
+        "head_migration_uuid7",
+        "head_migration_shortuuid7",
+        "ledger_checksum",
+        "last_vacuum_at",
+        "last_ensure_at",
+        "pending_migrations",
+    }
+    for legacy_field in (
+        "name",
+        "path",
+        "enabled",
+        "target",
+        "last_refresh_at",
+        "last_health",
+    ):
+        assert legacy_field not in snapshot.data
+
+
+def test_refresh_rolls_back_on_db_failure(tmp_path: Path) -> None:
+    health = StubHealthEvaluator()
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+    manifest = ManifestService(workspace=paths)
+    delegate = DbLifecycleService(workspace=paths, manifest_service=manifest)
+    service, _ = _make_service(
+        tmp_path,
+        health,
+        workspace_paths=paths,
+        manifest_service=manifest,
+        db_service=delegate,
+    )
+    service.init("demo")
+    baseline_snapshot = manifest.load("demo", apply_migrations=True)
+    baseline_data = copy.deepcopy(baseline_snapshot.data)
+    failing = FailingDbLifecycleService()
+    failing_service, _ = _make_service(
+        tmp_path,
+        health,
+        workspace_paths=paths,
+        manifest_service=manifest,
+        db_service=failing,
+    )
+
+    with pytest.raises(RuntimeError, match="db ensure failed"):
+        failing_service.refresh("demo", force=True)
+
+    assert failing.calls == ["demo"]
+    updated_snapshot = manifest.load("demo", apply_migrations=True)
+    assert updated_snapshot.data == baseline_data
 
 
 def test_init_rejects_duplicate_name(tmp_path: Path) -> None:

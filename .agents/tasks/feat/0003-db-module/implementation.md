@@ -64,7 +64,7 @@
   - [x] Expose shared helpers for `modules.db` key calculation and manifest settings; document usage for consuming modules.
 - **Phase 2 — Source module integration**
   - [x] Refactor `src/raggd/source/*` to depend on `ManifestService` and `DbLifecycleService.ensure()` for database readiness, replacing direct SQLite + manifest file manipulation.
-  - [ ] Update source module tests to cover delegation, manifest migration triggers, and failure rollback semantics.
+  - [x] Update source module tests to cover delegation, manifest migration triggers, and failure rollback semantics.
   - [ ] Wire manifest helpers/settings into the source module configuration layer.
 - **Phase 3 — Database module delivery**
   - [ ] Scaffold `raggd.modules.db` package with Typer command group exposed in the root CLI and backed by `DbLifecycleService`.
@@ -155,4 +155,14 @@ Refactored the source service to delegate database readiness to `DbLifecycleServ
 - Extended source tests with a recording lifecycle stub and added db-module unit coverage for argument validation
 **Tests**
 - `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest`
+
+### 2025-10-05 01:45 PST
+**Summary**
+Expanded source module tests for delegation, manifest migration, and ensure rollback coverage
+**Changes**
+- Added SourceService tests verifying `DbLifecycleService.ensure()` usage during target updates and legacy manifest migrations
+- Introduced a failing lifecycle double to assert manifests stay unchanged when `ensure` raises
+- Leveraged shared manifest fixtures to exercise migration into the `modules.*` namespace from legacy payloads
+**Tests**
 - `UV_CACHE_DIR=.tmp/uv-cache uv run pytest`
