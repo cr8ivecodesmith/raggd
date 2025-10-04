@@ -1,7 +1,7 @@
 # Database Module CLI — Spec
 
 ## Summary
-Define a first-class `raggd db` command family that owns per-source SQLite lifecycle: creating `db.sqlite3` files, applying migrations (with the bootstrap schema captured as the first migration), exposing operator tooling, and reporting health. The module should encapsulate database concerns behind a clear service boundary so higher-level features (sources, parsers, future vector stores) depend on stable contracts instead of direct file manipulation.
+Define a first-class `raggd db` command family that owns per-source SQLite lifecycle: creating `db.sqlite3` files, applying migrations (with the bootstrap schema captured as the first migration), exposing operator tooling, and reporting health. The module should encapsulate database concerns behind a clear service boundary so higher-level features (sources, parsers, future vector stores) depend on stable contracts instead of direct file manipulation. Stand up a companion `raggd.modules.manifest` subsystem that centralizes manifest reads/writes, migrations, and health metadata so feature modules plug into a shared infrastructure service instead of bespoke JSON handling.
 
 ## Goals
 - Deliver a Typer-powered `raggd db <command>` group with `ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, and `reset` subcommands that mirror the ergonomics of existing CLI modules.
@@ -9,7 +9,9 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - Move all database lifecycle operations (bootstrap, migrations, maintenance) out of the `source` module into a dedicated database service that exposes inversion-friendly hooks (`DbLifecycleService`), keeping the source module dependent on abstractions.
 - Treat the first ordered migration (`resources/db/migrations/<shortuuid7>_bootstrap.up.sql`) as the bootstrap schema so new databases are created by running migrations end-to-end instead of applying a separate seed file; record the bootstrap migration identifier in metadata for traceability.
 - Keep an idempotent `ensure` entry point for operators while clarifying that the `source` module primarily needs an "ensure" signal via `DbLifecycleService.ensure()` to guarantee database readiness without owning SQLite logic directly.
-- Mirror database health metadata (bootstrap identifier, current migration, last vacuum, checksum) into each source's `manifest.json` through lifecycle hooks so downstream modules can observe state without opening the database file, while retaining the database ledger as the source of truth.
+- Reshape per-source manifests to host module-owned state beneath a shared `modules` map (e.g., `modules.source`, `modules.db`) so future modules can persist authoritative metadata without clobbering the source layout; provide a first-run migration path for existing manifests.
+- Promote manifest handling into a reusable infrastructure layer by introducing `raggd.modules.manifest`, giving modules a shared API for discovery, migrations, locking, and atomic writes while the `source` and `db` modules depend on its abstractions.
+- Mirror database health metadata (bootstrap identifier, current migration, last vacuum, checksum) into each source manifest's `modules.db` entry through lifecycle hooks so downstream modules can observe state without opening the database file, while retaining the database ledger as the source of truth.
 - Provide a lightweight migration runner that discovers files named `<shortuuid7>_<slug>.up.sql` / `<shortuuid7>_<slug>.down.sql`, executes them in order, and records applied migrations for `upgrade`/`downgrade` commands.
 - Integrate with `raggd checkhealth` to surface missing databases, schema drift, or stale maintenance signals (vacuum cadence) while allowing future modules to add checks without tight coupling.
 - Document operator expectations (when to run `ensure`, `upgrade`, `downgrade`, `reset`, `vacuum`, how to author SQL snippets) while keeping the migration runner lightweight to avoid unnecessary complexity in this greenfield scope.
@@ -21,20 +23,31 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - Introducing an ORM or SQL templating DSL beyond a lightweight loader for `.sql` files.
 
 ## Behavior (BDD-ish)
-- Given a workspace with configured sources, when the user runs `raggd db ensure [<name> ...]`, then the command ensures `<source>/db.sqlite3` exists by running migrations from the bootstrap file forward (no standalone seed), writes or refreshes `schema_meta` rows containing `bootstrap_shortuuid7`, `head_migration`, `ledger_checksum`, `created_at`, and `updated_at`, mirrors the latest migration metadata into the source `manifest.json`, and exits zero if every database is reconciled.
-- Given a source database, when the user runs `raggd db upgrade [<name> ...]`, then the CLI reads unapplied migration files (named `<shortuuid7>_<slug>.up.sql`), executes them in order while recording success in a migrations ledger, mirrors the new head migration into the source `manifest.json`, and stops with exit code `1` if any migration fails.
-- Given a source database, when the user runs `raggd db downgrade [<name> ...]`, then the CLI rolls back the most recent applied migration using the corresponding `.down.sql` file, supports multi-step downgrades via `--steps`, reconciles the manifest entry with the new head migration, and aborts with exit code `1` if the necessary down file is missing or fails.
-- Given a source database, when the user runs `raggd db info <name> [--json] [--schema]`, then the CLI reports the database path, `bootstrap_shortuuid7`, last applied migration, `last_vacuum_at`, ledger checksum, size on disk, and notes if the schema differs from the migration chain checksum or if pending migrations exist; `--schema` dumps the current schema (ordered by `sqlite_schema`) so operators can diff against migrations, and exit code `1` signals drift or staleness. The JSON view also surfaces the mirrored `manifest.json` snapshot for observability.
-- Given a source database, when the user runs `raggd db reset <name> [--force]`, then the CLI optionally confirms destructive action, removes the existing file, reruns migrations starting at the bootstrap migration to rebuild the database, refreshes metadata (ledger checksum, timestamps) while preserving the original `bootstrap_shortuuid7`, and updates both `schema_meta` and the mirrored manifest entry; without `--force`, prompt in interactive terminals.
+- Given a workspace with configured sources, when the user runs `raggd db ensure [<name> ...]`, then the command ensures `<source>/db.sqlite3` exists by running migrations from the bootstrap file forward (no standalone seed), writes or refreshes `schema_meta` rows containing `bootstrap_shortuuid7`, `head_migration`, `ledger_checksum`, `created_at`, and `updated_at`, mirrors the latest migration metadata into the source manifest's `modules.db` entry via `ManifestService`, and exits zero if every database is reconciled.
+- Given a source database, when the user runs `raggd db upgrade [<name> ...]`, then the CLI reads unapplied migration files (named `<shortuuid7>_<slug>.up.sql`), executes them in order while recording success in a migrations ledger, mirrors the new head migration into the source manifest's `modules.db` entry, and stops with exit code `1` if any migration fails.
+- Given a source database, when the user runs `raggd db downgrade [<name> ...]`, then the CLI rolls back the most recent applied migration using the corresponding `.down.sql` file, supports multi-step downgrades via `--steps`, reconciles the `modules.db` manifest entry with the new head migration, and aborts with exit code `1` if the necessary down file is missing or fails.
+- Given a source database, when the user runs `raggd db info <name> [--json] [--schema]`, then the CLI reports the database path, `bootstrap_shortuuid7`, last applied migration, `last_vacuum_at`, ledger checksum, size on disk, and notes if the schema differs from the migration chain checksum or if pending migrations exist; `--schema` dumps the current schema (ordered by `sqlite_schema`) so operators can diff against migrations, and exit code `1` signals drift or staleness. The JSON view also surfaces the mirrored `modules.db` snapshot from `manifest.json` for observability.
+- Given a source database, when the user runs `raggd db reset <name> [--force]`, then the CLI optionally confirms destructive action, removes the existing file, reruns migrations starting at the bootstrap migration to rebuild the database, refreshes metadata (ledger checksum, timestamps) while preserving the original `bootstrap_shortuuid7`, and updates both `schema_meta` and the mirrored `modules.db` manifest entry; without `--force`, prompt in interactive terminals.
 - Given the user runs `raggd db vacuum [<name> ...] [--workers N]`, then the module executes `VACUUM` (and optionally `ANALYZE`) in parallel workers, updates `schema_meta.last_vacuum_at`, aggregates any failures, and emits exit code `1` if any vacuum fails.
 - Given the user runs `raggd db run <file.sql> [-p key=value ...] [-q/--quiet] [<name> ...]`, then the CLI loads the SQL (resolving relative to workspace or explicit path), substitutes named parameters safely, echoes the realized SQL unless `--quiet`, executes against each selected source, prints row counts or tabular results, and aggregates any errors before setting exit codes.
-- Given the `source` module needs database lifecycle behavior (e.g., ensuring existence during `raggd source enable`), then it delegates to `DbLifecycleService.ensure()` to emit the necessary ensure signal, receives the reconciled `bootstrap_shortuuid7` and head migration metadata, and persists the mirrored details into `manifest.json` without touching SQLite APIs directly, enabling dependency inversion and easier testing.
-- Given the user runs `raggd checkhealth`, then the health aggregator invokes the database module hook to flag sources missing a database, with schema checksum drift, pending migrations, or with `last_vacuum_at` older than the configured threshold (default 7 days), cross-checking the on-disk database ledger against each source `manifest.json` to surface desync and returning actionable remediation hints.
+- Given the `source` module needs database lifecycle behavior (e.g., ensuring existence during `raggd source enable`), then it delegates to `DbLifecycleService.ensure()` to emit the necessary ensure signal, receives the reconciled `bootstrap_shortuuid7` and head migration metadata, and persists the mirrored details into `manifest.json.modules.db` through `ManifestService` without touching SQLite APIs directly—relying on the shared `config.db.manifest_*` settings to locate the `modules` namespace so keys stay consistent across modules and enabling dependency inversion plus easier testing.
+- Given the user runs `raggd checkhealth`, then the health aggregator invokes the database module hook to flag sources missing a database, with schema checksum drift, pending migrations, or with `last_vacuum_at` older than the configured threshold (default 7 days), cross-checking the on-disk database ledger against each source manifest's `modules.db` entry to surface desync and returning actionable remediation hints.
+- Given a workspace with a legacy `manifest.json` that lacks the `modules` namespace, when either the `source` or `db` module invokes `ManifestService.migrate()`, then the service creates the `modules` map, relocates existing source metadata under `modules.source`, seeds `modules.db`, rotates a timestamped backup, and stamps a `modules_version` so subsequent runs are idempotent while emitting structured logs for operators.
 
 ## Implementation Notes (Engineering Detail)
 ### Module layout
-- Create `src/raggd/modules/db/` mirroring other CLI modules: `cli.py` (Typer command group), `service.py` (lifecycle interfaces + adapters), `migrations.py` (runner + file parsing), `health.py` (checkhealth hook), and `manifest.py` (manifest mirror utilities). Keep the public module export in `__init__.py` minimal so other packages depend on abstractions, not concrete helpers.
+- Create `src/raggd/modules/manifest/` as an infrastructure package with `service.py` (ManifestService + interfaces), `migrator.py` (legacy to modules layout), and `backups.py` (timestamped backup helpers). Provide a slim `cli.py` only if operators need standalone manifest tooling—otherwise export service bindings via `__init__.py` for importers.
+- Create `src/raggd/modules/db/` mirroring other CLI modules: `cli.py` (Typer command group), `service.py` (lifecycle interfaces + adapters), `migrations.py` (runner + file parsing), `health.py` (checkhealth hook), and `manifest.py` (manifest mirror utilities powered by `ManifestService`). Keep the public module export in `__init__.py` minimal so other packages depend on abstractions, not concrete helpers.
 - Stage migration assets under `resources/db/migrations/` and expose them via `importlib.resources.files`. Ensure packaging includes this directory.
+
+-### Manifest service contract
+- Provide `ManifestService` as the single entry point for manifest consumers. Core capabilities:
+  - `load(source: SourceRef) -> ManifestSnapshot` returning typed accessors for `modules.*` entries and legacy fallbacks.
+  - `write(source: SourceRef, mutate: Callable[[ManifestSnapshot], None], *, backup: bool = True) -> ManifestSnapshot` performing locked, atomic writes with automatic `.bak` rotation and checksum verification.
+  - `migrate(source: SourceRef, *, dry_run: bool = False) -> ManifestMigrationResult` used by both `source` and `db` paths when restructuring legacy manifests; supports in-memory dry runs for tests.
+  - `with_transaction(source: SourceRef)` contextmanager that pairs writes with optional callbacks so `DbLifecycleService` can roll back DB operations when manifest persistence fails.
+- Manifest settings helpers (`manifest_root_key()`, `manifest_db_key()`, etc.) live alongside the service so all modules calculate keys consistently.
+- Maintain unit tests covering lock behavior, backup rotation limits, migration idempotency, and error propagation. Provide contract tests verifying the `source` module can read/write its payload via `ManifestService` without knowledge of the underlying JSON structure.
 
 ### Lifecycle service contract
 - Define `DbLifecycleService` as the single entry point consumed by `source` (and future modules). Suggested signature (with dataclasses for clarity):
@@ -61,20 +74,28 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - `ledger_checksum` is the hash of concatenated applied migrations (shortuuid7 + slug + checksum) and is used to detect manual tampering.
 
 ### Manifest synchronization
-- Extend each source `manifest.json` with a `"db"` object:
+- Reshape each source `manifest.json` to introduce a top-level `"modules"` object that namespaces ownership. Existing source fields migrate into `modules.source`, while this feature adds a dedicated `modules.db` payload:
   ```json
   {
-    "db": {
-      "bootstrap_shortuuid7": "01HX8F7N9D0K",
-      "head_migration": "01HX8F7N9D0K_bootstrap",
-      "ledger_checksum": "sha256:...",
-      "last_vacuum_at": "2025-10-04T18:30:00Z",
-      "last_ensure_at": "2025-10-04T18:30:00Z",
-      "pending_migrations": []
+    "modules": {
+      "source": {
+        "... existing source manifest fields ..."
+      },
+      "db": {
+        "bootstrap_shortuuid7": "01HX8F7N9D0K",
+        "head_migration": "01HX8F7N9D0K_bootstrap",
+        "ledger_checksum": "sha256:...",
+        "last_vacuum_at": "2025-10-04T18:30:00Z",
+        "last_ensure_at": "2025-10-04T18:30:00Z",
+        "pending_migrations": []
+      }
     }
   }
   ```
-- `DbLifecycleService` should accept a `ManifestWriter` dependency so writes happen transactionally with database updates. Treat manifest persistence as canonical: if a manifest write fails, roll back the database transaction, emit telemetry, and fail the command unless `config.db.manifest_strict` is overridden.
+  Additional modules (e.g., future vector stores) will follow the same convention (`modules.<module_name>`). Preserve any non-module metadata (timestamps, provenance) at the top level.
+- On first run, `raggd.modules.manifest.ManifestService` performs a manifest migration when it detects legacy manifests without `modules`: create the `modules` map, move known source fields under `modules.source`, seed `modules.db`, and record the migration version to avoid repeated transforms. Provide a dry-run mode for tests and log the transition for operators.
+- `DbLifecycleService` should depend on `ManifestService` so writes happen transactionally with database updates. Treat manifest persistence as canonical: if a manifest write fails, roll back the database transaction, emit telemetry, and fail the command unless `config.db.manifest_strict` is overridden.
+- The `source` module must route all manifest reads/writes (ensure, reset, health sync) through `ManifestService`, replacing any direct JSON manipulation with calls to shared helpers. Extend existing source tests to assert the delegation and surface a TODO list for modules that have yet to adopt the new service.
 
 ### CLI concurrency and multi-source handling
 - `ensure`, `upgrade`, and `downgrade` should default to serial execution per source to keep migration ordering deterministic. Allow `--workers` for advanced operators but gate behind feature flag until we can guarantee thread-safe SQLite access.
@@ -96,7 +117,8 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
   ```toml
   [db]
   migrations_path = "resources/db/migrations"
-  manifest_key = "db"
+  manifest_modules_key = "modules"
+  manifest_db_module_key = "db"
   vacuum_max_stale_days = 7
   vacuum_concurrency = "auto" # accepts "auto" or integer >= 1
   ensure_auto_upgrade = true
@@ -105,19 +127,25 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
   manifest_strict = true
   drift_warning_seconds = 0
   ```
-- Surface these values through the existing settings loader so CLI and services share one source of truth—no separate `settings.db` artifact required.
+- Surface these values through the existing settings loader so CLI and services share one source of truth—no separate `settings.db` artifact required—and make the `source` module read/write manifest fields via the same `manifest_*` settings to avoid drift between modules.
+- Expose manifest-oriented knobs (e.g., backup retention count, file lock timeout) via either the existing `[db]` block or a future `[manifest]` section, but implement them inside `ManifestService` so feature modules never parse raw config keys themselves.
+
+### Packaging & module registration
+- Update `pyproject.toml` so the runtime dependency on the `uuid7` helper (`uuid7>=0.1`) is declared. Provide a `db` optional dependency/extra that lists `uuid7>=0.1` and ensure the `[dependency-groups].modules` bundle includes the new group so module toggles can request the extra when necessary.
+- Ship migration SQL files with the wheel by extending `tool.setuptools.package-data` (or equivalent) to cover `raggd/modules/db/resources/migrations/**` so upgrades/downgrades work out of the box.
+- Add a `ModuleDescriptor` entry for the database module in the module registry with `name="db"`, a human-readable description, default toggle enabled, extras referencing the new `db` group, and the database health hook registered so `ModuleRegistry.evaluate()` exposes it alongside existing modules.
 
 ### Testing scaffolding
-- Provide pytest fixtures that spin up ephemeral workspaces under `.tmp/db-module-tests/<test-name>` and install sample migrations (bootstrap + one incremental) so integration tests remain deterministic.
+- Provide pytest fixtures that spin up ephemeral workspaces under `.tmp/db-module-tests/<test-name>` and install sample migrations (bootstrap + one incremental) so integration tests remain deterministic, alongside a `manifest_service` fixture that can emit both legacy and `modules.*` layouts for reuse across `source` and `db` test suites.
 - Write contract tests against `DbLifecycleService` using an in-memory SQLite file via `sqlite3.connect(f"file:{path}?mode=rwc", uri=True)` to simulate disk behavior without polluting the repo.
 - For CLI tests, reuse the `CliRunner` harness, intercept manifest writes via a temporary file, and assert on telemetry events. Include downgrade edge cases (missing `.down` file) and vacuum concurrency scenarios with a fake executor.
 
 ## Constraints & Dependencies
 - Constraints: rely on bundled SQLite; commands operate offline; multi-process vacuum must default to a conservative worker count (`min(4, cpu_count())`); CLI output follows existing Typer formatting (rich tables + structured logs).
 - Migrations live in `resources/db/migrations/` and are ordered lexicographically by their `<shortuuid7>_<slug>` prefix; the runner must guard against duplicate slugs and checksum drift between `.up`/`.down` pairs.
-- Architecture: the database module exposes interfaces (`DbLifecycleService`, `SqlRunner`, `DbHealthProvider`) registered with the module registry. The `source` module depends on these abstractions to maintain DIP and allow swapping implementations for tests.
+- Architecture: the database module exposes interfaces (`DbLifecycleService`, `SqlRunner`, `DbHealthProvider`) registered with the module registry. The `source` module depends on these abstractions to maintain DIP, adopts the shared `manifest_*` settings when reading/writing `modules.source`, and allows swapping implementations for tests. The new `raggd.modules.manifest` package owns manifest IO plumbing (`ManifestService`, migrator, backups) so both modules interact through its seam instead of reimplementing JSON semantics.
 - Bootstrap migration lives in `resources/db/migrations/<shortuuid7>_bootstrap.up.sql`; checksum or hash used for drift detection should be reproducible across platforms and shared between the migrations ledger and manifest mirror.
-- `manifest.json` remains the authoritative per-source manifest; the database module contributes a `db` section (`bootstrap_shortuuid7`, head migration slug, last vacuum timestamp, ledger checksum) via lifecycle hooks while guarding against other modules editing those fields directly.
+- `manifest.json` remains the authoritative per-source manifest; the database module contributes a `modules.db` payload (`bootstrap_shortuuid7`, head migration UUID7, last vacuum timestamp, ledger checksum, pending migrations) via lifecycle hooks while guarding against other modules editing those fields directly.
 - Maintain a migrations ledger table (`schema_migrations`) that stores applied `<shortuuid7>_<slug>`, applied direction, checksum, and applied timestamp for auditability.
 
 ## Security & Privacy
@@ -127,7 +155,7 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 
 ## Telemetry & Operability
 - Emit structured events (`db-ensure`, `db-upgrade`, `db-downgrade`, `db-reset`, `db-vacuum`, `db-run`) with source name, duration, worker id where relevant, and outcome status.
-- Record `created_at`, `last_vacuum_at`, optional `last_sql_run_at`, `bootstrap_shortuuid7`, and last applied migration in `schema_meta` (or equivalent view) for health introspection; expose the same data via `raggd db info --json` and mirror the values into `manifest.json` for consumers that rely on manifest introspection.
+- Record `created_at`, `last_vacuum_at`, optional `last_sql_run_at`, `bootstrap_shortuuid7`, and last applied migration in `schema_meta` (or equivalent view) for health introspection; expose the same data via `raggd db info --json` and mirror the values into `manifest.json.modules.db` for consumers that rely on manifest introspection.
 - Provide exit codes (`0` success, `1` degraded/partial failure, `2` fatal error) and document them for automation.
 
 ## Decisions & Follow-ups
@@ -136,14 +164,15 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - Treat the bootstrap migration as the floor for downgrades: `.down` files are optional for bootstrap, `downgrade` stops at that point, and destructive resets flow through `db reset`.
 - Allow `db run` to execute SQL from outside the workspace when the operator points to an absolute path; gate with `config.db.run_allow_outside` (default `true`) and retain `--autocommit` for long-running scripts with a configurable default.
 - Manifest writes are canonical: on failure, roll back database changes and fail the operation by default (`config.db.manifest_strict = true`).
+- Manifests now namespace module state beneath `modules.<module>`; record the migration version (`manifest.modules_version`) after restructuring so repeated runs are idempotent and add tests for legacy manifests transforming in-place.
 - Vacuum concurrency honors `config.db.vacuum_concurrency`, accepting `'auto'` (maps to `min(cpu_count(), 4)`) or explicit integers ≥ 1.
 - `DbLifecycleService.ensure()` auto-applies pending migrations when `config.db.ensure_auto_upgrade` is `true` (default); operators can opt out by setting it to `false` and invoking `upgrade` manually.
 - Surface health thresholds (vacuum staleness, manifest drift) via `raggd.defaults.toml` so operators can override per environment; default behavior fails immediately on manifest drift (`drift_warning_seconds = 0`).
 
 ## Rollout / Revert
-- Ship behind a `modules.db` feature toggle in `raggd.defaults.toml`, defaulting to enabled in development once validated.
-- Rollout consists of introducing the new module and updating the `source` module to depend on the database service. No migration of legacy files is required.
-- To revert, disable the feature toggle and restore the previous `source` module behavior that inlines database creation (via Git revert); no data migration steps are necessary.
+- Ship behind a `modules.db` feature toggle in `raggd.defaults.toml`, defaulting to enabled in development once validated and gating the manifest restructuring logic behind the same switch.
+- Rollout consists of introducing the new module, migrating existing manifests into the `modules` layout during the first `ensure` (take a timestamped `.bak` backup before rewriting), and updating the `source` module to depend on the database service abstractions.
+- To revert, disable the feature toggle, restore backups of manifests (or run a provided rollback helper that flattens `modules` back to the legacy layout), and re-enable the previous `source` module behavior that inlines database creation (via Git revert).
 
 ## Definition of Done
 - [ ] `raggd db` command group implements `ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, and `reset` behaviors with consistent logging and parameter handling.
@@ -151,9 +180,11 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - [ ] Bootstrap migration (first migration file), checksum drift detection, and migration application (including short UUID7 slug validation + shortened-ordering tests) are covered by unit tests and documented for contributors.
 - [ ] `raggd db info --schema` and manifest strictness behaviors are verified by CLI/contract tests, including failure paths when manifest writes fail under the default configuration.
 - [ ] Health integration surfaces missing databases, schema drift, manifest/database desync, and stale vacuum timestamps with CLI/health tests verifying exit codes and messaging.
-- [ ] `manifest.json` maintains an up-to-date `db` section (`bootstrap_shortuuid7`, head migration, ledger checksum, last vacuum timestamp) written via lifecycle hooks, with regression tests ensuring the `source` module consumes the ensure signal without bypassing the service.
+- [ ] `manifest.json.modules.db` persists authoritative database metadata (`bootstrap_shortuuid7`, head migration UUID7, ledger checksum, last vacuum timestamp, pending migrations) via lifecycle hooks, with regression tests ensuring the `source` module consumes the ensure signal without bypassing the service, uses the shared `manifest_*` settings when reading/writing manifests, and that legacy manifests are migrated into the `modules` layout.
+- [ ] `raggd.modules.manifest` provides a documented, tested service abstraction for discovery, migrations, locking, backups, and atomic writes. Both the `source` and `db` modules call only into this service for manifest interactions, with contract tests demonstrating delegation and failure handling.
 - [ ] Developer docs updated to cover new commands, bootstrap migration expectations, and maintenance workflows; manual smoke notes captured per workflow.
 - [ ] Test coverage includes unit tests for lifecycle services, functional tests for CLI subcommands (with `.tmp` workspaces), migration upgrade/downgrade flows, and concurrency coverage for vacuum operations.
+- [ ] Packaging and activation paths updated: `pyproject.toml` declares the `uuid7` dependency and `db` optional extra, migrations are included in package data, and the module registry exposes a `db` descriptor wired to the health aggregator.
 
 ## Ownership
 - Owner: @matt
@@ -203,3 +234,28 @@ Define a first-class `raggd db` command family that owns per-source SQLite lifec
 - Committed to the third-party `uuid7` library with shortened-ordering tests and clarified downgrade floor at the bootstrap migration
 - Allowed `db run` to execute outside-workspace SQL (configurable), added `info --schema`, and made manifest writes fail-safe by default
 - Expanded configuration defaults and DoD items to reflect new settings for concurrency, auto-upgrade, manifest drift, and CLI schema reporting
+
+### 2025-10-04 18:53 PST
+**Summary** — Manifest restructuring for multi-module state
+**Changes**
+- Updated goals, behaviors, and manifest synchronization guidance to introduce a shared `modules` namespace with `modules.db` metadata and legacy-manifest migration
+- Adjusted configuration defaults, decisions, rollout plan, and DoD to cover manifest backups, migration versioning, and cross-module extensibility
+
+### 2025-10-04 22:30 PST
+**Summary** — Clarified source adoption of manifest settings
+**Changes**
+- Documented that the `source` module reads/writes manifests via the shared `config.db.manifest_*` settings when delegating to the database service
+- Updated configuration, constraints, behavior, and DoD text so cross-module manifest handling stays aligned
+
+### 2025-10-04 23:05 PST
+**Summary** — Captured packaging and module registry expectations
+-**Changes**
+- Added guidance for `pyproject.toml` (`uuid7` dependency, `db` optional extra, module bundle) and shipping migration SQL with the distribution
+- Documented module registry requirements and updated the DoD to verify packaging + activation paths
+
+### 2025-10-04 23:42 PST
+**Summary** — Elevated manifest handling into shared infrastructure
+**Changes**
+- Introduced `raggd.modules.manifest` as the canonical manifest subsystem with service contract, migrator, and testing guidance
+- Updated goals, behaviors, architecture, configuration, and DoD to ensure both `source` and `db` modules depend on the shared manifest service
+- Added module layout, fixture guidance, and documentation expectations covering manifest delegation and backup semantics
