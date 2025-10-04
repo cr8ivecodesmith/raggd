@@ -116,7 +116,7 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
 
 _EXTRA_SENTINELS: Mapping[str, tuple[str, ...]] = {
     "source": (),
-    "db": ("uuid7",),
+    "db": (),
     "file-monitoring": ("watchdog",),
     "local-embeddings": ("onnxruntime", "sentence_transformers"),
     "mcp": ("mcp",),

@@ -61,4 +61,3 @@ def db_settings_from_mapping(
         run_autocommit_default=run_autocommit_default,
         drift_warning_seconds=drift_warning_seconds,
     )
-

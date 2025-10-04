@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 source = []
+db = []
 file-monitoring = [
     "watchdog>=4",
 ]
@@ -67,6 +68,7 @@ docs = [
 
 modules = [
     { include-group = "source" },
+    { include-group = "db" },
     { include-group = "file-monitoring" },
     { include-group = "local-embeddings" },
     { include-group = "mcp" },
@@ -78,6 +80,8 @@ modules = [
 file-monitoring = [
     "watchdog>=4",
 ]
+
+db = []
 
 local-embeddings = [
     "onnxruntime>=1.17",

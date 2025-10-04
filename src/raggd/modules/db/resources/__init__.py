@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.resources as _resources
 from pathlib import Path
-from typing import Union
 
 __all__ = ["resource_path"]
 
@@ -14,4 +13,3 @@ def resource_path(relative: str) -> Path:
 
     package = __name__
     return Path(_resources.files(package).joinpath(relative))
-

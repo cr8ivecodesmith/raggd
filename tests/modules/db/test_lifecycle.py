@@ -123,7 +123,12 @@ class RecordingBackend:
         include_schema: bool,
         now: datetime,
     ) -> DbInfoOutcome:
-        self._record("info", source=source, include_schema=include_schema, now=now)
+        self._record(
+            "info",
+            source=source,
+            include_schema=include_schema,
+            now=now,
+        )
         metadata = self.info_metadata if self.info_metadata else {}
         return DbInfoOutcome(
             status=self.info_status,
@@ -230,7 +235,9 @@ def test_upgrade_applies_backend_state(tmp_path: Path) -> None:
     )
     modules = manifest.ensure_module(manifest_service.settings.db_module_key)
     assert modules["head_migration_shortuuid7"] == "0002-next"
-    assert modules["head_migration_uuid7"] == "00000000-0000-7000-8000-000000000002"
+    assert modules["head_migration_uuid7"] == (
+        "00000000-0000-7000-8000-000000000002"
+    )
 
 
 def test_vacuum_tracks_timestamp(tmp_path: Path) -> None:

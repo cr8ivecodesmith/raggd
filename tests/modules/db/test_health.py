@@ -8,7 +8,12 @@ from pathlib import Path
 import sqlite3
 
 
-from raggd.core.config import AppConfig, DbSettings, ModuleToggle, WorkspaceSettings
+from raggd.core.config import (
+    AppConfig,
+    DbSettings,
+    ModuleToggle,
+    WorkspaceSettings,
+)
 from raggd.core.paths import WorkspacePaths
 from raggd.modules import HealthStatus
 from raggd.modules.db import DbLifecycleService, db_health_hook

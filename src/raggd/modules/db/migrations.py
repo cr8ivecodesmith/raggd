@@ -60,7 +60,9 @@ class MigrationRunner:
             raise MigrationLoadError("No migrations discovered")
 
         ordered = tuple(sorted(migrations, key=lambda item: item.short_value))
-        canonical_order = ensure_short_uuid7_order(item.uuid for item in ordered)
+        canonical_order = ensure_short_uuid7_order(
+            item.uuid for item in ordered
+        )
         if not canonical_order:
             raise MigrationLoadError(
                 "shortuuid7 ordering does not match canonical UUID7 ordering"
@@ -79,7 +81,8 @@ class MigrationRunner:
         for migration in ordered[1:]:
             if migration.down_sql is None:
                 raise MigrationLoadError(
-                    f"Missing .down script for migration {migration.short_value}"
+                    "Missing .down script for migration "
+                    f"{migration.short_value}"
                 )
 
     @classmethod
@@ -102,7 +105,11 @@ class MigrationRunner:
         )
         return MigrationPlan(migrations)
 
-    def downgrade_plan(self, applied: Sequence[str], steps: int) -> MigrationPlan:
+    def downgrade_plan(
+        self,
+        applied: Sequence[str],
+        steps: int,
+    ) -> MigrationPlan:
         if steps < 1:
             raise ValueError("steps must be >= 1")
 
@@ -158,7 +165,8 @@ def _load_migrations_from_path(path: Path) -> Iterator[Migration]:
         if canonical_short.value != short_obj.value:
             raise MigrationLoadError(
                 (
-                    f"Short UUID mismatch for {up_path}: filename {short_obj.value} "
+                    "Short UUID mismatch for "
+                    f"{up_path}: filename {short_obj.value} "
                     f"does not match canonical {canonical_short.value}"
                 )
             )
@@ -166,7 +174,11 @@ def _load_migrations_from_path(path: Path) -> Iterator[Migration]:
         down_sql_raw: str | None = None
         if short in down_scripts:
             down_sql_raw = down_scripts[short].read_text(encoding="utf-8")
-            _extract_uuid7(down_sql_raw, down_scripts[short], expected=uuid_value)
+            _extract_uuid7(
+                down_sql_raw,
+                down_scripts[short],
+                expected=uuid_value,
+            )
 
         up_sql = _normalize_sql(up_sql_raw)
         down_sql = _normalize_sql(down_sql_raw) if down_sql_raw else None

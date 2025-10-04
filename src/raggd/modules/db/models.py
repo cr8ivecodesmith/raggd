@@ -63,7 +63,10 @@ class DbManifestState:
     pending_migrations: tuple[str, ...] = ()
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any] | None) -> "DbManifestState":
+    def from_mapping(
+        cls,
+        payload: Mapping[str, Any] | None,
+    ) -> "DbManifestState":
         if payload is None:
             return cls()
         return cls(
@@ -115,4 +118,3 @@ class DbManifestState:
         """Return a copy with ``pending_migrations`` set to ``values``."""
 
         return self.replace(pending_migrations=values)
-

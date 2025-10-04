@@ -15,7 +15,12 @@ from raggd.core.logging import Logger, get_logger
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.manifest import ManifestSettings
 
-from .migrations import Migration, MigrationLoadError, MigrationPlan, MigrationRunner
+from .migrations import (
+    Migration,
+    MigrationLoadError,
+    MigrationPlan,
+    MigrationRunner,
+)
 from .models import DbManifestState
 from .settings import DbModuleSettings
 
@@ -420,7 +425,8 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
     ) -> _DbState:
         stamp = timestamp or self._now()
         rows = conn.execute(
-            "SELECT shortuuid7, uuid7, direction, checksum, applied_at FROM schema_migrations"
+            "SELECT shortuuid7, uuid7, direction, checksum, applied_at "
+            "FROM schema_migrations"
         ).fetchall()
         direction_map = {row["shortuuid7"]: row for row in rows}
 
@@ -452,7 +458,13 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
                 conn.executescript(migration.up_sql)
                 conn.execute(
                     """
-                    INSERT INTO schema_migrations (uuid7, shortuuid7, direction, checksum, applied_at)
+                    INSERT INTO schema_migrations (
+                        uuid7,
+                        shortuuid7,
+                        direction,
+                        checksum,
+                        applied_at
+                    )
                     VALUES (?, ?, 'up', ?, ?)
                     ON CONFLICT(uuid7) DO UPDATE SET
                         direction='up',
@@ -483,13 +495,20 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
             for migration in plan.migrations:
                 if not migration.down_sql:
                     raise MigrationLoadError(
-                        f"Missing .down script for migration {migration.short_value}"
+                        "Missing .down script for migration "
+                        f"{migration.short_value}"
                     )
                 conn.executescript(migration.down_sql)
                 checksum = migration.checksum_down or migration.checksum_up
                 conn.execute(
                     """
-                    INSERT INTO schema_migrations (uuid7, shortuuid7, direction, checksum, applied_at)
+                    INSERT INTO schema_migrations (
+                        uuid7,
+                        shortuuid7,
+                        direction,
+                        checksum,
+                        applied_at
+                    )
                     VALUES (?, ?, 'down', ?, ?)
                     ON CONFLICT(uuid7) DO UPDATE SET
                         direction='down',
@@ -514,9 +533,7 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
         *,
         timestamp: datetime,
     ) -> _SchemaMeta:
-        row = conn.execute(
-            "SELECT * FROM schema_meta WHERE id = 1"
-        ).fetchone()
+        row = conn.execute("SELECT * FROM schema_meta WHERE id = 1").fetchone()
         bootstrap = self._runner.bootstrap()
         head = applied[-1] if applied else bootstrap
         checksum = _ledger_checksum(applied)
@@ -549,12 +566,11 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
             )
             last_vacuum_at = None
             last_sql_run_at = None
-            created_at = updated_at = now
+            created_at = now
         else:
             created_at = _from_iso(row["created_at"]) or now
             last_vacuum_at = _from_iso(row["last_vacuum_at"])
             last_sql_run_at = _from_iso(row["last_sql_run_at"])
-            updated_at = _from_iso(row["updated_at"]) or now
 
             conn.execute(
                 """

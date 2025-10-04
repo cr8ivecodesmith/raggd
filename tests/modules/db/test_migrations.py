@@ -32,7 +32,9 @@ def _write_migration(
 
 
 def test_migration_runner_loads_migrations(tmp_path: Path) -> None:
-    bootstrap_uuid = generate_uuid7(when=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    bootstrap_uuid = generate_uuid7(
+        when=datetime(2024, 1, 1, tzinfo=timezone.utc)
+    )
     next_uuid = generate_uuid7(when=datetime(2024, 1, 2, tzinfo=timezone.utc))
 
     first_short = _write_migration(

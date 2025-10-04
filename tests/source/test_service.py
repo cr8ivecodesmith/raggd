@@ -96,20 +96,31 @@ def _make_paths(root: Path) -> WorkspacePaths:
     )
 
 
-def _write_migration(directory: Path, identifier, *, up: str, down: str | None = None) -> None:
+def _write_migration(
+    directory: Path,
+    identifier,
+    *,
+    up: str,
+    down: str | None = None,
+) -> None:
     short = short_uuid7(identifier).value
     up_path = directory / f"{short}.up.sql"
     up_path.write_text(f"-- uuid7: {identifier}\n{up}\n", encoding="utf-8")
     if down is not None:
         down_path = directory / f"{short}.down.sql"
-        down_path.write_text(f"-- uuid7: {identifier}\n{down}\n", encoding="utf-8")
+        down_path.write_text(
+            f"-- uuid7: {identifier}\n{down}\n",
+            encoding="utf-8",
+        )
 
 
 def _prepare_db_settings(tmp_path: Path) -> DbModuleSettings:
     migrations_dir = (tmp_path / "migrations").resolve()
     migrations_dir.mkdir(exist_ok=True)
 
-    bootstrap_uuid = generate_uuid7(when=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    bootstrap_uuid = generate_uuid7(
+        when=datetime(2024, 1, 1, tzinfo=timezone.utc)
+    )
     next_uuid = generate_uuid7(when=datetime(2024, 1, 2, tzinfo=timezone.utc))
 
     _write_migration(

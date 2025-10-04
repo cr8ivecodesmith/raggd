@@ -17,13 +17,22 @@ from raggd.source.config import SourceConfigStore
 from raggd.source.models import WorkspaceSourceConfig
 
 
-def _write_migration(directory: Path, identifier, *, up: str, down: str | None = None) -> str:
+def _write_migration(
+    directory: Path,
+    identifier,
+    *,
+    up: str,
+    down: str | None = None,
+) -> str:
     short = short_uuid7(identifier).value
     up_path = directory / f"{short}.up.sql"
     up_path.write_text(f"-- uuid7: {identifier}\n{up}\n", encoding="utf-8")
     if down is not None:
         down_path = directory / f"{short}.down.sql"
-        down_path.write_text(f"-- uuid7: {identifier}\n{down}\n", encoding="utf-8")
+        down_path.write_text(
+            f"-- uuid7: {identifier}\n{down}\n",
+            encoding="utf-8",
+        )
     return short
 
 
@@ -48,7 +57,9 @@ def test_db_cli_ensure_creates_database(tmp_path: Path) -> None:
     migrations_dir = tmp_path / "migrations"
     migrations_dir.mkdir()
 
-    bootstrap_uuid = generate_uuid7(when=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    bootstrap_uuid = generate_uuid7(
+        when=datetime(2024, 1, 1, tzinfo=timezone.utc)
+    )
     next_uuid = generate_uuid7(when=datetime(2024, 1, 2, tzinfo=timezone.utc))
 
     _write_migration(

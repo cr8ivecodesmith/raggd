@@ -23,7 +23,9 @@ class DbSettings(BaseModel):
     )
     manifest_db_module_key: str = Field(
         default="db",
-        description="Key used for the database module payload within manifests.",
+        description=(
+            "Key used for the database module payload within manifests."
+        ),
     )
     manifest_backup_retention: int = Field(
         default=5,
@@ -75,7 +77,9 @@ class DbSettings(BaseModel):
     )
     run_allow_outside: bool = Field(
         default=True,
-        description="Whether db run allows executing scripts outside workspace.",
+        description=(
+            "Whether db run allows executing scripts outside the workspace."
+        ),
     )
     run_autocommit_default: bool = Field(
         default=False,

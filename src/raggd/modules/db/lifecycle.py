@@ -83,7 +83,8 @@ class DbLifecycleService:
     ) -> None:
         if manifest_service is not None and manifest_settings is not None:
             raise ValueError(
-                "Provide either manifest_service or manifest_settings, not both."
+                "Provide either manifest_service or manifest_settings, "
+                "not both."
             )
 
         self._paths = workspace
@@ -120,7 +121,10 @@ class DbLifecycleService:
 
         ensured_at = self._now()
 
-        def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
+        def _apply(
+            _: ManifestSnapshot,
+            state: DbManifestState,
+        ) -> DbManifestState:
             outcome = cast(
                 DbEnsureOutcome,
                 self._call_backend(
@@ -156,7 +160,10 @@ class DbLifecycleService:
 
         upgraded_at = self._now()
 
-        def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
+        def _apply(
+            _: ManifestSnapshot,
+            state: DbManifestState,
+        ) -> DbManifestState:
             outcome = cast(
                 DbUpgradeOutcome,
                 self._call_backend(
@@ -184,7 +191,10 @@ class DbLifecycleService:
 
         downgraded_at = self._now()
 
-        def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
+        def _apply(
+            _: ManifestSnapshot,
+            state: DbManifestState,
+        ) -> DbManifestState:
             outcome = cast(
                 DbDowngradeOutcome,
                 self._call_backend(
@@ -205,7 +215,12 @@ class DbLifecycleService:
             mutator=_apply,
         )
 
-    def info(self, source: str, *, include_schema: bool = False) -> dict[str, object]:
+    def info(
+        self,
+        source: str,
+        *,
+        include_schema: bool = False,
+    ) -> dict[str, object]:
         """Return manifest/database info for ``source``."""
 
         db_path, _ = self._prepare_db_path(source)
@@ -214,7 +229,10 @@ class DbLifecycleService:
 
         inspected_at = self._now()
 
-        def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
+        def _apply(
+            _: ManifestSnapshot,
+            state: DbManifestState,
+        ) -> DbManifestState:
             nonlocal schema, metadata
             outcome = cast(
                 DbInfoOutcome,
@@ -261,7 +279,10 @@ class DbLifecycleService:
 
         vacuumed_at = self._now()
 
-        def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
+        def _apply(
+            _: ManifestSnapshot,
+            state: DbManifestState,
+        ) -> DbManifestState:
             outcome = cast(
                 DbVacuumOutcome,
                 self._call_backend(
@@ -300,7 +321,10 @@ class DbLifecycleService:
 
         executed_at = self._now()
 
-        def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
+        def _apply(
+            _: ManifestSnapshot,
+            state: DbManifestState,
+        ) -> DbManifestState:
             outcome = cast(
                 DbRunOutcome,
                 self._call_backend(
@@ -329,7 +353,10 @@ class DbLifecycleService:
 
         reset_at = self._now()
 
-        def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
+        def _apply(
+            _: ManifestSnapshot,
+            state: DbManifestState,
+        ) -> DbManifestState:
             outcome = cast(
                 DbResetOutcome,
                 self._call_backend(
@@ -350,7 +377,12 @@ class DbLifecycleService:
             mutator=_apply,
         )
 
-    def _prepare_db_path(self, source: str, *, touch: bool = False) -> tuple[Path, bool]:
+    def _prepare_db_path(
+        self,
+        source: str,
+        *,
+        touch: bool = False,
+    ) -> tuple[Path, bool]:
         path = self._paths.source_database_path(source)
         path.parent.mkdir(parents=True, exist_ok=True)
         created = False

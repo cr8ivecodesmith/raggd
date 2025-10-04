@@ -78,7 +78,9 @@ def _compute_ledger_checksum(
         if migration is None:
             raise _DbInspectionError(
                 f"Unknown migration recorded in ledger: {short}",
-                actions=("Verify packaged migrations match workspace database.",),
+                actions=(
+                    "Verify packaged migrations match workspace database.",
+                ),
             )
         parts.append(f"{migration.short_value}:{migration.checksum_up or ''}")
     payload = "|".join(parts)
@@ -105,7 +107,9 @@ def _inspect_database(
     if not db_path.exists():
         raise _DbInspectionError(
             f"Database missing at {db_path}",
-            actions=("Run `raggd db ensure <source>` to bootstrap the database.",),
+            actions=(
+                "Run `raggd db ensure <source>` to bootstrap the database.",
+            ),
         )
 
     uri = f"file:{db_path}?mode=ro"
@@ -118,7 +122,9 @@ def _inspect_database(
     except sqlite3.OperationalError as exc:  # pragma: no cover - defensive
         raise _DbInspectionError(
             f"Failed to open database {db_path}: {exc}",
-            actions=("Inspect permissions or recreate the database via ensure.",),
+            actions=(
+                "Inspect permissions or recreate the database via ensure.",
+            ),
         ) from exc
 
     connection.row_factory = sqlite3.Row
@@ -139,13 +145,17 @@ def _inspect_database(
         except sqlite3.OperationalError as exc:
             raise _DbInspectionError(
                 "Database schema metadata missing",
-                actions=("Run `raggd db ensure <source>` to initialize schema.",),
+                actions=(
+                    "Run `raggd db ensure <source>` to initialize schema.",
+                ),
             ) from exc
 
         if meta is None:
             raise _DbInspectionError(
                 "Database schema metadata not initialized",
-                actions=("Run `raggd db ensure <source>` to initialize schema.",),
+                actions=(
+                    "Run `raggd db ensure <source>` to initialize schema.",
+                ),
             )
 
         rows = connection.execute(
@@ -214,71 +224,95 @@ def _within_drift_window(
     return delta.total_seconds() <= threshold_seconds
 
 
-def _evaluate_source(
+def _elevate_status(
+    current: HealthStatus,
+    candidate: HealthStatus | None,
+) -> HealthStatus:
+    if candidate is None:
+        return current
+    if _SEVERITY_ORDER[candidate] > _SEVERITY_ORDER[current]:
+        return candidate
+    return current
+
+
+def _load_manifest_state(
     *,
     name: str,
-    handle: WorkspaceHandle,
     manifest_service: ManifestService,
-    runner: MigrationRunner,
-    db_settings: DbModuleSettings,
-    now: datetime,
-) -> HealthReport:
-    manifest_actions = (
-        f"Run `raggd db ensure {name}` to regenerate the manifest entry.",
-    )
-
+    manifest_actions: tuple[str, ...],
+) -> tuple[DbManifestState | None, HealthReport | None]:
     try:
         snapshot = manifest_service.load(name)
     except ManifestError as exc:
-        return HealthReport(
+        report = HealthReport(
             name=name,
             status=HealthStatus.ERROR,
             summary=f"Failed to read manifest: {exc}",
             actions=manifest_actions,
             last_refresh_at=None,
         )
+        return None, report
 
     module_payload = snapshot.module(manifest_service.settings.db_module_key)
     if not isinstance(module_payload, dict):
-        return HealthReport(
+        report = HealthReport(
             name=name,
             status=HealthStatus.ERROR,
             summary="Database manifest entry missing.",
             actions=manifest_actions,
             last_refresh_at=None,
         )
+        return None, report
 
-    manifest_state = DbManifestState.from_mapping(module_payload)
+    state = DbManifestState.from_mapping(module_payload)
+    return state, None
 
+
+def _observe_state(
+    *,
+    name: str,
+    handle: WorkspaceHandle,
+    manifest_state: DbManifestState,
+    runner: MigrationRunner,
+    manifest_actions: tuple[str, ...],
+) -> tuple[_ObservedState | None, HealthReport | None]:
     try:
         observed = _inspect_database(
             handle.paths.source_database_path(name),
             runner=runner,
         )
     except _DbInspectionError as exc:
-        # Inject the concrete source into action hints when placeholders exist.
-        actions = tuple(
+        replacements = (
             action.replace("<source>", name) for action in exc.actions
-        ) or manifest_actions
-        return HealthReport(
+        )
+        actions = tuple(replacements)
+        if not actions:
+            actions = manifest_actions
+        report = HealthReport(
             name=name,
             status=HealthStatus.ERROR,
             summary=str(exc),
             actions=actions,
             last_refresh_at=manifest_state.last_ensure_at,
         )
+        return None, report
+    return observed, None
 
-    status = HealthStatus.OK
-    issues: list[str] = []
-    actions: set[str] = set()
 
-    def elevate(candidate: HealthStatus) -> None:
-        nonlocal status
-        if _SEVERITY_ORDER[candidate] > _SEVERITY_ORDER[status]:
-            status = candidate
+def _assess_pending_migrations(
+    *,
+    name: str,
+    manifest_state: DbManifestState,
+    observed: _ObservedState,
+    db_settings: DbModuleSettings,
+    now: datetime,
+    issues: list[str],
+    actions: set[str],
+) -> HealthStatus | None:
+    severity: HealthStatus | None = None
 
     if observed.pending_migrations:
-        elevate(HealthStatus.DEGRADED)
+        severity = HealthStatus.DEGRADED
         issues.append(
             "pending migrations: " + ", ".join(observed.pending_migrations)
         )
@@ -291,12 +325,25 @@ def _evaluate_source(
             now=now,
             threshold_seconds=int(db_settings.drift_warning_seconds),
         ):
-            elevate(HealthStatus.DEGRADED)
+            severity = HealthStatus.DEGRADED
             issues.append("manifest pending migrations out of sync")
             actions.add(
                 f"Run `raggd db ensure {name}` to resync manifest metadata."
             )
 
+    return severity
+
+
+def _assess_manifest_sync(
+    *,
+    name: str,
+    manifest_state: DbManifestState,
+    observed: _ObservedState,
+    db_settings: DbModuleSettings,
+    now: datetime,
+    issues: list[str],
+    actions: set[str],
+) -> HealthStatus | None:
     drift_components: list[str] = []
     if manifest_state.head_migration_shortuuid7 != (
         observed.head_migration_shortuuid7
@@ -313,32 +360,119 @@ def _evaluate_source(
     ):
         drift_components.append("ledger checksum")
 
-    if drift_components:
-        if not _within_drift_window(
-            manifest_state,
-            now=now,
-            threshold_seconds=int(db_settings.drift_warning_seconds),
-        ):
-            elevate(HealthStatus.DEGRADED)
-            joined = ", ".join(drift_components)
-            issues.append(f"manifest drift detected ({joined})")
-            actions.add(
-                f"Run `raggd db ensure {name}` to refresh manifest metadata."
-            )
+    if not drift_components:
+        return None
 
-    if db_settings.vacuum_max_stale_days >= 0:
-        stale_limit = timedelta(days=db_settings.vacuum_max_stale_days)
-        if observed.last_vacuum_at is None:
-            elevate(HealthStatus.DEGRADED)
-            issues.append("vacuum has never been executed")
-            actions.add(f"Run `raggd db vacuum {name}` to perform maintenance.")
-        elif now - observed.last_vacuum_at > stale_limit:
-            elevate(HealthStatus.DEGRADED)
-            stale_days = (now - observed.last_vacuum_at).days
-            issues.append(
-                f"vacuum stale ({stale_days} days since last maintenance)"
-            )
-            actions.add(f"Run `raggd db vacuum {name}` to perform maintenance.")
+    if _within_drift_window(
+        manifest_state,
+        now=now,
+        threshold_seconds=int(db_settings.drift_warning_seconds),
+    ):
+        return None
+
+    joined = ", ".join(drift_components)
+    issues.append(f"manifest drift detected ({joined})")
+    actions.add(f"Run `raggd db ensure {name}` to refresh manifest metadata.")
+    return HealthStatus.DEGRADED
+
+
+def _assess_vacuum_status(
+    *,
+    name: str,
+    observed: _ObservedState,
+    db_settings: DbModuleSettings,
+    now: datetime,
+    issues: list[str],
+    actions: set[str],
+) -> HealthStatus | None:
+    if db_settings.vacuum_max_stale_days < 0:
+        return None
+
+    stale_limit = timedelta(days=db_settings.vacuum_max_stale_days)
+    if observed.last_vacuum_at is None:
+        issues.append("vacuum has never been executed")
+        actions.add(f"Run `raggd db vacuum {name}` to perform maintenance.")
+        return HealthStatus.DEGRADED
+
+    if now - observed.last_vacuum_at <= stale_limit:
+        return None
+
+    stale_days = (now - observed.last_vacuum_at).days
+    issues.append(f"vacuum stale ({stale_days} days since last maintenance)")
+    actions.add(f"Run `raggd db vacuum {name}` to perform maintenance.")
+    return HealthStatus.DEGRADED
+
+
+def _evaluate_source(
+    *,
+    name: str,
+    handle: WorkspaceHandle,
+    manifest_service: ManifestService,
+    runner: MigrationRunner,
+    db_settings: DbModuleSettings,
+    now: datetime,
+) -> HealthReport:
+    manifest_actions = (
+        f"Run `raggd db ensure {name}` to regenerate the manifest entry.",
+    )
+
+    manifest_state, manifest_error = _load_manifest_state(
+        name=name,
+        manifest_service=manifest_service,
+        manifest_actions=manifest_actions,
+    )
+    if manifest_error is not None:
+        return manifest_error
+
+    observed, observed_error = _observe_state(
+        name=name,
+        handle=handle,
+        manifest_state=manifest_state,
+        runner=runner,
+        manifest_actions=manifest_actions,
+    )
+    if observed_error is not None:
+        return observed_error
+
+    issues: list[str] = []
+    actions: set[str] = set()
+    status = HealthStatus.OK
+
+    status = _elevate_status(
+        status,
+        _assess_pending_migrations(
+            name=name,
+            manifest_state=manifest_state,
+            observed=observed,
+            db_settings=db_settings,
+            now=now,
+            issues=issues,
+            actions=actions,
+        ),
+    )
+    status = _elevate_status(
+        status,
+        _assess_manifest_sync(
+            name=name,
+            manifest_state=manifest_state,
+            observed=observed,
+            db_settings=db_settings,
+            now=now,
+            issues=issues,
+            actions=actions,
+        ),
+    )
+    status = _elevate_status(
+        status,
+        _assess_vacuum_status(
+            name=name,
+            observed=observed,
+            db_settings=db_settings,
+            now=now,
+            issues=issues,
+            actions=actions,
+        ),
+    )
 
     summary = ", ".join(issues) if issues else "database healthy"
 
@@ -362,7 +496,8 @@ def db_health_hook(handle: WorkspaceHandle) -> Sequence[HealthReport]:
                 status=HealthStatus.UNKNOWN,
                 summary="Database module disabled via configuration.",
                 actions=(
-                    "Set `modules.db.enabled = true` in raggd.toml to enable checks.",
+                    "Set `modules.db.enabled = true` in raggd.toml "
+                    "to enable checks.",
                 ),
                 last_refresh_at=None,
             ),
@@ -381,7 +516,8 @@ def db_health_hook(handle: WorkspaceHandle) -> Sequence[HealthReport]:
                 status=HealthStatus.ERROR,
                 summary=f"Failed to load migrations: {exc}",
                 actions=(
-                    "Verify packaged SQL migrations are present and reinstall raggd.",
+                    "Verify packaged SQL migrations are present and "
+                    "reinstall raggd.",
                 ),
                 last_refresh_at=None,
             ),
@@ -407,4 +543,3 @@ def db_health_hook(handle: WorkspaceHandle) -> Sequence[HealthReport]:
         reports.append(report)
 
     return tuple(reports)
-

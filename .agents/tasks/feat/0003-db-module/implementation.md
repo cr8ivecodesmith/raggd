@@ -72,7 +72,7 @@
   - [x] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation while persisting both canonical UUID7 and shortened forms into `schema_meta`, the ledger, and manifest mirrors.
   - [x] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
   - [x] Register the database module and health provider in `modules/registry.py`; integrate with `raggd checkhealth` and settings defaults (`config.db.*`).
-  - [ ] Update `pyproject.toml` (`uuid7` dependency, `db` extra, package data), `raggd.defaults.toml`, CLI docs, and capture manual smoke verifications.
+  - [x] Update `pyproject.toml` (`uuid7` dependency, `db` extra, package data), `raggd.defaults.toml`, CLI docs, and capture manual smoke verifications.
   - [ ] Finalize test matrix across unit, contract, CLI, and packaging validations per the test plan.
 
 ## Test Plan
@@ -222,3 +222,19 @@ Confirmed registry/health integration and documented schema tables
 **Changes**
 - Verified module registry wiring, health hook coverage, and defaults to close Phase 3 line item 74
 - Annotated migration DDL with schema-reference comments for future maintainers
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/db/test_backend.py`
+
+### 2025-10-05 01:53 PST
+**Summary**
+Closed packaging/docs line item and confirmed uuid7 dependency is internal
+**Changes**
+- Added an empty `db` optional dependency group and registered it with the modules bundle while removing the `uuid7` sentinel check
+- Documented the `raggd db` CLI in `docs/api/db.md`, noting that UUID7 identifiers are generated in-house
+- Captured manual CLI smoke notes for workspace init, db ensure (no sources), and checkhealth
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check` *(fails: existing E501 long-line violations across db module files)*
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest` *(fails: coverage gate at 100% unmet due to untested db module paths)*
+- `UV_CACHE_DIR=.tmp/uv-cache uv run raggd init --workspace .tmp/manual-db`
+- `RAGGD_WORKSPACE=.tmp/manual-db UV_CACHE_DIR=.tmp/uv-cache uv run raggd db ensure`
+- `RAGGD_WORKSPACE=.tmp/manual-db UV_CACHE_DIR=.tmp/uv-cache uv run raggd checkhealth`

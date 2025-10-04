@@ -100,13 +100,18 @@ def configure_db_commands(
         None,
         "--workspace",
         "-w",
-        help="Override workspace directory (defaults to RAGGD_WORKSPACE or ~/.raggd).",
+        help=(
+            "Override workspace directory (defaults to "
+            "RAGGD_WORKSPACE or ~/.raggd)."
+        ),
     ),
     log_level: str | None = typer.Option(
         None,
         "--log-level",
         "-l",
-        help="Override log level for db commands (defaults to config log_level).",
+        help=(
+            "Override log level for db commands (defaults to config log_level)."
+        ),
     ),
 ) -> None:
     try:
@@ -323,7 +328,11 @@ def info_databases(
         except DbLifecycleError as exc:
             _handle_failure(context, action="info", error=exc, source=name)
         else:
-            typer.secho(f"Database info for {name}", fg=typer.colors.CYAN, bold=True)
+            typer.secho(
+                f"Database info for {name}",
+                fg=typer.colors.CYAN,
+                bold=True,
+            )
             for key, value in sorted(info.items()):
                 typer.echo(f"  {key}: {value}")
             context.logger.info(
@@ -399,7 +408,10 @@ def run_sql(
     autocommit: bool = typer.Option(
         False,
         "--autocommit/--transaction",
-        help="Execute without wrapping in a transaction (defaults to transaction).",
+        help=(
+            "Execute without wrapping in a transaction "
+            "(defaults to transaction)."
+        ),
     ),
 ) -> None:
     context = _require_context(ctx)
