@@ -18,6 +18,8 @@ from raggd.modules.manifest import (
     ManifestSettings,
     ManifestTransactionError,
     ManifestWriteError,
+    manifest_db_namespace,
+    manifest_settings_from_config,
     manifest_settings_from_mapping,
 )
 from raggd.modules.manifest.backups import (
@@ -40,6 +42,12 @@ def _build_workspace(tmp_path: Path) -> WorkspacePaths:
         archives_dir=root / "archives",
         sources_dir=root / "sources",
     )
+
+
+def test_snapshot_module_missing_returns_none(tmp_path: Path) -> None:
+    service = ManifestService(workspace=_build_workspace(tmp_path))
+    snapshot = service.load("missing")
+    assert snapshot.module("db") is None
 
 
 def test_load_returns_empty_snapshot_when_manifest_missing(
@@ -167,6 +175,22 @@ def test_manifest_settings_overrides_take_precedence() -> None:
 def test_manifest_settings_module_key_helper() -> None:
     settings = ManifestSettings(modules_key="mods")
     assert settings.module_key("db") == ("mods", "db")
+
+
+def test_manifest_db_namespace_defaults() -> None:
+    modules_key, db_key = manifest_db_namespace()
+    assert modules_key == "modules"
+    assert db_key == "db"
+
+
+def test_manifest_settings_from_config_overrides() -> None:
+    config = {"db": {"manifest_modules_key": "mods"}}
+    settings = manifest_settings_from_config(
+        config,
+        overrides={"manifest_db_module_key": "database"},
+    )
+    assert settings.modules_key == "mods"
+    assert settings.db_module_key == "database"
 
 
 def test_prune_backups_handles_retention_zero(tmp_path: Path) -> None:
@@ -488,12 +512,43 @@ def test_manifest_migrator_idempotent(tmp_path: Path) -> None:
     assert second.applied is False
 
 
+def test_manifest_migrator_completes_db_defaults(tmp_path: Path) -> None:
+    workspace = _build_workspace(tmp_path)
+    service = ManifestService(workspace=workspace)
+    ref = service.resolve("delta")
+    payload = {
+        "modules": {
+            "db": {
+                "bootstrap_shortuuid7": "abc",
+            }
+        },
+    }
+    migrator = ManifestMigrator(settings=ManifestSettings())
+    result = migrator.migrate(source=ref, data=payload, dry_run=False)
+    assert result.applied is True
+    db_module = result.data["modules"]["db"]
+    for key in (
+        "bootstrap_shortuuid7",
+        "head_migration_uuid7",
+        "head_migration_shortuuid7",
+        "ledger_checksum",
+        "last_vacuum_at",
+        "last_ensure_at",
+        "pending_migrations",
+    ):
+        assert key in db_module
+
+
 def test_manifest_migrator_golden(tmp_path: Path) -> None:
     workspace = _build_workspace(tmp_path)
     service = ManifestService(workspace=workspace)
     ref = service.resolve("alpha")
     legacy_path = Path(__file__).parent / "data" / "legacy_manifest.json"
-    expected_path = Path(__file__).parent / "data" / "legacy_manifest.migrated.json"
+    expected_path = (
+        Path(__file__).parent
+        / "data"
+        / "legacy_manifest.migrated.json"
+    )
 
     legacy_payload = json.loads(legacy_path.read_text(encoding="utf-8"))
     expected_payload = json.loads(
@@ -505,3 +560,16 @@ def test_manifest_migrator_golden(tmp_path: Path) -> None:
 
     assert result.applied is True
     assert result.data == expected_payload
+
+
+def test_manifest_fixtures_seed_and_migrate(
+    manifest_service: ManifestService,
+    seed_manifest,
+    legacy_manifest_payload,
+) -> None:
+    ref = seed_manifest("fixture", legacy_manifest_payload)
+    snapshot = manifest_service.load(ref, apply_migrations=True)
+    source_module = snapshot.module("source")
+    assert source_module is not None
+    assert source_module["name"] == "legacy"
+    assert snapshot.data["modules_version"] == 1

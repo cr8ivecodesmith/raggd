@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import os
 import shutil
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +11,13 @@ from typing import Callable, Iterable, Protocol, Sequence
 from raggd.core.logging import Logger, get_logger
 
 from raggd.core.paths import WorkspacePaths
+from raggd.modules.manifest import (
+    ManifestService,
+    ManifestSettings,
+    ManifestSnapshot,
+    manifest_db_namespace,
+)
+from raggd.modules.manifest.migrator import MODULES_VERSION, SOURCE_MODULE_KEY
 from raggd.source.config import SourceConfigStore
 from raggd.source.errors import (
     SourceDisabledError,
@@ -30,6 +34,16 @@ from raggd.source.models import (
     WorkspaceSourceConfig,
 )
 from raggd.source.utils import normalize_source_slug, resolve_target_path
+
+
+_LEGACY_SOURCE_FIELDS = (
+    "name",
+    "path",
+    "enabled",
+    "target",
+    "last_refresh_at",
+    "last_health",
+)
 
 
 class SourceHealthEvaluator(Protocol):
@@ -59,12 +73,33 @@ class SourceService:
         *,
         workspace: WorkspacePaths,
         config_store: SourceConfigStore,
+        manifest_service: ManifestService | None = None,
+        manifest_settings: ManifestSettings | None = None,
         health_evaluator: SourceHealthEvaluator | None = None,
         now: Callable[[], datetime] | None = None,
         logger: Logger | None = None,
     ) -> None:
         self._paths = workspace
         self._config_store = config_store
+        if manifest_service is not None and manifest_settings is not None:
+            raise ValueError(
+                "Provide either manifest_service or manifest_settings, "
+                "not both."
+            )
+        self._manifest = (
+            manifest_service
+            if manifest_service is not None
+            else ManifestService(
+                workspace=workspace,
+                settings=manifest_settings,
+            )
+        )
+        modules_key, db_module_key = manifest_db_namespace(
+            self._manifest.settings
+        )
+        self._modules_key = modules_key
+        self._db_module_key = db_module_key
+        self._source_module_key = SOURCE_MODULE_KEY
         self._now = now or self._default_now
         self._health_evaluator = (
             health_evaluator or self._build_default_health_evaluator()
@@ -179,6 +214,13 @@ class SourceService:
         """Rename a source and its managed artifacts."""
 
         config = self._get_source_config(current_name)
+        original_dir = self._paths.source_dir(config.name)
+        if not original_dir.exists():
+            raise SourceDirectoryConflictError(
+                "Source directory is missing for "
+                f"{config.name!r}: {original_dir}"
+            )
+
         manifest = self._load_manifest(config)
 
         snapshot = self._guard_operation(config, manifest, force=force)
@@ -193,13 +235,6 @@ class SourceService:
         if normalized_new in app_config.workspace_sources:
             raise SourceExistsError(
                 f"Source {normalized_new!r} already exists."
-            )
-
-        original_dir = self._paths.source_dir(config.name)
-        if not original_dir.exists():
-            raise SourceDirectoryConflictError(
-                "Source directory is missing for "
-                f"{config.name!r}: {original_dir}"
             )
 
         new_dir = self._paths.source_dir(normalized_new)
@@ -284,18 +319,18 @@ class SourceService:
         skip_guard: bool,
     ) -> SourceState:
         config = self._get_source_config(name)
+        source_dir = self._paths.source_dir(name)
+        if not source_dir.exists():
+            raise SourceDirectoryConflictError(
+                f"Source directory is missing for {name!r}: {source_dir}"
+            )
+
         manifest = self._load_manifest(config)
 
         if skip_guard:
             snapshot = self._health_evaluator(config=config, manifest=manifest)
         else:
             snapshot = self._guard_operation(config, manifest, force=force)
-
-        source_dir = self._paths.source_dir(name)
-        if not source_dir.exists():
-            raise SourceDirectoryConflictError(
-                f"Source directory is missing for {name!r}: {source_dir}"
-            )
 
         db_path = self._paths.source_database_path(name)
         if db_path.exists():
@@ -361,61 +396,51 @@ class SourceService:
         return app_config.workspace_sources[config.name]
 
     def _load_manifest(self, config: WorkspaceSourceConfig) -> SourceManifest:
-        path = self._paths.source_manifest_path(config.name)
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            manifest = SourceManifest.model_validate(data)
-        else:
-            manifest = SourceManifest(
-                name=config.name,
-                path=config.path,
-                enabled=config.enabled,
-                target=config.target,
-            )
-        return manifest.model_copy(
-            update={
-                "name": config.name,
-                "path": config.path,
-                "enabled": config.enabled,
-                "target": config.target,
-            }
+        snapshot = self._manifest.load(
+            config.name,
+            apply_migrations=True,
         )
+        return self._snapshot_to_manifest(snapshot, config)
 
     def _write_manifest(self, manifest: SourceManifest) -> None:
-        path = self._paths.source_manifest_path(manifest.name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(
-            manifest.model_dump(mode="json"),
-            indent=2,
-            sort_keys=True,
-        )
+        def _mutate(snapshot: ManifestSnapshot) -> None:
+            snapshot.ensure_module(self._db_module_key)
+            module = snapshot.ensure_module(self._source_module_key)
+            dump = manifest.model_dump(mode="json")
+            module.update(
+                {
+                    "name": dump["name"],
+                    "path": dump["path"],
+                    "enabled": dump["enabled"],
+                    "target": dump.get("target"),
+                    "last_refresh_at": dump.get("last_refresh_at"),
+                    "last_health": dump.get("last_health"),
+                }
+            )
+            snapshot.data["modules_version"] = MODULES_VERSION
+            for field in _LEGACY_SOURCE_FIELDS:
+                snapshot.data.pop(field, None)
 
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=path.parent,
-                delete=False,
-            ) as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-                temp_path = Path(handle.name)
-        except OSError as exc:  # pragma: no cover
-            raise SourceDirectoryConflictError(
-                f"Failed writing manifest for {manifest.name!r}: {exc}"
-            ) from exc  # pragma: no cover - surfaced during runtime failures
+        self._manifest.write(manifest.name, mutate=_mutate)
 
-        try:
-            os.replace(temp_path, path)
-        except OSError as exc:  # pragma: no cover
-            try:
-                temp_path.unlink()
-            except OSError:  # pragma: no cover - cleanup best effort
-                pass
-            raise SourceDirectoryConflictError(
-                f"Failed finalizing manifest for {manifest.name!r}: {exc}"
-            ) from exc  # pragma: no cover - surfaced during runtime failures
+    def _snapshot_to_manifest(
+        self,
+        snapshot: ManifestSnapshot,
+        config: WorkspaceSourceConfig,
+    ) -> SourceManifest:
+        module = snapshot.module(self._source_module_key) or {}
+        payload = {
+            "name": module.get("name", config.name),
+            "path": config.path,
+            "enabled": config.enabled,
+            "target": module.get("target", config.target),
+            "last_refresh_at": module.get("last_refresh_at"),
+            "last_health": module.get(
+                "last_health",
+                SourceHealthSnapshot(),
+            ),
+        }
+        return SourceManifest.model_validate(payload)
 
     def _guard_operation(
         self,

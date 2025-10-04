@@ -81,49 +81,35 @@ class ManifestMigrator:
         modules_key = self._settings.modules_key
         db_module_key = self._settings.db_module_key
 
-        updated = copy.deepcopy(dict(data))
-        modules_value = updated.get(modules_key)
+        updated: dict[str, Any] = copy.deepcopy(dict(data))
 
         changes: list[str] = []
 
-        if not isinstance(modules_value, dict):
-            modules_value = {}
-            updated[modules_key] = modules_value
-            changes.append("initialized modules namespace")
+        modules_value, namespace_changes = self._ensure_modules_namespace(
+            updated,
+            modules_key,
+        )
+        changes.extend(namespace_changes)
 
-        source_module = modules_value.get(SOURCE_MODULE_KEY)
-        if not isinstance(source_module, dict):
-            source_module = {}
-            modules_value[SOURCE_MODULE_KEY] = source_module
-            changes.append("created modules.source payload")
+        source_module, source_changes = self._ensure_source_module(
+            modules_value
+        )
+        changes.extend(source_changes)
 
-        moved_fields = False
-        for field in _LEGACY_SOURCE_FIELDS:
-            if field in updated:
-                source_module[field] = copy.deepcopy(updated.pop(field))
-                moved_fields = True
-        if moved_fields:
-            changes.append("relocated legacy source fields")
+        relocated = self._relocate_legacy_fields(updated, source_module)
+        if relocated is not None:
+            changes.append(relocated)
 
-        db_module = modules_value.get(db_module_key)
-        if not isinstance(db_module, dict):
-            modules_value[db_module_key] = copy.deepcopy(
-                _DEFAULT_DB_MODULE_PAYLOAD
-            )
-            changes.append("seeded modules.db defaults")
-        else:
-            seeded = False
-            for key, default_value in _DEFAULT_DB_MODULE_PAYLOAD.items():
-                if key not in db_module:
-                    db_module[key] = copy.deepcopy(default_value)
-                    seeded = True
-            if seeded:
-                changes.append("completed modules.db defaults")
+        db_change = self._ensure_db_module_defaults(
+            modules_value,
+            db_module_key,
+        )
+        if db_change is not None:
+            changes.append(db_change)
 
-        current_version = updated.get("modules_version")
-        if current_version != MODULES_VERSION:
-            updated["modules_version"] = MODULES_VERSION
-            changes.append("stamped modules_version")
+        version_change = self._ensure_modules_version(updated)
+        if version_change is not None:
+            changes.append(version_change)
 
         if not changes:
             return ManifestMigrationResult(applied=False, data=data)
@@ -142,3 +128,72 @@ class ManifestMigrator:
             data=updated,
             reason=reason,
         )
+
+    def _ensure_modules_namespace(
+        self,
+        updated: dict[str, Any],
+        modules_key: str,
+    ) -> tuple[dict[str, Any], list[str]]:
+        modules_value = updated.get(modules_key)
+        if isinstance(modules_value, dict):
+            return modules_value, []
+
+        modules_dict: dict[str, Any] = {}
+        updated[modules_key] = modules_dict
+        return modules_dict, ["initialized modules namespace"]
+
+    def _ensure_source_module(
+        self,
+        modules_value: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[str]]:
+        source_module = modules_value.get(SOURCE_MODULE_KEY)
+        if isinstance(source_module, dict):
+            return source_module, []
+
+        source_payload: dict[str, Any] = {}
+        modules_value[SOURCE_MODULE_KEY] = source_payload
+        return source_payload, ["created modules.source payload"]
+
+    def _relocate_legacy_fields(
+        self,
+        updated: dict[str, Any],
+        source_module: dict[str, Any],
+    ) -> str | None:
+        moved_fields = False
+        for field in _LEGACY_SOURCE_FIELDS:
+            if field in updated:
+                source_module[field] = copy.deepcopy(updated.pop(field))
+                moved_fields = True
+
+        if moved_fields:
+            return "relocated legacy source fields"
+        return None
+
+    def _ensure_db_module_defaults(
+        self,
+        modules_value: dict[str, Any],
+        db_module_key: str,
+    ) -> str | None:
+        db_module = modules_value.get(db_module_key)
+        if not isinstance(db_module, dict):
+            modules_value[db_module_key] = copy.deepcopy(
+                _DEFAULT_DB_MODULE_PAYLOAD
+            )
+            return "seeded modules.db defaults"
+
+        seeded = False
+        for key, default_value in _DEFAULT_DB_MODULE_PAYLOAD.items():
+            if key not in db_module:
+                db_module[key] = copy.deepcopy(default_value)
+                seeded = True
+
+        if seeded:
+            return "completed modules.db defaults"
+        return None
+
+    def _ensure_modules_version(self, updated: dict[str, Any]) -> str | None:
+        if updated.get("modules_version") == MODULES_VERSION:
+            return None
+
+        updated["modules_version"] = MODULES_VERSION
+        return "stamped modules_version"

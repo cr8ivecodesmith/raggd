@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +10,8 @@ from structlog.testing import capture_logs
 
 from raggd.cli.init import init_workspace
 from raggd.core.paths import WorkspacePaths
+from raggd.modules.manifest import ManifestService, ManifestSettings
+from raggd.modules.manifest.migrator import MODULES_VERSION
 from raggd.source import (
     SourceConfigStore,
     SourceDisabledError,
@@ -53,21 +54,57 @@ def _make_service(
     tmp_path: Path,
     health: StubHealthEvaluator,
     *,
+    workspace_paths: WorkspacePaths | None = None,
+    manifest_service: ManifestService | None = None,
     logger=None,
 ) -> tuple[SourceService, WorkspacePaths]:
-    workspace = tmp_path / "workspace"
-    init_workspace(workspace=workspace)
-    paths = _make_paths(workspace)
+    if workspace_paths is None:
+        workspace = tmp_path / "workspace"
+        init_workspace(workspace=workspace)
+        paths = _make_paths(workspace)
+    else:
+        init_workspace(workspace=workspace_paths.workspace)
+        paths = workspace_paths
     store = SourceConfigStore(config_path=paths.config_file)
     fixed_now = datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
     service = SourceService(
         workspace=paths,
         config_store=store,
+        manifest_service=manifest_service,
         health_evaluator=health,
         now=lambda: fixed_now,
         logger=logger,
     )
     return service, paths
+
+
+def _load_source_module(
+    paths: WorkspacePaths,
+    name: str,
+) -> dict[str, object]:
+    manifest_service = ManifestService(workspace=paths)
+    snapshot = manifest_service.load(name, apply_migrations=True)
+    modules = snapshot.module("source")
+    assert modules is not None
+    return modules
+
+
+def test_source_service_rejects_conflicting_manifest_args(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+    store = SourceConfigStore(config_path=paths.config_file)
+    manifest_service = ManifestService(workspace=paths)
+
+    with pytest.raises(ValueError):
+        SourceService(
+            workspace=paths,
+            config_store=store,
+            manifest_service=manifest_service,
+            manifest_settings=ManifestSettings(),
+        )
 
 
 def test_init_creates_source_without_target(tmp_path: Path) -> None:
@@ -80,10 +117,16 @@ def test_init_creates_source_without_target(tmp_path: Path) -> None:
     assert state.config.enabled is False
     manifest_path = paths.source_manifest_path("demo")
     assert manifest_path.exists()
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["enabled"] is False
-    assert manifest["target"] is None
-    assert manifest["last_refresh_at"] is None
+    snapshot = ManifestService(workspace=paths).load(
+        "demo",
+        apply_migrations=True,
+    )
+    source_module = snapshot.module("source")
+    assert source_module is not None
+    assert source_module["enabled"] is False
+    assert source_module["target"] is None
+    assert source_module["last_refresh_at"] is None
+    assert snapshot.data["modules_version"] == MODULES_VERSION
 
 
 def test_init_with_target_enables_and_refreshes(tmp_path: Path) -> None:
@@ -105,10 +148,14 @@ def test_init_with_target_enables_and_refreshes(tmp_path: Path) -> None:
         0,
         tzinfo=timezone.utc,
     )
-    manifest_path = paths.source_manifest_path("demo")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["enabled"] is True
-    assert manifest["target"] == str(target_dir)
+    snapshot = ManifestService(workspace=paths).load(
+        "demo",
+        apply_migrations=True,
+    )
+    source_module = snapshot.module("source")
+    assert source_module is not None
+    assert source_module["enabled"] is True
+    assert source_module["target"] == str(target_dir)
 
 
 def test_init_rejects_duplicate_name(tmp_path: Path) -> None:
@@ -186,11 +233,14 @@ def test_refresh_disables_source_on_failed_health(tmp_path: Path) -> None:
 
     config = service.list()[0].config
     assert config.enabled is False
-    manifest_path = paths.source_manifest_path("demo")
-    manifest_text = manifest_path.read_text(encoding="utf-8")
-    manifest = json.loads(manifest_text)
-    assert manifest["enabled"] is False
-    assert manifest["last_health"]["status"] == "degraded"
+    snapshot = ManifestService(workspace=paths).load(
+        "demo",
+        apply_migrations=True,
+    )
+    source_module = snapshot.module("source")
+    assert source_module is not None
+    assert source_module["enabled"] is False
+    assert source_module["last_health"]["status"] == "degraded"
 
     # Forced refresh proceeds even when disabled/unhealthy.
     state = service.refresh("demo", force=True)
@@ -223,12 +273,14 @@ def test_set_target_blocks_when_health_fails_without_force(
 
     [state] = service.list()
     assert state.config.enabled is False
-
-    manifest_path = paths.source_manifest_path("demo")
-    manifest_text = manifest_path.read_text(encoding="utf-8")
-    manifest_data = json.loads(manifest_text)
-    assert manifest_data["enabled"] is False
-    assert manifest_data["last_health"]["status"] == "error"
+    snapshot = ManifestService(workspace=paths).load(
+        "demo",
+        apply_migrations=True,
+    )
+    source_module = snapshot.module("source")
+    assert source_module is not None
+    assert source_module["enabled"] is False
+    assert source_module["last_health"]["status"] == "error"
 
 
 def test_refresh_logs_auto_disable_event(tmp_path: Path) -> None:
@@ -386,11 +438,14 @@ def test_rename_blocks_when_health_fails_without_force(tmp_path: Path) -> None:
 
     [state] = service.list()
     assert state.config.enabled is False
-    manifest_path = paths.source_manifest_path("demo")
-    manifest_text = manifest_path.read_text(encoding="utf-8")
-    manifest_data = json.loads(manifest_text)
-    assert manifest_data["enabled"] is False
-    assert manifest_data["last_health"]["status"] == "error"
+    snapshot = ManifestService(workspace=paths).load(
+        "demo",
+        apply_migrations=True,
+    )
+    source_module = snapshot.module("source")
+    assert source_module is not None
+    assert source_module["enabled"] is False
+    assert source_module["last_health"]["status"] == "error"
 
 
 def test_remove_requires_force_when_health_fails(tmp_path: Path) -> None:
@@ -405,11 +460,14 @@ def test_remove_requires_force_when_health_fails(tmp_path: Path) -> None:
     with pytest.raises(SourceHealthCheckError):
         service.remove("demo")
 
-    manifest_path = paths.source_manifest_path("demo")
-    manifest_text = manifest_path.read_text(encoding="utf-8")
-    manifest_data = json.loads(manifest_text)
-    assert manifest_data["enabled"] is False
-    assert manifest_data["last_health"]["status"] == "error"
+    snapshot = ManifestService(workspace=paths).load(
+        "demo",
+        apply_migrations=True,
+    )
+    source_module = snapshot.module("source")
+    assert source_module is not None
+    assert source_module["enabled"] is False
+    assert source_module["last_health"]["status"] == "error"
     assert (paths.sources_dir / "demo").exists()
 
 
@@ -431,14 +489,23 @@ def test_enable_and_disable_update_state(tmp_path: Path) -> None:
 
     enabled_states = service.enable("alpha", "bravo")
     assert [state.config.enabled for state in enabled_states] == [True, True]
-    manifest_path = paths.source_manifest_path("alpha")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["last_health"]["status"] == "ok"
+    manifest_snapshot = ManifestService(workspace=paths).load(
+        "alpha",
+        apply_migrations=True,
+    )
+    source_module = manifest_snapshot.module("source")
+    assert source_module is not None
+    assert source_module["last_health"]["status"] == "ok"
 
     disabled_states = service.disable("alpha")
     assert disabled_states[0].config.enabled is False
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["enabled"] is False
+    manifest_snapshot = ManifestService(workspace=paths).load(
+        "alpha",
+        apply_migrations=True,
+    )
+    source_module = manifest_snapshot.module("source")
+    assert source_module is not None
+    assert source_module["enabled"] is False
 
 
 def test_refresh_requires_existing_directory(tmp_path: Path) -> None:

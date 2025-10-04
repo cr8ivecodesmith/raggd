@@ -215,6 +215,12 @@ class ManifestService:
 
         return SourceRef.from_workspace(workspace=self._paths, name=name)
 
+    @property
+    def settings(self) -> ManifestSettings:
+        """Expose the active :class:`ManifestSettings` instance."""
+
+        return self._settings
+
     def load(
         self,
         source: SourceRef | str,
