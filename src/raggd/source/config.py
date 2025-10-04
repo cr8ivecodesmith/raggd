@@ -14,6 +14,10 @@ from tomlkit import TOMLDocument
 from tomlkit.items import String, Table
 
 from raggd.core.config import AppConfig, load_config, load_packaged_defaults
+from raggd.modules.manifest import (
+    ManifestSettings,
+    manifest_settings_from_config,
+)
 from raggd.source.models import WorkspaceSourceConfig
 
 
@@ -40,6 +44,7 @@ class SourceConfigSnapshot:
 
     config: AppConfig
     document: TOMLDocument
+    manifest_settings: ManifestSettings
 
 
 class SourceConfigStore:
@@ -53,6 +58,12 @@ class SourceConfigStore:
 
         snapshot = self._load_snapshot()
         return snapshot.config
+
+    def manifest_settings(self) -> ManifestSettings:
+        """Return manifest settings derived from the configuration stack."""
+
+        snapshot = self._load_snapshot()
+        return snapshot.manifest_settings
 
     def get(self, name: str) -> WorkspaceSourceConfig | None:
         """Return the configuration for a named source if it exists."""
@@ -119,7 +130,13 @@ class SourceConfigStore:
         user_data = tomllib.loads(user_text) if user_text else None
         document = tomlkit.loads(user_text) if user_text else tomlkit.document()
         config = load_config(defaults=defaults, user_config=user_data)
-        return SourceConfigSnapshot(config=config, document=document)
+        config_payload = config.model_dump(mode="python")
+        manifest_settings = manifest_settings_from_config(config_payload)
+        return SourceConfigSnapshot(
+            config=config,
+            document=document,
+            manifest_settings=manifest_settings,
+        )
 
     def _read_config_text(self) -> str | None:
         path = self._config_path

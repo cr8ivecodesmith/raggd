@@ -14,6 +14,55 @@ from raggd.resources import get_resource
 from raggd.source.models import WorkspaceSourceConfig
 
 
+class DbSettings(BaseModel):
+    """Database module configuration values."""
+
+    manifest_modules_key: str = Field(
+        default="modules",
+        description="Key that stores module payloads within manifests.",
+    )
+    manifest_db_module_key: str = Field(
+        default="db",
+        description="Key used for the database module payload within manifests.",
+    )
+    manifest_backup_retention: int = Field(
+        default=5,
+        ge=0,
+        description="Number of manifest backups retained during rotations.",
+    )
+    manifest_lock_timeout: float = Field(
+        default=5.0,
+        ge=0.0,
+        description="Seconds to wait when acquiring the manifest lock.",
+    )
+    manifest_lock_poll_interval: float = Field(
+        default=0.1,
+        gt=0.0,
+        description="Polling interval in seconds while waiting on the lock.",
+    )
+    manifest_lock_suffix: str = Field(
+        default=".lock",
+        description="Suffix appended to manifest lock files.",
+    )
+    manifest_backup_suffix: str = Field(
+        default=".bak",
+        description="Suffix appended to manifest backup files.",
+    )
+    manifest_strict: bool = Field(
+        default=True,
+        description="Whether manifest write failures abort the operation.",
+    )
+    manifest_backups_enabled: bool = Field(
+        default=True,
+        description="Whether manifest backups are created during writes.",
+    )
+
+    model_config = {
+        "str_strip_whitespace": True,
+        "validate_assignment": True,
+    }
+
+
 class WorkspaceSettings(BaseModel):
     """Workspace-level configuration values and managed sources."""
 
@@ -152,6 +201,10 @@ class AppConfig(BaseModel):
     modules: dict[str, ModuleToggle] = Field(
         default_factory=dict,
         description="Per-module toggle configuration keyed by module slug.",
+    )
+    db: DbSettings = Field(
+        default_factory=DbSettings,
+        description="Database module configuration values.",
     )
 
     model_config = {
@@ -333,6 +386,17 @@ def load_config(
         workspace_settings = WorkspaceSettings(root=workspace_raw)
     stack["workspace"] = workspace_settings
 
+    db_raw = stack.pop("db", None)
+    if isinstance(db_raw, DbSettings):
+        db_settings = db_raw
+    elif isinstance(db_raw, MappingABC):
+        db_settings = DbSettings(**db_raw)
+    elif db_raw is None:
+        db_settings = DbSettings()
+    else:
+        raise TypeError(f"Unsupported db configuration payload: {db_raw!r}")
+    stack["db"] = db_settings
+
     return AppConfig(**stack)
 
 
@@ -382,6 +446,20 @@ def render_user_config(
     document["workspace"] = workspace_table
     document["log_level"] = config.log_level
 
+    db_table = tomlkit.table()
+    db_table["manifest_modules_key"] = config.db.manifest_modules_key
+    db_table["manifest_db_module_key"] = config.db.manifest_db_module_key
+    db_table["manifest_backup_retention"] = config.db.manifest_backup_retention
+    db_table["manifest_lock_timeout"] = config.db.manifest_lock_timeout
+    db_table["manifest_lock_poll_interval"] = (
+        config.db.manifest_lock_poll_interval
+    )
+    db_table["manifest_lock_suffix"] = config.db.manifest_lock_suffix
+    db_table["manifest_backup_suffix"] = config.db.manifest_backup_suffix
+    db_table["manifest_strict"] = config.db.manifest_strict
+    db_table["manifest_backups_enabled"] = config.db.manifest_backups_enabled
+    document["db"] = db_table
+
     if config.modules:
         if include_defaults:
             document.add(tomlkit.comment("Module toggles:"))
@@ -418,6 +496,7 @@ __all__ = [
     "AppConfig",
     "ModuleToggle",
     "WorkspaceSettings",
+    "DbSettings",
     "DEFAULTS_RESOURCE_NAME",
     "iter_module_configs",
     "iter_workspace_sources",

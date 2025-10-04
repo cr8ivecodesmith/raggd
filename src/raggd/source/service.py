@@ -88,14 +88,23 @@ class SourceService:
                 "Provide either manifest_service or manifest_settings, "
                 "not both."
             )
-        self._manifest = (
-            manifest_service
-            if manifest_service is not None
-            else ManifestService(
-                workspace=workspace,
-                settings=manifest_settings,
+
+        if manifest_service is not None:
+            resolved_manifest = manifest_service
+            resolved_settings = manifest_service.settings
+        else:
+            resolved_settings = (
+                manifest_settings
+                if manifest_settings is not None
+                else config_store.manifest_settings()
             )
-        )
+            resolved_manifest = ManifestService(
+                workspace=workspace,
+                settings=resolved_settings,
+            )
+
+        self._manifest = resolved_manifest
+        self._manifest_settings = resolved_manifest.settings
         self._db = (
             db_service
             if db_service is not None
@@ -105,7 +114,7 @@ class SourceService:
             )
         )
         modules_key, db_module_key = manifest_db_namespace(
-            self._manifest.settings
+            self._manifest_settings
         )
         self._modules_key = modules_key
         self._db_module_key = db_module_key

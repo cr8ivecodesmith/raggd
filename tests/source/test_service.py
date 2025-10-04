@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import tomlkit
 from structlog import get_logger
 from structlog.testing import capture_logs
 
@@ -133,6 +134,37 @@ def test_source_service_rejects_conflicting_manifest_args(
             manifest_service=manifest_service,
             manifest_settings=ManifestSettings(),
         )
+
+
+def test_source_service_uses_config_manifest_settings(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    config_path = workspace / "raggd.toml"
+
+    document = tomlkit.parse(config_path.read_text(encoding="utf-8"))
+    db_table = tomlkit.table()
+    db_table["manifest_modules_key"] = "custom_mods"
+    db_table["manifest_db_module_key"] = "custom_db"
+    db_table["manifest_lock_suffix"] = ".lock.custom"
+    db_table["manifest_backups_enabled"] = False
+    document["db"] = db_table
+    config_path.write_text(tomlkit.dumps(document), encoding="utf-8")
+
+    health = StubHealthEvaluator()
+    paths = _make_paths(workspace)
+    service, _ = _make_service(
+        tmp_path,
+        health,
+        workspace_paths=paths,
+    )
+
+    assert service._modules_key == "custom_mods"
+    assert service._db_module_key == "custom_db"
+    manifest_settings = service._manifest.settings
+    assert manifest_settings.modules_key == "custom_mods"
+    assert manifest_settings.db_module_key == "custom_db"
+    assert manifest_settings.lock_suffix == ".lock.custom"
+    assert manifest_settings.backups_enabled is False
 
 
 def test_init_creates_source_without_target(tmp_path: Path) -> None:

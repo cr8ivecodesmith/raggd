@@ -5,6 +5,17 @@
 workspace = "~/.raggd"
 log_level = "INFO"
 
+[db]
+manifest_modules_key = "modules"
+manifest_db_module_key = "db"
+manifest_backup_retention = 5
+manifest_lock_timeout = 5.0
+manifest_lock_poll_interval = 0.1
+manifest_lock_suffix = ".lock"
+manifest_backup_suffix = ".bak"
+manifest_strict = true
+manifest_backups_enabled = true
+
 [modules]
 
 [modules.source]

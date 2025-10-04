@@ -65,7 +65,7 @@
 - **Phase 2 — Source module integration**
   - [x] Refactor `src/raggd/source/*` to depend on `ManifestService` and `DbLifecycleService.ensure()` for database readiness, replacing direct SQLite + manifest file manipulation.
   - [x] Update source module tests to cover delegation, manifest migration triggers, and failure rollback semantics.
-  - [ ] Wire manifest helpers/settings into the source module configuration layer.
+  - [x] Wire manifest helpers/settings into the source module configuration layer.
 - **Phase 3 — Database module delivery**
   - [ ] Scaffold `raggd.modules.db` package with Typer command group exposed in the root CLI and backed by `DbLifecycleService`.
   - [ ] Implement lifecycle commands (`ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, `reset`) with manifest mirroring via the shared service and cohesive error handling.
@@ -166,3 +166,13 @@ Expanded source module tests for delegation, manifest migration, and ensure roll
 - Leveraged shared manifest fixtures to exercise migration into the `modules.*` namespace from legacy payloads
 **Tests**
 - `UV_CACHE_DIR=.tmp/uv-cache uv run pytest`
+
+### 2025-10-04 23:25 PST
+**Summary**
+Aligned source configuration with manifest helpers/settings and extended regression coverage
+**Changes**
+- Added `SourceConfigStore.manifest_settings()` exposure and ensured SourceService consumes config-derived manifest settings
+- Updated tests for config store overrides and SourceService manifest wiring
+- Stored manifest settings on SourceService to drive namespace resolution
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/source/test_config_store.py tests/source/test_service.py`

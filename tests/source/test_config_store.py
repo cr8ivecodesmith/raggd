@@ -4,9 +4,12 @@ import os
 from pathlib import Path
 
 import tomllib
+
 import pytest
+import tomlkit
 
 from raggd.cli.init import init_workspace
+from raggd.modules.manifest import ManifestSettings
 from raggd.source import (
     SourceConfigStore,
     SourceConfigWriteError,
@@ -166,3 +169,46 @@ def test_extract_legacy_root_handles_non_string(tmp_path: Path) -> None:
 
     assert store._extract_legacy_root(None, config) == str(config.workspace)
     assert store._extract_legacy_root(123, config) == "123"
+
+
+def test_manifest_settings_defaults(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    store = SourceConfigStore(config_path=workspace / "raggd.toml")
+
+    settings = store.manifest_settings()
+
+    assert isinstance(settings, ManifestSettings)
+    assert settings == ManifestSettings()
+
+
+def test_manifest_settings_respects_overrides(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    config_path = workspace / "raggd.toml"
+
+    document = tomlkit.parse(config_path.read_text(encoding="utf-8"))
+    document["db"] = tomlkit.table()
+    document["db"]["manifest_modules_key"] = "custom_mods"
+    document["db"]["manifest_db_module_key"] = "custom_db"
+    document["db"]["manifest_backup_retention"] = 42
+    document["db"]["manifest_lock_timeout"] = 7.5
+    document["db"]["manifest_lock_poll_interval"] = 0.25
+    document["db"]["manifest_lock_suffix"] = ".lck"
+    document["db"]["manifest_backup_suffix"] = ".backup"
+    document["db"]["manifest_strict"] = False
+    document["db"]["manifest_backups_enabled"] = False
+    config_path.write_text(tomlkit.dumps(document), encoding="utf-8")
+
+    store = SourceConfigStore(config_path=config_path)
+    settings = store.manifest_settings()
+
+    assert settings.modules_key == "custom_mods"
+    assert settings.db_module_key == "custom_db"
+    assert settings.backup_retention == 42
+    assert settings.lock_timeout == 7.5
+    assert settings.lock_poll_interval == 0.25
+    assert settings.lock_suffix == ".lck"
+    assert settings.backup_suffix == ".backup"
+    assert settings.strict_writes is False
+    assert settings.backups_enabled is False
