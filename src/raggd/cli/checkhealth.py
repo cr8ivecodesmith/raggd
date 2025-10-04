@@ -42,6 +42,8 @@ _STATUS_COLORS: dict[HealthStatus, str | None] = {
     HealthStatus.ERROR: typer.colors.RED,
 }
 
+_COMMAND_NAME = "checkhealth"
+
 _EXIT_CODES: dict[HealthStatus, int] = {
     HealthStatus.OK: 0,
     HealthStatus.UNKNOWN: 1,
@@ -75,7 +77,16 @@ def _load_app_config(paths: WorkspacePaths) -> AppConfig:
     except OSError as exc:
         raise RuntimeError(f"Failed to read config file {paths.config_file}: {exc}") from exc
 
-    user_config = tomllib.loads(text) if text else None
+    if text:
+        try:
+            user_config = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            message = (
+                f"Failed to parse config file {paths.config_file}: TOML error: {exc}"
+            )
+            raise RuntimeError(message) from exc
+    else:
+        user_config = None
 
     return load_config(
         defaults=defaults,
@@ -96,6 +107,8 @@ def _select_modules(
     for raw in requested:
         name = _canonical_module_name(raw)
         if not name or name in seen:
+            continue
+        if name == _COMMAND_NAME:
             continue
         normalized.append(name)
         seen.add(name)
@@ -226,7 +239,7 @@ def register_checkhealth_command(
 
         try:
             config = _load_app_config(paths)
-        except (FileNotFoundError, RuntimeError, tomllib.TOMLDecodeError) as exc:
+        except (FileNotFoundError, RuntimeError) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(code=1) from exc
 

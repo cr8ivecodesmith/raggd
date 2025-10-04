@@ -45,6 +45,14 @@ _source_app = typer.Typer(
 )
 
 
+_STATUS_COLORS: dict[SourceHealthStatus, str | None] = {
+    SourceHealthStatus.OK: typer.colors.GREEN,
+    SourceHealthStatus.UNKNOWN: typer.colors.YELLOW,
+    SourceHealthStatus.DEGRADED: typer.colors.BRIGHT_YELLOW,
+    SourceHealthStatus.ERROR: typer.colors.RED,
+}
+
+
 def _resolve_workspace_override(workspace: Path | None) -> WorkspacePaths:
     env_workspace = os.environ.get("RAGGD_WORKSPACE")
     env_override = Path(env_workspace).expanduser() if env_workspace else None
@@ -68,22 +76,38 @@ def _format_timestamp(value: datetime | None) -> str:
     return value.isoformat()
 
 
-def _status_color(status: SourceHealthStatus) -> str | None:
-    if status is SourceHealthStatus.OK:
-        return typer.colors.GREEN
-    if status is SourceHealthStatus.UNKNOWN:
-        return typer.colors.YELLOW
-    if status is SourceHealthStatus.DEGRADED:
-        return typer.colors.BRIGHT_YELLOW
-    if status is SourceHealthStatus.ERROR:
-        return typer.colors.RED
-    return None
+def _normalize_status(
+    value: SourceHealthStatus | str | None,
+) -> SourceHealthStatus:
+    if isinstance(value, SourceHealthStatus):
+        return value
+    if isinstance(value, str):
+        try:
+            return SourceHealthStatus(value)
+        except ValueError:
+            return SourceHealthStatus.UNKNOWN
+    return SourceHealthStatus.UNKNOWN
+
+
+def _status_color(status: SourceHealthStatus | str | None) -> str | None:
+    if isinstance(status, SourceHealthStatus):
+        normalized = status
+    elif isinstance(status, str):
+        try:
+            normalized = SourceHealthStatus(status)
+        except ValueError:
+            return None
+    else:
+        return None
+
+    return _STATUS_COLORS.get(normalized)
 
 
 def _emit_state_summary(state: SourceState, *, prefix: str = "") -> None:
     manifest = state.manifest
-    status = manifest.last_health.status
-    color = _status_color(status)
+    raw_status = manifest.last_health.status
+    status = _normalize_status(raw_status)
+    color = _status_color(raw_status)
     header = f"{prefix}source: {state.config.name}"
     typer.secho(header, fg=typer.colors.CYAN, bold=True)
     typer.echo(f"  enabled: {'yes' if state.config.enabled else 'no'}")
@@ -526,7 +550,7 @@ def list_sources(ctx: typer.Context) -> None:
         if index:
             typer.echo()
         _emit_state_summary(state)
-        status = state.manifest.last_health.status
+        status = _normalize_status(state.manifest.last_health.status)
         if status is not SourceHealthStatus.OK:
             exit_code = 1
 

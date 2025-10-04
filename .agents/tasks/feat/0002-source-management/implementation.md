@@ -55,7 +55,7 @@
   - [x] Design `.health.json` aggregator format and persistence helpers (read/merge/write with timestamps) that emit the payload shape defined in `spec.md` (`{"sources": {"checked_at": iso8601, "status": enum, "details": [{"name": str, "status": enum, "summary": str|None, "actions": [str], "last_refresh_at": iso8601|None}]}}`), derive the module-level `status` as the highest-severity entry in `details`, and persist via temp-file + `os.replace` to avoid partial writes; per-run outputs replace the entire module block for modules that provided data while preserving untouched module sections from the previous file, and modules are responsible for returning their full canonical payload so overlapping fields never interleave across modules. Failed writes keep the prior file intact and surface structured errors.
   - [x] Implement `raggd checkhealth [module]` CLI entry using the health registry, ensuring filtered runs only update the requested module keys and logging when data is carried forward unchanged for others.
   - [x] Ensure logging captures key actions (success/failure, enablement toggles, forced operations).
-  - [ ] Add CLI + unit tests for all new behaviors, including error paths and force overrides.
+  - [x] Add CLI + unit tests for all new behaviors, including error paths and force overrides.
   - [ ] Refresh documentation (workspace guide) and update DoD artifacts (Typer CLI help strings added).
 
 ## Test Plan
@@ -70,6 +70,14 @@
 - Runbooks / revert steps: capture manual steps to disable/remove a problematic source, delete `.health.json`, and roll back module toggle; note that disabling the `modules.source` toggle removes CLI registration after revert.
 
 ## History
+### 2025-10-06 08:05 PST
+**Summary**
+Added full CLI coverage for `raggd source` and hardened health status rendering.
+**Changes**
+- Authored Typer runner tests spanning init/target/refresh/rename/remove/list/enable/disable flows, including confirmation prompts, forced overrides, and guarded error paths.
+- Normalized health status handling in the CLI so manifest snapshots persisted as raw strings render correctly and continue to drive exit codes.
+- Ran `python -m pytest --no-cov tests/cli/test_source.py` to validate the new suite.
+
 ### 2025-10-05 16:00 PST
 **Summary**
 Exposed health hooks via the module registry.
@@ -183,3 +191,11 @@ Added structured logging around source operations and covered the auto-disable p
 - Extended `SourceService` to emit `source-auto-disabled` events when health gating toggles a source off and threaded the CLI logger into the service.
 - Logged command-start metadata for each `raggd source` Typer command alongside existing success/failure records.
 - Added a regression test capturing the auto-disable log event and ran `python -m pytest --no-cov tests/source/test_service.py` to verify.
+
+### 2025-10-04 14:05 PST
+**Summary**
+Closed the remaining CLI coverage gaps and exercised config parsing edge cases.
+**Changes**
+- Added focused CLI helper tests to cover status normalization, health guidance fallbacks, and empty-config handling for `checkhealth`.
+- Simplified source CLI color mapping and state summaries so raw manifest statuses drive styling while keeping normalized messaging.
+- Re-ran `uv run pytest` (100% coverage) and attempted `uv run ruff check` (fails on pre-existing line-length rules) to document readiness for follow-up lint cleanup.
