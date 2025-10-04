@@ -32,11 +32,15 @@ class SourceHealthSnapshot(BaseModel):
     )
     summary: str | None = Field(
         default=None,
-        description="Short explanation of the health status or issues detected.",
+        description=(
+            "Short explanation of the health status or issues detected."
+        ),
     )
     actions: tuple[str, ...] = Field(
         default_factory=tuple,
-        description="Remediation or follow-up actions recommended for operators.",
+        description=(
+            "Remediation or follow-up actions recommended for operators."
+        ),
     )
 
     model_config = {
@@ -62,7 +66,9 @@ class WorkspaceSourceConfig(BaseModel):
         description="Normalized name (slug) for the source entry.",
     )
     path: Path = Field(
-        description="Absolute path to the source directory inside the workspace.",
+        description=(
+            "Absolute path to the source directory inside the workspace."
+        ),
     )
     enabled: bool = Field(
         default=False,
@@ -70,7 +76,10 @@ class WorkspaceSourceConfig(BaseModel):
     )
     target: Path | None = Field(
         default=None,
-        description="Optional absolute path representing the upstream target for refreshes.",
+        description=(
+            "Optional absolute path representing the upstream target for "
+            "refreshes."
+        ),
     )
 
     model_config = {
@@ -96,14 +105,19 @@ class SourceManifest(BaseModel):
         description="Normalized name (slug) for the source entry.",
     )
     path: Path = Field(
-        description="Absolute path to the source directory inside the workspace.",
+        description=(
+            "Absolute path to the source directory inside the workspace."
+        ),
     )
     enabled: bool = Field(
         description="Whether the source is currently enabled for operations.",
     )
     target: Path | None = Field(
         default=None,
-        description="Optional absolute path representing the upstream target for refreshes.",
+        description=(
+            "Optional absolute path representing the upstream target for "
+            "refreshes."
+        ),
     )
     last_refresh_at: datetime | None = Field(
         default=None,

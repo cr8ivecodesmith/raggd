@@ -34,7 +34,14 @@ def test_evaluate_health_ok_when_target_and_refresh_present(tmp_path):
     )
     manifest = _make_manifest(config).model_copy(
         update={
-            "last_refresh_at": datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc),
+            "last_refresh_at": datetime(
+                2025,
+                10,
+                5,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
         }
     )
 
@@ -47,7 +54,14 @@ def test_evaluate_health_ok_when_target_and_refresh_present(tmp_path):
     assert snapshot.status == SourceHealthStatus.OK
     assert snapshot.summary is None
     assert snapshot.actions == ()
-    assert snapshot.checked_at == datetime(2025, 10, 6, 9, 30, tzinfo=timezone.utc)
+    assert snapshot.checked_at == datetime(
+        2025,
+        10,
+        6,
+        9,
+        30,
+        tzinfo=timezone.utc,
+    )
 
 
 def test_evaluate_health_reports_missing_target(tmp_path):
@@ -209,7 +223,10 @@ def test_evaluate_health_prioritizes_highest_severity(tmp_path):
     )
 
     assert snapshot.status == SourceHealthStatus.ERROR
-    assert "missing" in snapshot.summary.lower() or "target" in snapshot.summary.lower()
+    assert (
+        "missing" in snapshot.summary.lower()
+        or "target" in snapshot.summary.lower()
+    )
     assert snapshot.actions
 
 
@@ -227,7 +244,14 @@ def test_evaluate_health_reports_disabled_when_no_other_issues(tmp_path):
     )
     manifest = _make_manifest(config).model_copy(
         update={
-            "last_refresh_at": datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc),
+            "last_refresh_at": datetime(
+                2025,
+                10,
+                5,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
         }
     )
 

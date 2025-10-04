@@ -45,7 +45,8 @@ def source_health_hook(handle: WorkspaceHandle) -> Sequence[HealthReport]:
                     status=HealthStatus.UNKNOWN,
                     summary=f"Manifest missing for source: {manifest_path}",
                     actions=(
-                        f"Run `raggd source refresh {name}` to recreate the manifest.",
+                        "Run `raggd source refresh "
+                        f"{name}` to recreate the manifest.",
                     ),
                     last_refresh_at=None,
                 )
@@ -63,7 +64,8 @@ def source_health_hook(handle: WorkspaceHandle) -> Sequence[HealthReport]:
                     status=HealthStatus.ERROR,
                     summary=f"Failed to read manifest {manifest_path}: {exc}",
                     actions=(
-                        f"Verify permissions and rerun `raggd source refresh {name}`.",
+                        "Verify permissions and rerun "
+                        f"`raggd source refresh {name}`.",
                     ),
                     last_refresh_at=None,
                 )
@@ -76,7 +78,8 @@ def source_health_hook(handle: WorkspaceHandle) -> Sequence[HealthReport]:
                     status=HealthStatus.ERROR,
                     summary=f"Manifest at {manifest_path} is invalid: {exc}",
                     actions=(
-                        f"Inspect the manifest file or recreate it via `raggd source refresh {name}`.",
+                        "Inspect the manifest file or recreate it via "
+                        f"`raggd source refresh {name}`.",
                     ),
                     last_refresh_at=None,
                 )

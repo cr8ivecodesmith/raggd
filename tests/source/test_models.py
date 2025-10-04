@@ -13,7 +13,9 @@ from raggd.source import (
 )
 
 
-def test_workspace_source_config_defaults_and_normalization(tmp_path: Path) -> None:
+def test_workspace_source_config_defaults_and_normalization(
+    tmp_path: Path,
+) -> None:
     cfg = WorkspaceSourceConfig(
         name=" demo ",
         path=tmp_path / "sources" / "demo",
@@ -55,7 +57,9 @@ def test_source_manifest_defaults_and_dump(tmp_path: Path) -> None:
 
 
 def test_source_health_snapshot_normalizes_actions() -> None:
-    snapshot = SourceHealthSnapshot(actions=["  restart service  ", "check logs"])
+    snapshot = SourceHealthSnapshot(
+        actions=["  restart service  ", "check logs"],
+    )
 
     assert snapshot.actions == ("restart service", "check logs")
 

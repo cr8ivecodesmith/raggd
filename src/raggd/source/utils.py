@@ -33,8 +33,8 @@ _SLUG_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 def normalize_source_slug(raw: str) -> str:
     """Normalize arbitrary input into a lowercase kebab-case slug.
 
-    The helper strips surrounding whitespace, transliterates unicode characters to
-    ASCII, collapses separator runs, and ensures the slug only includes the
+    The helper strips surrounding whitespace, transliterates unicode characters
+    to ASCII, collapses separator runs, and ensures the slug only includes the
     ``[a-z0-9-]`` character set.
 
     Args:
@@ -60,7 +60,9 @@ def normalize_source_slug(raw: str) -> str:
     lowercase = ascii_only.lower()
     tokens = _SLUG_TOKEN_PATTERN.findall(lowercase)
     if not tokens:
-        raise SourceSlugError("Source name must include alphanumeric characters.")
+        raise SourceSlugError(
+            "Source name must include alphanumeric characters."
+        )
     return "-".join(tokens)
 
 
@@ -84,7 +86,9 @@ def ensure_workspace_path(base: Path, candidate: Path) -> Path:
     if candidate_path.is_relative_to(base_path):
         return candidate_path
 
-    message = f"Path {candidate_path} is outside of workspace subtree {base_path}."
+    message = (
+        f"Path {candidate_path} is outside of workspace subtree {base_path}."
+    )
     raise SourcePathError(message)
 
 
@@ -102,10 +106,10 @@ def resolve_target_path(
         candidate: Raw target path supplied by the user.
         workspace: Workspace paths used as the anchor for relative targets.
         must_exist: When ``True`` (default), require the target to exist.
-        require_directory: When ``True`` (default), require the resolved path to be
-            a directory.
-        allowed_parents: Optional iterable of base directories that the target must
-            reside within. When omitted, any absolute path is allowed.
+        require_directory: When ``True`` (default), require the resolved path to
+            be a directory.
+        allowed_parents: Optional iterable of base directories that the target
+            must reside within. When omitted, any absolute path is allowed.
 
     Returns:
         Absolute, normalized path to the target.

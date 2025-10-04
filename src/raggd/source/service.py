@@ -40,8 +40,7 @@ class SourceHealthEvaluator(Protocol):
         *,
         config: WorkspaceSourceConfig,
         manifest: SourceManifest,
-    ) -> SourceHealthSnapshot:
-        ...
+    ) -> SourceHealthSnapshot: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +69,10 @@ class SourceService:
         self._health_evaluator = (
             health_evaluator or self._build_default_health_evaluator()
         )
-        self._logger = logger or get_logger(__name__, component="source-service")
+        self._logger = logger or get_logger(
+            __name__,
+            component="source-service",
+        )
 
     def init(
         self,
@@ -89,7 +91,8 @@ class SourceService:
         source_dir = self._paths.source_dir(normalized)
         if source_dir.exists():
             raise SourceDirectoryConflictError(
-                f"Source directory already exists for {normalized!r}: {source_dir}"
+                "Source directory already exists for "
+                f"{normalized!r}: {source_dir}"
             )
         source_dir.mkdir(parents=True, exist_ok=False)
 
@@ -188,18 +191,22 @@ class SourceService:
 
         app_config = self._config_store.load()
         if normalized_new in app_config.workspace_sources:
-            raise SourceExistsError(f"Source {normalized_new!r} already exists.")
+            raise SourceExistsError(
+                f"Source {normalized_new!r} already exists."
+            )
 
         original_dir = self._paths.source_dir(config.name)
         if not original_dir.exists():
             raise SourceDirectoryConflictError(
-                f"Source directory is missing for {config.name!r}: {original_dir}"
+                "Source directory is missing for "
+                f"{config.name!r}: {original_dir}"
             )
 
         new_dir = self._paths.source_dir(normalized_new)
         if new_dir.exists():
             raise SourceDirectoryConflictError(
-                f"Target directory already exists for {normalized_new!r}: {new_dir}"
+                "Target directory already exists for "
+                f"{normalized_new!r}: {new_dir}"
             )
 
         original_dir.rename(new_dir)
@@ -329,7 +336,10 @@ class SourceService:
             manifest = self._load_manifest(config)
             manifest.enabled = config.enabled
             if enabled:
-                snapshot = self._health_evaluator(config=config, manifest=manifest)
+                snapshot = self._health_evaluator(
+                    config=config,
+                    manifest=manifest,
+                )
                 manifest.last_health = snapshot
             self._write_manifest(manifest)
             result.append(SourceState(config=config, manifest=manifest))
@@ -343,7 +353,10 @@ class SourceService:
             raise SourceNotFoundError(f"Source {name!r} is not configured.")
         return config
 
-    def _persist_config(self, config: WorkspaceSourceConfig) -> WorkspaceSourceConfig:
+    def _persist_config(
+        self,
+        config: WorkspaceSourceConfig,
+    ) -> WorkspaceSourceConfig:
         app_config = self._config_store.upsert(config)
         return app_config.workspace_sources[config.name]
 
@@ -371,7 +384,11 @@ class SourceService:
     def _write_manifest(self, manifest: SourceManifest) -> None:
         path = self._paths.source_manifest_path(manifest.name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True)
+        payload = json.dumps(
+            manifest.model_dump(mode="json"),
+            indent=2,
+            sort_keys=True,
+        )
 
         try:
             with tempfile.NamedTemporaryFile(
@@ -384,21 +401,21 @@ class SourceService:
                 handle.flush()
                 os.fsync(handle.fileno())
                 temp_path = Path(handle.name)
-        except OSError as exc:  # pragma: no cover - surfaced during runtime failures
+        except OSError as exc:  # pragma: no cover
             raise SourceDirectoryConflictError(
                 f"Failed writing manifest for {manifest.name!r}: {exc}"
-            ) from exc
+            ) from exc  # pragma: no cover - surfaced during runtime failures
 
         try:
             os.replace(temp_path, path)
-        except OSError as exc:  # pragma: no cover - surfaced during runtime failures
+        except OSError as exc:  # pragma: no cover
             try:
                 temp_path.unlink()
-            except OSError:
+            except OSError:  # pragma: no cover - cleanup best effort
                 pass
             raise SourceDirectoryConflictError(
                 f"Failed finalizing manifest for {manifest.name!r}: {exc}"
-            ) from exc
+            ) from exc  # pragma: no cover - surfaced during runtime failures
 
     def _guard_operation(
         self,
@@ -413,8 +430,14 @@ class SourceService:
         if not config.enabled:
             raise SourceDisabledError(f"Source {config.name!r} is disabled.")
 
-        snapshot = self._health_evaluator(config=config, manifest=manifest)
-        if snapshot.status in (SourceHealthStatus.DEGRADED, SourceHealthStatus.ERROR):
+        snapshot = self._health_evaluator(
+            config=config,
+            manifest=manifest,
+        )
+        if snapshot.status in (
+            SourceHealthStatus.DEGRADED,
+            SourceHealthStatus.ERROR,
+        ):
             disabled = config.model_copy(update={"enabled": False})
             persisted = self._persist_config(disabled)
             manifest.enabled = persisted.enabled
@@ -433,7 +456,8 @@ class SourceService:
                 actions=snapshot.actions,
             )
             raise SourceHealthCheckError(
-                f"Health check for source {config.name!r} failed with status {snapshot.status}."
+                "Health check for source "
+                f"{config.name!r} failed with status {snapshot.status}."
             )
 
         return snapshot
@@ -466,5 +490,5 @@ class SourceService:
     def _require_names(names: Iterable[str]) -> tuple[str, ...]:
         extracted = tuple(name for name in names if name)
         if not extracted:
-            raise SourceNotFoundError("At least one source name must be provided.")
+            raise SourceNotFoundError("Provide at least one source name.")
         return extracted

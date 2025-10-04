@@ -28,15 +28,25 @@ def test_build_module_snapshot_derives_highest_severity() -> None:
         HealthReport(name="gamma", status=HealthStatus.ERROR, summary="boom"),
     ]
 
-    snapshot = build_module_snapshot(reports, checked_at=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    snapshot = build_module_snapshot(
+        reports,
+        checked_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
 
     assert snapshot.status is HealthStatus.ERROR
     assert snapshot.checked_at == datetime(2024, 1, 1, tzinfo=timezone.utc)
-    assert tuple(detail.name for detail in snapshot.details) == ("alpha", "beta", "gamma")
+    assert tuple(detail.name for detail in snapshot.details) == (
+        "alpha",
+        "beta",
+        "gamma",
+    )
 
 
 def test_build_module_snapshot_defaults_to_ok_when_empty() -> None:
-    snapshot = build_module_snapshot([], checked_at=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    snapshot = build_module_snapshot(
+        [],
+        checked_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
     assert snapshot.status is HealthStatus.OK
     assert snapshot.details == ()
 
@@ -55,12 +65,25 @@ def test_document_merge_replaces_module_entries() -> None:
     updated_snapshot = HealthModuleSnapshot(
         checked_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
         status=HealthStatus.DEGRADED,
-        details=(HealthDetail(name="beta", status=HealthStatus.DEGRADED, summary="warn"),),
+        details=(
+            HealthDetail(
+                name="beta",
+                status=HealthStatus.DEGRADED,
+                summary="warn",
+            ),
+        ),
     )
 
-    merged = original.merge({"sources": updated_snapshot, "other": updated_snapshot})
+    merged = original.merge(
+        {"sources": updated_snapshot, "other": updated_snapshot}
+    )
 
-    assert merged.root["sources"].checked_at == datetime(2024, 2, 1, tzinfo=timezone.utc)
+    assert merged.root["sources"].checked_at == datetime(
+        2024,
+        2,
+        1,
+        tzinfo=timezone.utc,
+    )
     assert "other" in merged.root
     assert len(merged.root) == 2
 
@@ -76,13 +99,21 @@ def test_store_update_merges_and_persists(tmp_path: Path) -> None:
     store = HealthDocumentStore(path)
 
     first_snapshot = build_module_snapshot(
-        [HealthReport(name="alpha", status=HealthStatus.OK)],
+        [
+            HealthReport(name="alpha", status=HealthStatus.OK),
+        ],
         checked_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
     store.write(HealthDocument.model_validate({"sources": first_snapshot}))
 
     second_snapshot = build_module_snapshot(
-        [HealthReport(name="beta", status=HealthStatus.ERROR, summary="down")],
+        [
+            HealthReport(
+                name="beta",
+                status=HealthStatus.ERROR,
+                summary="down",
+            ),
+        ],
         checked_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
     )
 
@@ -93,12 +124,15 @@ def test_store_update_merges_and_persists(tmp_path: Path) -> None:
     assert on_disk["sources"]["status"] == "error"
 
 
-def test_store_write_handles_failures(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_store_write_handles_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     path = tmp_path / ".health.json"
     store = HealthDocumentStore(path)
 
-    def raise_replace(src: str, dst: str) -> None:  # pragma: no cover - invoked in test
-        raise OSError("boom")
+    def raise_replace(src: str, dst: str) -> None:
+        raise OSError("boom")  # pragma: no cover - invoked in test
 
     monkeypatch.setattr(os, "replace", raise_replace)
 

@@ -32,7 +32,11 @@ from raggd.source.models import (
 _runner = CliRunner()
 
 
-def _write_manifest(paths: WorkspacePaths, *, status: SourceHealthStatus) -> None:
+def _write_manifest(
+    paths: WorkspacePaths,
+    *,
+    status: SourceHealthStatus,
+) -> None:
     manifest = SourceManifest(
         name="demo",
         path=paths.sources_dir / "demo",
@@ -42,7 +46,11 @@ def _write_manifest(paths: WorkspacePaths, *, status: SourceHealthStatus) -> Non
         last_health=SourceHealthSnapshot(
             status=status,
             checked_at=datetime(2025, 10, 5, 12, 15, tzinfo=timezone.utc),
-            summary="All systems nominal" if status is SourceHealthStatus.OK else "Needs attention",
+            summary=(
+                "All systems nominal"
+                if status is SourceHealthStatus.OK
+                else "Needs attention"
+            ),
             actions=("Review workspace setup",),
         ),
     )
@@ -181,7 +189,8 @@ def test_checkhealth_handles_missing_manifest(tmp_path: Path) -> None:
     assert "source: unknown" in result.stdout
     assert "Manifest missing" in result.stdout
 
-    payload = json.loads((workspace / ".health.json").read_text(encoding="utf-8"))
+    manifest_text = (workspace / ".health.json").read_text(encoding="utf-8")
+    payload = json.loads(manifest_text)
     assert payload["source"]["status"] == "unknown"
 
 
@@ -312,9 +321,12 @@ def test_checkhealth_handles_store_write_error(
 ) -> None:
     workspace, _ = _prepare_workspace(tmp_path)
 
+    def _raise_write_error(self: object, document: object) -> None:
+        raise HealthDocumentError("boom")
+
     monkeypatch.setattr(
         "raggd.cli.checkhealth.HealthDocumentStore.write",
-        lambda self, document: (_ for _ in ()).throw(HealthDocumentError("boom")),
+        _raise_write_error,
     )
 
     app = create_app()

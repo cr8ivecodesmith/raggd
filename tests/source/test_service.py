@@ -97,7 +97,14 @@ def test_init_with_target_enables_and_refreshes(tmp_path: Path) -> None:
 
     assert state.config.enabled is True
     assert state.config.target == target_dir
-    assert state.manifest.last_refresh_at == datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
+    assert state.manifest.last_refresh_at == datetime(
+        2025,
+        10,
+        5,
+        12,
+        0,
+        tzinfo=timezone.utc,
+    )
     manifest_path = paths.source_manifest_path("demo")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["enabled"] is True
@@ -141,7 +148,14 @@ def test_set_target_requires_enabled_or_force(tmp_path: Path) -> None:
 
     assert result.config.target == target_dir
     assert result.manifest.target == target_dir
-    assert result.manifest.last_refresh_at == datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
+    assert result.manifest.last_refresh_at == datetime(
+        2025,
+        10,
+        5,
+        12,
+        0,
+        tzinfo=timezone.utc,
+    )
 
 
 def test_set_target_can_clear_target(tmp_path: Path) -> None:
@@ -172,16 +186,27 @@ def test_refresh_disables_source_on_failed_health(tmp_path: Path) -> None:
 
     config = service.list()[0].config
     assert config.enabled is False
-    manifest = json.loads(paths.source_manifest_path("demo").read_text(encoding="utf-8"))
+    manifest_path = paths.source_manifest_path("demo")
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    manifest = json.loads(manifest_text)
     assert manifest["enabled"] is False
     assert manifest["last_health"]["status"] == "degraded"
 
     # Forced refresh proceeds even when disabled/unhealthy.
     state = service.refresh("demo", force=True)
-    assert state.manifest.last_refresh_at == datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
+    assert state.manifest.last_refresh_at == datetime(
+        2025,
+        10,
+        5,
+        12,
+        0,
+        tzinfo=timezone.utc,
+    )
 
 
-def test_set_target_blocks_when_health_fails_without_force(tmp_path: Path) -> None:
+def test_set_target_blocks_when_health_fails_without_force(
+    tmp_path: Path,
+) -> None:
     health = StubHealthEvaluator()
     service, paths = _make_service(tmp_path, health)
 
@@ -199,7 +224,9 @@ def test_set_target_blocks_when_health_fails_without_force(tmp_path: Path) -> No
     [state] = service.list()
     assert state.config.enabled is False
 
-    manifest_data = json.loads(paths.source_manifest_path("demo").read_text(encoding="utf-8"))
+    manifest_path = paths.source_manifest_path("demo")
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    manifest_data = json.loads(manifest_text)
     assert manifest_data["enabled"] is False
     assert manifest_data["last_health"]["status"] == "error"
 
@@ -222,14 +249,18 @@ def test_refresh_logs_auto_disable_event(tmp_path: Path) -> None:
         with pytest.raises(SourceHealthCheckError):
             service.refresh("demo")
 
-    events = [entry for entry in logs if entry.get("event") == "source-auto-disabled"]
+    events = [
+        entry for entry in logs if entry.get("event") == "source-auto-disabled"
+    ]
     assert len(events) == 1
     payload = events[0]
     assert payload["source"] == "demo"
     assert payload["status"] == "error"
 
 
-def test_set_target_force_allows_remediation_after_health_failure(tmp_path: Path) -> None:
+def test_set_target_force_allows_remediation_after_health_failure(
+    tmp_path: Path,
+) -> None:
     health = StubHealthEvaluator()
     service, paths = _make_service(tmp_path, health)
 
@@ -250,7 +281,14 @@ def test_set_target_force_allows_remediation_after_health_failure(tmp_path: Path
 
     assert state.config.target == replacement
     assert state.manifest.target == replacement
-    assert state.manifest.last_refresh_at == datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
+    assert state.manifest.last_refresh_at == datetime(
+        2025,
+        10,
+        5,
+        12,
+        0,
+        tzinfo=timezone.utc,
+    )
     assert state.manifest.last_health.status == SourceHealthStatus.OK
     assert state.config.enabled is False
 
@@ -348,7 +386,9 @@ def test_rename_blocks_when_health_fails_without_force(tmp_path: Path) -> None:
 
     [state] = service.list()
     assert state.config.enabled is False
-    manifest_data = json.loads(paths.source_manifest_path("demo").read_text(encoding="utf-8"))
+    manifest_path = paths.source_manifest_path("demo")
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    manifest_data = json.loads(manifest_text)
     assert manifest_data["enabled"] is False
     assert manifest_data["last_health"]["status"] == "error"
 
@@ -365,7 +405,9 @@ def test_remove_requires_force_when_health_fails(tmp_path: Path) -> None:
     with pytest.raises(SourceHealthCheckError):
         service.remove("demo")
 
-    manifest_data = json.loads(paths.source_manifest_path("demo").read_text(encoding="utf-8"))
+    manifest_path = paths.source_manifest_path("demo")
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    manifest_data = json.loads(manifest_text)
     assert manifest_data["enabled"] is False
     assert manifest_data["last_health"]["status"] == "error"
     assert (paths.sources_dir / "demo").exists()

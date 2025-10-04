@@ -47,7 +47,9 @@ class HealthReport:
     last_refresh_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        normalized_actions = tuple(str(action).strip() for action in self.actions)
+        normalized_actions = tuple(
+            str(action).strip() for action in self.actions
+        )
         object.__setattr__(self, "actions", normalized_actions)
         if self.summary is not None:
             object.__setattr__(self, "summary", self.summary.strip() or None)

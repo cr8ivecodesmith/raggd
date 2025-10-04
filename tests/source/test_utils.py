@@ -60,7 +60,9 @@ def test_ensure_workspace_path_blocks_escape(tmp_path: Path) -> None:
         ensure_workspace_path(base, escape_candidate)
 
 
-def test_resolve_target_path_handles_relative_and_absolute(tmp_path: Path) -> None:
+def test_resolve_target_path_handles_relative_and_absolute(
+    tmp_path: Path,
+) -> None:
     paths = _build_workspace(tmp_path)
     target = paths.workspace / "data" / "docs"
     target.mkdir(parents=True)
@@ -78,7 +80,9 @@ def test_resolve_target_path_handles_relative_and_absolute(tmp_path: Path) -> No
     assert resolved_absolute == target.resolve()
 
 
-def test_resolve_target_path_rejects_missing_or_nondirectory(tmp_path: Path) -> None:
+def test_resolve_target_path_rejects_missing_or_nondirectory(
+    tmp_path: Path,
+) -> None:
     paths = _build_workspace(tmp_path)
     missing = paths.workspace / "missing"
 

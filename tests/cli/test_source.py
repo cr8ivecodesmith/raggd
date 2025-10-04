@@ -20,7 +20,12 @@ from raggd.cli.source import (
     _status_color,
 )
 from raggd.core.paths import WorkspacePaths, resolve_workspace
-from raggd.source import SourceConfigError, SourceConfigStore, SourceError, SourceService
+from raggd.source import (
+    SourceConfigError,
+    SourceConfigStore,
+    SourceError,
+    SourceService,
+)
 from raggd.source.models import SourceHealthStatus
 
 
@@ -43,7 +48,9 @@ def workspace(tmp_path: Path) -> tuple[Path, dict[str, str], WorkspacePaths]:
     return root, env, paths
 
 
-def test_require_context_reports_missing_state(capsys: pytest.CaptureFixture[str]) -> None:
+def test_require_context_reports_missing_state(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class _Dummy:
         pass
 
@@ -62,13 +69,17 @@ def test_status_color_covers_known_health_states() -> None:
     assert _status_color("ok") == typer.colors.GREEN
     assert _status_color(SourceHealthStatus.UNKNOWN) == typer.colors.YELLOW
     assert _status_color("unknown") == typer.colors.YELLOW
-    assert _status_color(SourceHealthStatus.DEGRADED) == typer.colors.BRIGHT_YELLOW
+    assert _status_color(SourceHealthStatus.DEGRADED) == (
+        typer.colors.BRIGHT_YELLOW
+    )
     assert _status_color(SourceHealthStatus.ERROR) == typer.colors.RED
     assert _status_color("error") == typer.colors.RED
     assert _status_color("bogus") is None
 
 
-def test_helpers_handle_none_and_unrecognized_status(capsys: pytest.CaptureFixture[str]) -> None:
+def test_helpers_handle_none_and_unrecognized_status(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert _format_timestamp(None) == "never"
     assert _normalize_status("bogus") is SourceHealthStatus.UNKNOWN
 

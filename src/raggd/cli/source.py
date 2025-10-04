@@ -39,7 +39,10 @@ class SourceCLIContext:
 
 _source_app = typer.Typer(
     name="source",
-    help="Manage workspace sources (init, target, refresh, list, enable, disable).",
+    help=(
+        "Manage workspace sources (init, target, refresh, list, "
+        "enable, disable)."
+    ),
     no_args_is_help=True,
     invoke_without_command=False,
 )
@@ -65,7 +68,10 @@ def _resolve_workspace_override(workspace: Path | None) -> WorkspacePaths:
 def _require_context(ctx: typer.Context) -> SourceCLIContext:
     context = getattr(ctx, "obj", None)
     if not isinstance(context, SourceCLIContext):
-        typer.secho("Internal error: source context not initialized.", fg=typer.colors.RED)
+        typer.secho(
+            "Internal error: source context not initialized.",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1)
     return context
 
@@ -163,7 +169,9 @@ def _handle_failure(
     log = context.logger.bind(action=action)
     payload: dict[str, object] = {"error": str(error)}
     if source is not None:
-        if isinstance(source, Sequence) and not isinstance(source, (str, bytes)):
+        if isinstance(source, Sequence) and not isinstance(
+            source, (str, bytes)
+        ):
             payload["sources"] = list(source)
         else:
             payload["source"] = source
@@ -187,7 +195,8 @@ def configure_source_commands(
         "--workspace",
         "-w",
         help=(
-            "Override workspace directory (defaults to RAGGD_WORKSPACE or ~/.raggd)."
+            "Override workspace directory "
+            "(defaults to RAGGD_WORKSPACE or ~/.raggd)."
         ),
     ),
 ) -> None:
@@ -199,7 +208,10 @@ def configure_source_commands(
 
     if not paths.config_file.exists():
         typer.secho(
-            f"Workspace config not found at {paths.config_file}. Run `raggd init` first.",
+            (
+                "Workspace config not found at "
+                f"{paths.config_file}. Run `raggd init` first."
+            ),
             fg=typer.colors.RED,
         )
         raise typer.Exit(code=1)
@@ -208,7 +220,10 @@ def configure_source_commands(
     try:
         config = store.load()
     except SourceConfigError as exc:
-        typer.secho(f"Failed to load workspace config: {exc}", fg=typer.colors.RED)
+        typer.secho(
+            f"Failed to load workspace config: {exc}",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1) from exc
 
     configure_logging(level=config.log_level, workspace_path=config.workspace)
@@ -232,11 +247,15 @@ def configure_source_commands(
 
 @_source_app.command(
     "init",
-    help="Create a new source and optionally seed it from a target directory.",
+    help=(
+        "Create a new source and optionally seed it from a target directory."
+    ),
 )
 def init_source(
     ctx: typer.Context,
-    name: str = typer.Argument(..., metavar="NAME", help="Name for the new source."),
+    name: str = typer.Argument(
+        ..., metavar="NAME", help="Name for the new source."
+    ),
     target: Path | None = typer.Option(
         None,
         "--target",
@@ -246,15 +265,22 @@ def init_source(
     force_refresh: bool = typer.Option(
         False,
         "--force-refresh",
-        help="Skip confirmation before the initial refresh when --target is set.",
+        help=(
+            "Skip confirmation before the initial refresh when --target is set."
+        ),
     ),
 ) -> None:
     context = _require_context(ctx)
     should_refresh = target is not None or force_refresh
     if should_refresh and not force_refresh:
-        target_display = str(target) if target is not None else "configured target"
+        target_display = (
+            str(target) if target is not None else "configured target"
+        )
         _confirm(
-            f"This will refresh source {name!r} from {target_display}. Continue?",
+            (
+                f"This will refresh source {name!r} from {target_display}. "
+                "Continue?"
+            ),
         )
 
     log = context.logger.bind(action="init")
@@ -266,7 +292,11 @@ def init_source(
     )
 
     try:
-        state = context.service.init(name, target=target, force_refresh=force_refresh)
+        state = context.service.init(
+            name,
+            target=target,
+            force_refresh=force_refresh,
+        )
     except (SourceError, SourceSlugError, SourcePathError) as exc:
         _handle_failure(context, action="init", error=exc, source=name)
     else:
@@ -282,7 +312,10 @@ def init_source(
 
 @_source_app.command(
     "target",
-    help="Set or clear the target directory for a source and trigger refresh handling.",
+    help=(
+        "Set or clear the target directory for a source and trigger refresh "
+        "handling."
+    ),
 )
 def update_target(
     ctx: typer.Context,
@@ -307,10 +340,16 @@ def update_target(
     context = _require_context(ctx)
 
     if clear and directory is not None:
-        typer.secho("--clear cannot be combined with a directory argument.", fg=typer.colors.RED)
+        typer.secho(
+            "--clear cannot be combined with a directory argument.",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1)
     if not clear and directory is None:
-        typer.secho("A target directory is required unless --clear is provided.", fg=typer.colors.RED)
+        typer.secho(
+            "A target directory is required unless --clear is provided.",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1)
 
     target_arg: Path | None = None
@@ -321,7 +360,10 @@ def update_target(
         target_arg = directory
         if not force:
             _confirm(
-                f"This will refresh source {name!r} after updating the target. Continue?",
+                (
+                    "This will refresh source {name!r} after updating the "
+                    "target. Continue?"
+                ),
             )
 
     log = context.logger.bind(action="target")
@@ -350,7 +392,10 @@ def update_target(
 
 @_source_app.command(
     "refresh",
-    help="Refresh cached artifacts for a source, respecting health gating unless forced.",
+    help=(
+        "Refresh cached artifacts for a source, respecting health gating "
+        "unless forced."
+    ),
 )
 def refresh_source(
     ctx: typer.Context,
@@ -388,7 +433,9 @@ def refresh_source(
 
 @_source_app.command(
     "rename",
-    help="Rename an existing source and update its configuration and manifests.",
+    help=(
+        "Rename an existing source and update its configuration and manifests."
+    ),
 )
 def rename_source(
     ctx: typer.Context,
@@ -427,7 +474,10 @@ def rename_source(
 
 @_source_app.command(
     "remove",
-    help="Delete a source and its managed artifacts, bypassing health gating with --force.",
+    help=(
+        "Delete a source and its managed artifacts, bypassing health gating "
+        "with --force."
+    ),
 )
 def remove_source(
     ctx: typer.Context,

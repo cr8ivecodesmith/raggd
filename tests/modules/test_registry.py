@@ -196,11 +196,11 @@ def test_registry_iter_descriptors_returns_sequence() -> None:
 
 
 def test_health_registry_exposes_hooks_in_declaration_order() -> None:
-    def alpha_hook(handle: object) -> Sequence[HealthReport]:  # pragma: no cover - exercised indirectly
-        return ()
+    def alpha_hook(handle: object) -> Sequence[HealthReport]:
+        return ()  # pragma: no cover
 
-    def gamma_hook(handle: object) -> Sequence[HealthReport]:  # pragma: no cover - exercised indirectly
-        return ()
+    def gamma_hook(handle: object) -> Sequence[HealthReport]:
+        return ()  # pragma: no cover
 
     descriptors = (
         ModuleDescriptor(

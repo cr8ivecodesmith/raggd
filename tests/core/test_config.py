@@ -184,9 +184,10 @@ def test_workspace_settings_scalar_and_mapping_support() -> None:
         name="bravo",
         path=Path("/tmp/workspace/sources/bravo"),
     )
-    from_existing = WorkspaceSettings.from_mapping({"sources": {"bravo": existing}})
+    from_existing = WorkspaceSettings.from_mapping(
+        {"sources": {"bravo": existing}}
+    )
     assert from_existing.sources["bravo"].name == "bravo"
-
 
 
 def test_iter_workspace_sources_and_render_with_sources() -> None:

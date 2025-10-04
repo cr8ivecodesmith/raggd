@@ -40,7 +40,10 @@ def test_init_workspace_respects_overrides_and_refresh(tmp_path) -> None:
     defaults_path = workspace / DEFAULTS_RESOURCE_NAME
     config_path = workspace / "raggd.toml"
 
-    config_path.write_text('[workspace]\nroot = "/tmp/elsewhere"\n', encoding="utf-8")
+    config_path.write_text(
+        '[workspace]\nroot = "/tmp/elsewhere"\n',
+        encoding="utf-8",
+    )
 
     config = init_workspace(
         workspace=workspace,

@@ -25,7 +25,9 @@ class SourceConfigWriteError(SourceConfigError):
     """Raised when persisting configuration updates fails."""
 
     def __init__(self, path: Path, stage: str, cause: OSError) -> None:
-        message = f"Failed to {stage} workspace config at {path}: {cause}".strip()
+        message = (
+            f"Failed to {stage} workspace config at {path}: {cause}"
+        ).strip()
         super().__init__(message)
         self.path = path
         self.stage = stage
@@ -62,7 +64,10 @@ class SourceConfigStore:
         """Create or update a source entry and persist the configuration."""
 
         snapshot = self._load_snapshot()
-        workspace_table = self._ensure_workspace_table(snapshot.document, snapshot.config)
+        workspace_table = self._ensure_workspace_table(
+            snapshot.document,
+            snapshot.config,
+        )
 
         sources = dict(snapshot.config.workspace_sources)
         sources[source.name] = source
@@ -74,7 +79,10 @@ class SourceConfigStore:
         """Remove a source entry if present and persist the configuration."""
 
         snapshot = self._load_snapshot()
-        workspace_table = self._ensure_workspace_table(snapshot.document, snapshot.config)
+        workspace_table = self._ensure_workspace_table(
+            snapshot.document,
+            snapshot.config,
+        )
 
         sources = dict(snapshot.config.workspace_sources)
         sources.pop(name, None)
@@ -89,12 +97,18 @@ class SourceConfigStore:
         """Persist the provided mapping as the authoritative source set."""
 
         snapshot = self._load_snapshot()
-        workspace_table = self._ensure_workspace_table(snapshot.document, snapshot.config)
+        workspace_table = self._ensure_workspace_table(
+            snapshot.document,
+            snapshot.config,
+        )
 
-        normalized = {
-            key: (value if value.name == key else value.model_copy(update={"name": key}))
-            for key, value in sources.items()
-        }
+        normalized: dict[str, WorkspaceSourceConfig] = {}
+        for key, value in sources.items():
+            normalized[key] = (
+                value
+                if value.name == key
+                else value.model_copy(update={"name": key})
+            )
         self._write_sources_table(workspace_table, normalized)
         self._write_document(snapshot.document)
         return self.load()
@@ -114,7 +128,9 @@ class SourceConfigStore:
         try:
             return path.read_text(encoding="utf-8")
         except OSError as exc:  # pragma: no cover - surfaced via runtime errors
-            raise SourceConfigError(f"Failed to read workspace config at {path}: {exc}") from exc
+            raise SourceConfigError(
+                f"Failed to read workspace config at {path}: {exc}"
+            ) from exc  # pragma: no cover - surfaced via runtime errors
 
     def _ensure_workspace_table(
         self,
@@ -135,7 +151,9 @@ class SourceConfigStore:
                 document.add("workspace", table)
 
         root_item = table.get("root")
-        table["root"] = str(root_item) if root_item is not None else str(config.workspace)
+        table["root"] = (
+            str(root_item) if root_item is not None else str(config.workspace)
+        )
         return table
 
     def _extract_legacy_root(
@@ -188,17 +206,25 @@ class SourceConfigStore:
                 handle.flush()
                 os.fsync(handle.fileno())
                 temp_path = Path(handle.name)
-        except OSError as exc:  # pragma: no cover - I/O failure simulated via tests
-            raise SourceConfigWriteError(path, "write temporary file", exc) from exc
+        except OSError as exc:  # pragma: no cover
+            raise SourceConfigWriteError(
+                path,
+                "write temporary file",
+                exc,
+            ) from exc  # pragma: no cover - I/O failure simulated via tests
 
         try:
             os.replace(temp_path, path)
-        except OSError as exc:  # pragma: no cover - I/O failure simulated via tests
+        except OSError as exc:  # pragma: no cover
             try:
                 temp_path.unlink()
-            except OSError:
+            except OSError:  # pragma: no cover - cleanup best effort
                 pass
-            raise SourceConfigWriteError(path, "replace target file", exc) from exc
+            raise SourceConfigWriteError(
+                path,
+                "replace target file",
+                exc,
+            ) from exc  # pragma: no cover - I/O failure simulated via tests
 
 
 __all__ = [

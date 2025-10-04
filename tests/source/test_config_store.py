@@ -33,7 +33,8 @@ def test_upsert_creates_source_entry(tmp_path: Path) -> None:
     assert saved.enabled is True
     assert saved.target == workspace / "data" / "demo"
 
-    rendered = tomllib.loads((workspace / "raggd.toml").read_text(encoding="utf-8"))
+    rendered_text = (workspace / "raggd.toml").read_text(encoding="utf-8")
+    rendered = tomllib.loads(rendered_text)
     assert rendered["workspace"]["root"].endswith("workspace")
     entry = rendered["workspace"]["sources"]["demo"]
     assert entry["enabled"] is True
@@ -60,7 +61,8 @@ def test_remove_prunes_sources_table(tmp_path: Path) -> None:
     config = store.remove("demo")
     assert "demo" not in config.workspace_sources
 
-    rendered = tomllib.loads((workspace / "raggd.toml").read_text(encoding="utf-8"))
+    rendered_text = (workspace / "raggd.toml").read_text(encoding="utf-8")
+    rendered = tomllib.loads(rendered_text)
     assert "sources" not in rendered["workspace"]
 
 
@@ -101,7 +103,10 @@ def test_write_failure_raises_and_preserves_file(
     config_path = workspace / "raggd.toml"
     original = config_path.read_text(encoding="utf-8")
 
-    def fake_replace(src: os.PathLike[str] | str, dst: os.PathLike[str] | str) -> None:
+    def fake_replace(
+        src: os.PathLike[str] | str,
+        dst: os.PathLike[str] | str,
+    ) -> None:
         raise OSError("simulated failure")
 
     monkeypatch.setattr(os, "replace", fake_replace)
@@ -120,7 +125,10 @@ def test_write_failure_raises_and_preserves_file(
 
 def test_upsert_converts_legacy_scalar_workspace(tmp_path: Path) -> None:
     config_path = tmp_path / "raggd.toml"
-    config_path.write_text('workspace = "/tmp/legacy"\nlog_level = "INFO"\n', encoding="utf-8")
+    config_path.write_text(
+        'workspace = "/tmp/legacy"\nlog_level = "INFO"\n',
+        encoding="utf-8",
+    )
 
     store = SourceConfigStore(config_path=config_path)
     store.upsert(

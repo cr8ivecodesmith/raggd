@@ -11,7 +11,11 @@ from .document import (
     dump_health_document,
     load_health_document,
 )
-from .errors import HealthDocumentError, HealthDocumentReadError, HealthDocumentWriteError
+from .errors import (
+    HealthDocumentError,
+    HealthDocumentReadError,
+    HealthDocumentWriteError,
+)
 
 __all__ = [
     "HealthDetail",

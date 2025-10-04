@@ -59,7 +59,8 @@ def evaluate_source_health(
                 SourceHealthStatus.DEGRADED,
                 "No target is configured for this source.",
                 (
-                    f"Set a target with `raggd source target {config.name} <path>`.",
+                    "Set a target with `raggd source target "
+                    f"{config.name} <path>`.",
                 ),
             )
         )
@@ -100,7 +101,9 @@ def evaluate_source_health(
     )
 
 
-def _detect_disabled(config: WorkspaceSourceConfig) -> Iterable[SourceHealthIssue]:
+def _detect_disabled(
+    config: WorkspaceSourceConfig,
+) -> Iterable[SourceHealthIssue]:
     if config.enabled:
         return ()
 
@@ -109,7 +112,8 @@ def _detect_disabled(config: WorkspaceSourceConfig) -> Iterable[SourceHealthIssu
             SourceHealthStatus.UNKNOWN,
             "Source is disabled.",
             (
-                f"Enable the source with `raggd source enable {config.name}` when it is ready.",
+                "Enable the source with `raggd source enable "
+                f"{config.name}` when it is ready.",
             ),
         ),
     )
@@ -126,7 +130,10 @@ def _detect_directory_issues(path: Path) -> Iterable[SourceHealthIssue]:
             SourceHealthIssue(
                 SourceHealthStatus.ERROR,
                 f"Source directory is missing: {path}",
-                ("Recreate the source directory or re-run `raggd source init`.",),
+                (
+                    "Recreate the source directory or re-run "
+                    "`raggd source init`.",
+                ),
             ),
         )
 
@@ -142,7 +149,9 @@ def _detect_directory_issues(path: Path) -> Iterable[SourceHealthIssue]:
     return ()
 
 
-def _detect_target_issues(config: WorkspaceSourceConfig) -> Iterable[SourceHealthIssue]:
+def _detect_target_issues(
+    config: WorkspaceSourceConfig,
+) -> Iterable[SourceHealthIssue]:
     target = config.target
     if target is None:  # pragma: no cover - guarded by evaluate_source_health
         return ()
@@ -159,7 +168,8 @@ def _detect_target_issues(config: WorkspaceSourceConfig) -> Iterable[SourceHealt
                 SourceHealthStatus.ERROR,
                 f"Target path does not exist: {target}",
                 (
-                    "Create the target directory or update the source target path.",
+                    "Create the target directory or update the source target "
+                    "path.",
                 ),
             )
         )
@@ -171,7 +181,8 @@ def _detect_target_issues(config: WorkspaceSourceConfig) -> Iterable[SourceHealt
                 SourceHealthStatus.DEGRADED,
                 f"Target path is not a directory: {target}",
                 (
-                    f"Point the source at a directory with `raggd source target {config.name} <dir>`.",
+                    "Point the source at a directory with `raggd source target "
+                    f"{config.name} <dir>`.",
                 ),
             )
         )
@@ -198,7 +209,8 @@ def _detect_refresh_staleness(
                 SourceHealthStatus.UNKNOWN,
                 "Source has not been refreshed yet.",
                 (
-                    f"Run `raggd source refresh {config.name}` to populate managed artifacts.",
+                    "Run `raggd source refresh "
+                    f"{config.name}` to populate managed artifacts.",
                 ),
             ),
         )

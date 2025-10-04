@@ -67,22 +67,30 @@ def _resolve_workspace(workspace: Path | None) -> WorkspacePaths:
 
 def _load_app_config(paths: WorkspacePaths) -> AppConfig:
     if not paths.config_file.exists():
+        config_path = paths.config_file
         raise FileNotFoundError(
-            f"Workspace config not found at {paths.config_file}. Run `raggd init` first."
+            (
+                f"Workspace config not found at {config_path}. "
+                "Run `raggd init` first."
+            )
         )
 
     defaults = load_packaged_defaults()
     try:
         text = paths.config_file.read_text(encoding="utf-8")
     except OSError as exc:
-        raise RuntimeError(f"Failed to read config file {paths.config_file}: {exc}") from exc
+        config_path = paths.config_file
+        raise RuntimeError(
+            (f"Failed to read config file {config_path}: {exc}")
+        ) from exc
 
     if text:
         try:
             user_config = tomllib.loads(text)
         except tomllib.TOMLDecodeError as exc:
+            config_path = paths.config_file
             message = (
-                f"Failed to parse config file {paths.config_file}: TOML error: {exc}"
+                f"Failed to parse config file {config_path}: TOML error: {exc}"
             )
             raise RuntimeError(message) from exc
     else:
@@ -118,9 +126,7 @@ def _select_modules(
 
     unknown = [name for name in normalized if name not in hooks]
     if unknown:
-        raise KeyError(
-            "Unknown module(s): " + ", ".join(sorted(unknown))
-        )
+        raise KeyError("Unknown module(s): " + ", ".join(sorted(unknown)))
 
     ordered = [name for name in available if name in seen]
     return ordered
@@ -202,7 +208,7 @@ def _emit_module_output(
                 typer.echo(f"      - {action}")
 
 
-def register_checkhealth_command(
+def register_checkhealth_command(  # noqa: C901 - keep Typer wiring inline
     app: typer.Typer,
     *,
     registry: ModuleRegistry,
@@ -216,7 +222,7 @@ def register_checkhealth_command(
             "<workspace>/.health.json."
         ),
     )
-    def checkhealth_command(  # noqa: PLR0915 - CLI orchestration is inherently verbose
+    def checkhealth_command(  # noqa: C901, PLR0915 - CLI flow is verbose
         modules: list[str] = typer.Argument(
             (),
             metavar="[MODULE]",
@@ -227,7 +233,8 @@ def register_checkhealth_command(
             "--workspace",
             "-w",
             help=(
-                "Override workspace directory (defaults to RAGGD_WORKSPACE or ~/.raggd)."
+                "Override workspace directory "
+                "(defaults to RAGGD_WORKSPACE or ~/.raggd)."
             ),
         ),
     ) -> None:
@@ -243,7 +250,9 @@ def register_checkhealth_command(
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(code=1) from exc
 
-        configure_logging(level=config.log_level, workspace_path=config.workspace)
+        configure_logging(
+            level=config.log_level, workspace_path=config.workspace
+        )
         logger = get_logger(__name__, command="checkhealth")
 
         hooks = registry.health_registry()
@@ -279,7 +288,9 @@ def register_checkhealth_command(
         try:
             previous = store.load()
         except HealthDocumentError as exc:
-            typer.secho(f"Failed to load health document: {exc}", fg=typer.colors.RED)
+            typer.secho(
+                f"Failed to load health document: {exc}", fg=typer.colors.RED
+            )
             raise typer.Exit(code=1) from exc
 
         updates = {name: snapshot for name, snapshot in results}
@@ -290,7 +301,9 @@ def register_checkhealth_command(
         try:
             store.write(merged)
         except HealthDocumentError as exc:
-            typer.secho(f"Failed to write health document: {exc}", fg=typer.colors.RED)
+            typer.secho(
+                f"Failed to write health document: {exc}", fg=typer.colors.RED
+            )
             raise typer.Exit(code=1) from exc
 
         if carried_forward:
@@ -302,7 +315,9 @@ def register_checkhealth_command(
         logger.info(
             "checkhealth-run",
             modules=target_modules,
-            statuses={name: snapshot.status.value for name, snapshot in results},
+            statuses={
+                name: snapshot.status.value for name, snapshot in results
+            },
             exit_code=highest_exit,
         )
 

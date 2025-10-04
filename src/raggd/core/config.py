@@ -84,13 +84,12 @@ class WorkspaceSettings(BaseModel):
                     source_model = WorkspaceSourceConfig(**payload)
                 else:
                     raise TypeError(
-                        f"Unsupported source configuration for {key!r}: {value!r}"
+                        "Unsupported source configuration for "
+                        f"{key!r}: {value!r}"
                     )
                 normalized_sources[key] = source_model
         elif sources_raw:
-            raise TypeError(
-                f"Unsupported sources payload: {sources_raw!r}"
-            )
+            raise TypeError(f"Unsupported sources payload: {sources_raw!r}")
 
         result_data: dict[str, Any] = {"sources": normalized_sources}
         if "root" in data:
@@ -180,7 +179,9 @@ class AppConfig(BaseModel):
 
         return self.workspace_settings.sources
 
-    def iter_workspace_sources(self) -> Iterable[tuple[str, WorkspaceSourceConfig]]:
+    def iter_workspace_sources(
+        self,
+    ) -> Iterable[tuple[str, WorkspaceSourceConfig]]:
         """Iterate over registered workspace sources."""
 
         return self.workspace_settings.iter_sources()

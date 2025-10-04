@@ -30,7 +30,9 @@ class HealthDetail(BaseModel):
     """Detailed record contributed by a module health hook."""
 
     name: str = Field(description="Identifier for the entity being checked.")
-    status: HealthStatus = Field(description="Severity classification for the entry.")
+    status: HealthStatus = Field(
+        description="Severity classification for the entry.",
+    )
     summary: str | None = Field(
         default=None,
         description="Optional short explanation describing the status.",
@@ -41,7 +43,9 @@ class HealthDetail(BaseModel):
     )
     last_refresh_at: datetime | None = Field(
         default=None,
-        description="Timestamp representing the most recent refresh for the entity.",
+        description=(
+            "Timestamp representing the most recent refresh for the entity."
+        ),
     )
 
     model_config = {
@@ -82,7 +86,10 @@ class HealthDocument(RootModel[dict[str, HealthModuleSnapshot]]):
 
         return dict(self.root)
 
-    def merge(self, updates: Mapping[str, HealthModuleSnapshot]) -> "HealthDocument":
+    def merge(
+        self,
+        updates: Mapping[str, HealthModuleSnapshot],
+    ) -> "HealthDocument":
         """Return a new document with module entries replaced by updates."""
 
         merged = dict(self.root)
@@ -127,17 +134,20 @@ def _deserialize_document(data: Mapping[str, object]) -> HealthDocument:
 
 
 def load_health_document(path: Path) -> HealthDocument:
-    """Load the persisted health document, returning an empty document when missing."""
+    """Load persisted health results, returning empty data when missing."""
 
     if not path.exists():
         return HealthDocument.model_validate({})
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:  # pragma: no cover - defensive
+    except (
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:  # pragma: no cover - defensive
         raise HealthDocumentReadError(
             f"Failed to load health document from {path}: {exc}"
-        ) from exc
+        ) from exc  # pragma: no cover - defensive
 
     if not isinstance(raw, MutableMapping):
         raise HealthDocumentReadError(
@@ -152,12 +162,15 @@ def dump_health_document(document: HealthDocument) -> str:
 
     payload = document.model_dump(mode="json")
     ordered = OrderedDict(sorted(payload.items()))
-    return json.dumps(
-        ordered,
-        indent=2,
-        sort_keys=False,
-        ensure_ascii=False,
-    ) + "\n"
+    return (
+        json.dumps(
+            ordered,
+            indent=2,
+            sort_keys=False,
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
 
 
 @dataclass(slots=True)

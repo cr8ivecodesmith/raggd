@@ -154,7 +154,7 @@ def test_source_health_hook_handles_invalid_manifest(tmp_path: Path) -> None:
 
     manifest_path = paths.source_manifest_path("alpha")
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text("{\"name\": 123}", encoding="utf-8")
+    manifest_path.write_text('{"name": 123}', encoding="utf-8")
 
     reports = source_health_hook(handle)
 
