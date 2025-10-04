@@ -58,7 +58,7 @@
 - DI & boundaries — `DbLifecycleService` lives behind an interface consumed by CLI and `source` modules; dependencies include `MigrationRunner`, `ManifestMirror`, and `Config` objects injected via the app container per `engineering-guide.md` recommendations.
 - Stepwise checklist:
 - **Phase 1 — Manifest subsystem**
-  - [ ] Scaffold `raggd.modules.manifest` package with `ManifestService`, migrator, backups, locking helpers, and config adapters surfaced through a lean public API.
+  - [x] Scaffold `raggd.modules.manifest` package with `ManifestService`, migrator, backups, locking helpers, and config adapters surfaced through a lean public API.
   - [ ] Implement legacy-manifest migration into the `modules.*` layout (including `.bak` rotation and `modules_version` stamping) with accompanying unit + golden tests.
   - [ ] Provide manifest fixtures and contract tests to ensure the `source` module can read/write via the service without touching raw JSON.
   - [ ] Expose shared helpers for `modules.db` key calculation and manifest settings; document usage for consuming modules.
@@ -121,3 +121,10 @@ Layered plan around manifest → source → db workflow
 - Added `raggd.modules.manifest` subsystem to understanding, assumptions, impact analysis, and test coverage
 - Reworked the stepwise checklist into phased execution (manifest, then source, then db) with aligned packaging/docs items
 - Expanded affected files/tests to cover manifest service scaffolding and fixtures
+
+### 2025-10-04 20:46 PST
+**Summary**
+Scaffolded manifest subsystem foundations
+**Changes**
+- Implemented manifest service, migrator, backups, locks, and config adapters with transactional semantics
+- Added manifest module tests exercising locking, backups, migrations, serialization, and error handling
