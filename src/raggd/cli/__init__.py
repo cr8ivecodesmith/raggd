@@ -20,8 +20,10 @@ from typing import Iterable, Mapping, Sequence
 
 import typer
 
+from raggd.cli.checkhealth import register_checkhealth_command
 from raggd.cli.init import init_workspace
 from raggd.cli.source import create_source_app
+from raggd.source import source_health_hook
 from raggd.core.config import AppConfig, ModuleToggle, DEFAULTS_RESOURCE_NAME
 from raggd.core.logging import configure_logging, get_logger
 from raggd.core.paths import resolve_workspace
@@ -39,6 +41,7 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
         name="source",
         description="Workspace source management commands and services.",
         default_toggle=ModuleToggle(enabled=True),
+        health_hook=source_health_hook,
     ),
     ModuleDescriptor(
         name="file-monitoring",
@@ -265,6 +268,7 @@ def create_app() -> "typer.Typer":
     app.add_typer(create_source_app(), name="source")
 
     registry = ModuleRegistry(_DEFAULT_MODULE_DESCRIPTORS)
+    register_checkhealth_command(app, registry=registry)
 
     @app.callback()
     def main_callback() -> None:

@@ -53,7 +53,7 @@
   - [x] Update module registry/defaults to include a `source` module toggle and dependency extras.
   - [x] Extend the modules registry to publish a `HealthRegistry` view that exposes the `ModuleDescriptor.health_hook` contract for `checkhealth`.
   - [x] Design `.health.json` aggregator format and persistence helpers (read/merge/write with timestamps) that emit the payload shape defined in `spec.md` (`{"sources": {"checked_at": iso8601, "status": enum, "details": [{"name": str, "status": enum, "summary": str|None, "actions": [str], "last_refresh_at": iso8601|None}]}}`), derive the module-level `status` as the highest-severity entry in `details`, and persist via temp-file + `os.replace` to avoid partial writes; per-run outputs replace the entire module block for modules that provided data while preserving untouched module sections from the previous file, and modules are responsible for returning their full canonical payload so overlapping fields never interleave across modules. Failed writes keep the prior file intact and surface structured errors.
-  - [ ] Implement `raggd checkhealth [module]` CLI entry using the health registry, ensuring filtered runs only update the requested module keys and logging when data is carried forward unchanged for others.
+  - [x] Implement `raggd checkhealth [module]` CLI entry using the health registry, ensuring filtered runs only update the requested module keys and logging when data is carried forward unchanged for others.
   - [ ] Ensure logging captures key actions (success/failure, enablement toggles, forced operations).
   - [ ] Add CLI + unit tests for all new behaviors, including error paths and force overrides.
   - [ ] Refresh documentation (workspace guide) and update DoD artifacts (Typer CLI help strings added).
@@ -167,3 +167,12 @@ Implemented source health evaluation routines and supporting tests.
 **Changes**
 - Added `raggd.source.health` with per-source checks, default evaluator wiring, and manifest status updates.
 - Expanded source tests to cover health scenarios and updated the implementation checklist for this milestone.
+
+### 2025-10-05 19:45 PST
+**Summary**
+Implemented the `raggd checkhealth` CLI and health hook wiring.
+**Changes**
+- Added a source module health hook that emits manifest-backed `HealthReport` records and registered it with the module descriptor.
+- Built the Typer-powered `raggd checkhealth` command with health registry integration, `.health.json` persistence, module filtering, and structured terminal output.
+- Introduced unit and CLI regression tests for the hook and CLI, updated the implementation checklist, and ensured health document updates respect existing module snapshots.
+

@@ -64,6 +64,7 @@ __all__ = [
     "SourceConfigWriteError",
     "SourceHealthIssue",
     "evaluate_source_health",
+    "source_health_hook",
 ]
 
 
@@ -76,6 +77,7 @@ _LAZY_IMPORTS = {
     "SourceState": "service",
     "SourceHealthIssue": "health",
     "evaluate_source_health": "health",
+    "source_health_hook": "hooks",
 }
 
 
