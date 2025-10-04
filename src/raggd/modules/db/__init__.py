@@ -6,10 +6,14 @@ from .lifecycle import (
     DbLifecycleError,
     DbLifecycleNotImplementedError,
     DbLifecycleService,
+    DbManifestSyncError,
+    DbOperationError,
 )
 
 __all__ = [
     "DbLifecycleError",
     "DbLifecycleNotImplementedError",
+    "DbManifestSyncError",
+    "DbOperationError",
     "DbLifecycleService",
 ]

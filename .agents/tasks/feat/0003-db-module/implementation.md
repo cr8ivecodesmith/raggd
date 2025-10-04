@@ -68,7 +68,7 @@
   - [x] Wire manifest helpers/settings into the source module configuration layer.
 - **Phase 3 — Database module delivery**
   - [x] Scaffold `raggd.modules.db` package with Typer command group exposed in the root CLI and backed by `DbLifecycleService`.
-  - [ ] Implement lifecycle commands (`ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, `reset`) with manifest mirroring via the shared service and cohesive error handling.
+  - [x] Implement lifecycle commands (`ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, `reset`) with manifest mirroring via the shared service and cohesive error handling.
   - [ ] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation while persisting both canonical UUID7 and shortened forms into `schema_meta`, the ledger, and manifest mirrors.
   - [ ] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
   - [ ] Register the database module and health provider in `modules/registry.py`; integrate with `raggd checkhealth` and settings defaults (`config.db.*`).
@@ -186,3 +186,13 @@ Sketched the `raggd db` CLI surface and lifecycle placeholders
 - Swapped workspace database filenames to `db.sqlite3` and refreshed path/documentation expectations
 **Tests**
 - `uv run pytest --no-cov tests/cli/test_db.py tests/modules/db/test_lifecycle.py tests/core/test_paths.py`
+
+### 2025-10-04 23:58 PST
+**Summary**
+Implemented lifecycle service orchestration with backend stub and manifest mirroring
+**Changes**
+- Added `DbManifestState` helpers and lifecycle backend protocol/stub to model database metadata updates
+- Reworked `DbLifecycleService` operations to delegate to the backend, persist manifest timestamps/pending migrations, and surface cohesive errors
+- Replaced placeholder lifecycle tests with backend doubles covering manifest sync, timestamping, and error wrapping
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/db/test_lifecycle.py tests/cli/test_db.py`
