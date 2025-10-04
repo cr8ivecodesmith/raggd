@@ -13,6 +13,8 @@ from structlog.testing import capture_logs
 from raggd.cli.init import init_workspace
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.db import DbLifecycleService
+from raggd.modules.db.settings import DbModuleSettings
+from raggd.modules.db.uuid7 import generate_uuid7, short_uuid7
 from raggd.modules.manifest import ManifestService, ManifestSettings
 from raggd.modules.manifest.migrator import MODULES_VERSION
 from raggd.source import (
@@ -44,15 +46,32 @@ class StubHealthEvaluator:
 
 
 class RecordingDbLifecycleService:
-    """Record ``ensure`` calls while delegating to a real service."""
+    """Record ``ensure`` calls while optionally delegating to a real service."""
 
-    def __init__(self, delegate: DbLifecycleService) -> None:
+    def __init__(
+        self,
+        delegate: DbLifecycleService | None = None,
+        *,
+        workspace: WorkspacePaths | None = None,
+    ) -> None:
         self._delegate = delegate
+        self._workspace = workspace
         self.calls: list[str] = []
 
     def ensure(self, source: str) -> Path:
         self.calls.append(source)
-        return self._delegate.ensure(source)
+        if self._delegate is not None:
+            return self._delegate.ensure(source)
+        if self._workspace is None:
+            dummy = Path(f"{source}.sqlite3")
+            dummy.parent.mkdir(parents=True, exist_ok=True)
+            dummy.touch(exist_ok=True)
+            return dummy
+        path = self._workspace.source_database_path(source)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.touch()
+        return path
 
 
 class FailingDbLifecycleService:
@@ -77,6 +96,37 @@ def _make_paths(root: Path) -> WorkspacePaths:
     )
 
 
+def _write_migration(directory: Path, identifier, *, up: str, down: str | None = None) -> None:
+    short = short_uuid7(identifier).value
+    up_path = directory / f"{short}.up.sql"
+    up_path.write_text(f"-- uuid7: {identifier}\n{up}\n", encoding="utf-8")
+    if down is not None:
+        down_path = directory / f"{short}.down.sql"
+        down_path.write_text(f"-- uuid7: {identifier}\n{down}\n", encoding="utf-8")
+
+
+def _prepare_db_settings(tmp_path: Path) -> DbModuleSettings:
+    migrations_dir = (tmp_path / "migrations").resolve()
+    migrations_dir.mkdir(exist_ok=True)
+
+    bootstrap_uuid = generate_uuid7(when=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    next_uuid = generate_uuid7(when=datetime(2024, 1, 2, tzinfo=timezone.utc))
+
+    _write_migration(
+        migrations_dir,
+        bootstrap_uuid,
+        up="CREATE TABLE example(id INTEGER PRIMARY KEY);",
+    )
+    _write_migration(
+        migrations_dir,
+        next_uuid,
+        up="ALTER TABLE example ADD COLUMN name TEXT;",
+        down="ALTER TABLE example DROP COLUMN name;",
+    )
+
+    return DbModuleSettings(migrations_path=str(migrations_dir))
+
+
 def _make_service(
     tmp_path: Path,
     health: StubHealthEvaluator,
@@ -95,6 +145,8 @@ def _make_service(
         paths = workspace_paths
     store = SourceConfigStore(config_path=paths.config_file)
     fixed_now = datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
+    if db_service is None:
+        db_service = RecordingDbLifecycleService(workspace=paths)
     service = SourceService(
         workspace=paths,
         config_store=store,
@@ -195,8 +247,13 @@ def test_init_invokes_db_lifecycle(tmp_path: Path) -> None:
     init_workspace(workspace=workspace)
     paths = _make_paths(workspace)
     manifest = ManifestService(workspace=paths)
-    delegate = DbLifecycleService(workspace=paths, manifest_service=manifest)
-    recorder = RecordingDbLifecycleService(delegate=delegate)
+    db_settings = _prepare_db_settings(tmp_path)
+    delegate = DbLifecycleService(
+        workspace=paths,
+        manifest_service=manifest,
+        db_settings=db_settings,
+    )
+    recorder = RecordingDbLifecycleService(delegate=delegate, workspace=paths)
 
     service, _ = _make_service(
         tmp_path,
@@ -246,8 +303,13 @@ def test_refresh_invokes_db_lifecycle(tmp_path: Path) -> None:
     init_workspace(workspace=workspace)
     paths = _make_paths(workspace)
     manifest = ManifestService(workspace=paths)
-    delegate = DbLifecycleService(workspace=paths, manifest_service=manifest)
-    recorder = RecordingDbLifecycleService(delegate=delegate)
+    db_settings = _prepare_db_settings(tmp_path)
+    delegate = DbLifecycleService(
+        workspace=paths,
+        manifest_service=manifest,
+        db_settings=db_settings,
+    )
+    recorder = RecordingDbLifecycleService(delegate=delegate, workspace=paths)
 
     service, _ = _make_service(
         tmp_path,
@@ -271,8 +333,13 @@ def test_set_target_invokes_db_lifecycle(tmp_path: Path) -> None:
     init_workspace(workspace=workspace)
     paths = _make_paths(workspace)
     manifest = ManifestService(workspace=paths)
-    delegate = DbLifecycleService(workspace=paths, manifest_service=manifest)
-    recorder = RecordingDbLifecycleService(delegate=delegate)
+    db_settings = _prepare_db_settings(tmp_path)
+    delegate = DbLifecycleService(
+        workspace=paths,
+        manifest_service=manifest,
+        db_settings=db_settings,
+    )
+    recorder = RecordingDbLifecycleService(delegate=delegate, workspace=paths)
 
     service, _ = _make_service(
         tmp_path,
@@ -312,11 +379,16 @@ def test_refresh_migrates_legacy_manifest(
         )
     )
     health = StubHealthEvaluator()
+    db_settings = _prepare_db_settings(manifest_workspace.workspace)
     delegate = DbLifecycleService(
         workspace=manifest_workspace,
         manifest_service=manifest_service,
+        db_settings=db_settings,
     )
-    recorder = RecordingDbLifecycleService(delegate=delegate)
+    recorder = RecordingDbLifecycleService(
+        delegate=delegate,
+        workspace=manifest_workspace,
+    )
     fixed_now = datetime(2025, 10, 5, 12, 0, tzinfo=timezone.utc)
     service = SourceService(
         workspace=manifest_workspace,
@@ -368,7 +440,12 @@ def test_refresh_rolls_back_on_db_failure(tmp_path: Path) -> None:
     init_workspace(workspace=workspace)
     paths = _make_paths(workspace)
     manifest = ManifestService(workspace=paths)
-    delegate = DbLifecycleService(workspace=paths, manifest_service=manifest)
+    db_settings = _prepare_db_settings(tmp_path)
+    delegate = DbLifecycleService(
+        workspace=paths,
+        manifest_service=manifest,
+        db_settings=db_settings,
+    )
     service, _ = _make_service(
         tmp_path,
         health,
@@ -782,7 +859,12 @@ def test_default_health_evaluator_reports_degraded_when_target_missing(
     init_workspace(workspace=workspace)
     paths = _make_paths(workspace)
     store = SourceConfigStore(config_path=paths.config_file)
-    service = SourceService(workspace=paths, config_store=store)
+    db_service = RecordingDbLifecycleService(workspace=paths)
+    service = SourceService(
+        workspace=paths,
+        config_store=store,
+        db_service=db_service,
+    )
 
     service.init("demo")
     [state] = service.enable("demo")

@@ -79,8 +79,9 @@ class RecordingBackend:
         source: str,
         db_path: Path,
         manifest: DbManifestState,
+        now: datetime,
     ) -> DbEnsureOutcome:
-        self._record("ensure", source=source, path=db_path)
+        self._record("ensure", source=source, path=db_path, now=now)
         return DbEnsureOutcome(status=self.ensure_status)
 
     def upgrade(
@@ -90,8 +91,9 @@ class RecordingBackend:
         db_path: Path,
         manifest: DbManifestState,
         steps: int | None,
+        now: datetime,
     ) -> DbUpgradeOutcome:
-        self._record("upgrade", source=source, steps=steps)
+        self._record("upgrade", source=source, steps=steps, now=now)
         return DbUpgradeOutcome(
             status=self.upgrade_status,
             applied_migrations=(),
@@ -104,8 +106,9 @@ class RecordingBackend:
         db_path: Path,
         manifest: DbManifestState,
         steps: int,
+        now: datetime,
     ) -> DbDowngradeOutcome:
-        self._record("downgrade", source=source, steps=steps)
+        self._record("downgrade", source=source, steps=steps, now=now)
         return DbDowngradeOutcome(
             status=self.downgrade_status,
             rolled_back_migrations=(),
@@ -118,8 +121,9 @@ class RecordingBackend:
         db_path: Path,
         manifest: DbManifestState,
         include_schema: bool,
+        now: datetime,
     ) -> DbInfoOutcome:
-        self._record("info", source=source, include_schema=include_schema)
+        self._record("info", source=source, include_schema=include_schema, now=now)
         metadata = self.info_metadata if self.info_metadata else {}
         return DbInfoOutcome(
             status=self.info_status,
@@ -134,8 +138,9 @@ class RecordingBackend:
         db_path: Path,
         manifest: DbManifestState,
         concurrency: int | str | None,
+        now: datetime,
     ) -> DbVacuumOutcome:
-        self._record("vacuum", source=source, concurrency=concurrency)
+        self._record("vacuum", source=source, concurrency=concurrency, now=now)
         return DbVacuumOutcome(status=self.vacuum_status)
 
     def run(
@@ -146,12 +151,14 @@ class RecordingBackend:
         manifest: DbManifestState,
         sql_path: Path,
         autocommit: bool,
+        now: datetime,
     ) -> DbRunOutcome:
         self._record(
             "run",
             source=source,
             sql_path=sql_path,
             autocommit=autocommit,
+            now=now,
         )
         return DbRunOutcome(status=self.run_status)
 
@@ -162,8 +169,9 @@ class RecordingBackend:
         db_path: Path,
         manifest: DbManifestState,
         force: bool,
+        now: datetime,
     ) -> DbResetOutcome:
-        self._record("reset", source=source, force=force)
+        self._record("reset", source=source, force=force, now=now)
         return DbResetOutcome(status=self.reset_status)
 
 

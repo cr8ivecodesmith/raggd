@@ -9,6 +9,7 @@ from .lifecycle import (
     DbManifestSyncError,
     DbOperationError,
 )
+from .settings import DbModuleSettings, db_settings_from_mapping
 
 __all__ = [
     "DbLifecycleError",
@@ -16,4 +17,6 @@ __all__ = [
     "DbManifestSyncError",
     "DbOperationError",
     "DbLifecycleService",
+    "DbModuleSettings",
+    "db_settings_from_mapping",
 ]

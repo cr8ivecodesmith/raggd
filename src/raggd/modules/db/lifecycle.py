@@ -37,6 +37,7 @@ from .backend import (
     build_default_backend,
 )
 from .models import DbManifestState
+from .settings import DbModuleSettings
 
 
 def _default_now() -> datetime:
@@ -75,6 +76,7 @@ class DbLifecycleService:
         workspace: WorkspacePaths,
         manifest_service: ManifestService | None = None,
         manifest_settings: ManifestSettings | None = None,
+        db_settings: DbModuleSettings | None = None,
         backend: DbLifecycleBackend | None = None,
         now: Callable[[], datetime] | None = None,
         logger: Logger | None = None,
@@ -97,17 +99,26 @@ class DbLifecycleService:
         self._modules_key, self._db_module_key = manifest_db_namespace(
             self._manifest_settings
         )
-        self._backend = backend or build_default_backend()
+        self._db_settings = db_settings or DbModuleSettings()
         self._now = now or _default_now
         self._logger = logger or get_logger(
             __name__,
             component="db-service",
+        )
+        self._backend = backend or build_default_backend(
+            workspace=workspace,
+            settings=self._db_settings,
+            manifest_settings=self._manifest_settings,
+            logger=self._logger,
+            now=self._now,
         )
 
     def ensure(self, source: str) -> Path:
         """Ensure ``source`` has a database and manifest scaffolding."""
 
         db_path, created = self._prepare_db_path(source, touch=True)
+
+        ensured_at = self._now()
 
         def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
             outcome = cast(
@@ -118,9 +129,10 @@ class DbLifecycleService:
                     source=source,
                     db_path=db_path,
                     manifest=state,
+                    now=ensured_at,
                 ),
             )
-            return outcome.status.replace(last_ensure_at=self._now())
+            return outcome.status.replace(last_ensure_at=ensured_at)
 
         updated_state = self._mutate_manifest(
             source,
@@ -142,6 +154,8 @@ class DbLifecycleService:
 
         db_path, _ = self._prepare_db_path(source)
 
+        upgraded_at = self._now()
+
         def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
             outcome = cast(
                 DbUpgradeOutcome,
@@ -152,6 +166,7 @@ class DbLifecycleService:
                     db_path=db_path,
                     manifest=state,
                     steps=steps,
+                    now=upgraded_at,
                 ),
             )
             return outcome.status
@@ -167,6 +182,8 @@ class DbLifecycleService:
 
         db_path, _ = self._prepare_db_path(source)
 
+        downgraded_at = self._now()
+
         def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
             outcome = cast(
                 DbDowngradeOutcome,
@@ -177,6 +194,7 @@ class DbLifecycleService:
                     db_path=db_path,
                     manifest=state,
                     steps=steps,
+                    now=downgraded_at,
                 ),
             )
             return outcome.status
@@ -194,6 +212,8 @@ class DbLifecycleService:
         schema: str | None = None
         metadata: dict[str, object] = {}
 
+        inspected_at = self._now()
+
         def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
             nonlocal schema, metadata
             outcome = cast(
@@ -205,6 +225,7 @@ class DbLifecycleService:
                     db_path=db_path,
                     manifest=state,
                     include_schema=include_schema,
+                    now=inspected_at,
                 ),
             )
             schema = outcome.schema
@@ -238,6 +259,8 @@ class DbLifecycleService:
 
         db_path, _ = self._prepare_db_path(source)
 
+        vacuumed_at = self._now()
+
         def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
             outcome = cast(
                 DbVacuumOutcome,
@@ -248,9 +271,10 @@ class DbLifecycleService:
                     db_path=db_path,
                     manifest=state,
                     concurrency=concurrency,
+                    now=vacuumed_at,
                 ),
             )
-            return outcome.status.replace(last_vacuum_at=self._now())
+            return outcome.status.replace(last_vacuum_at=vacuumed_at)
 
         self._mutate_manifest(
             source,
@@ -274,6 +298,8 @@ class DbLifecycleService:
 
         db_path, _ = self._prepare_db_path(source)
 
+        executed_at = self._now()
+
         def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
             outcome = cast(
                 DbRunOutcome,
@@ -285,6 +311,7 @@ class DbLifecycleService:
                     manifest=state,
                     sql_path=sql_path,
                     autocommit=autocommit,
+                    now=executed_at,
                 ),
             )
             return outcome.status
@@ -300,6 +327,8 @@ class DbLifecycleService:
 
         db_path, _ = self._prepare_db_path(source)
 
+        reset_at = self._now()
+
         def _apply(_: ManifestSnapshot, state: DbManifestState) -> DbManifestState:
             outcome = cast(
                 DbResetOutcome,
@@ -310,9 +339,10 @@ class DbLifecycleService:
                     db_path=db_path,
                     manifest=state,
                     force=force,
+                    now=reset_at,
                 ),
             )
-            return outcome.status.replace(last_ensure_at=self._now())
+            return outcome.status.replace(last_ensure_at=reset_at)
 
         self._mutate_manifest(
             source,

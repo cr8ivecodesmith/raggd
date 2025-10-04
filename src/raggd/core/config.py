@@ -56,6 +56,36 @@ class DbSettings(BaseModel):
         default=True,
         description="Whether manifest backups are created during writes.",
     )
+    migrations_path: str = Field(
+        default="resources/db/migrations",
+        description="Path containing packaged SQL migration files.",
+    )
+    ensure_auto_upgrade: bool = Field(
+        default=True,
+        description="Whether ensure applies pending migrations automatically.",
+    )
+    vacuum_max_stale_days: int = Field(
+        default=7,
+        ge=0,
+        description="Maximum days since last vacuum before health warns.",
+    )
+    vacuum_concurrency: int | str = Field(
+        default="auto",
+        description="Worker count for vacuum operations (integer or 'auto').",
+    )
+    run_allow_outside: bool = Field(
+        default=True,
+        description="Whether db run allows executing scripts outside workspace.",
+    )
+    run_autocommit_default: bool = Field(
+        default=False,
+        description="Default autocommit behavior for db run.",
+    )
+    drift_warning_seconds: int = Field(
+        default=0,
+        ge=0,
+        description="Threshold before reporting manifest/database drift.",
+    )
 
     model_config = {
         "str_strip_whitespace": True,

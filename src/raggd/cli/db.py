@@ -12,7 +12,13 @@ import typer
 from raggd.core.config import AppConfig
 from raggd.core.logging import Logger, configure_logging, get_logger
 from raggd.core.paths import WorkspacePaths, resolve_workspace
-from raggd.modules.db import DbLifecycleError, DbLifecycleNotImplementedError, DbLifecycleService
+from raggd.modules.db import (
+    DbLifecycleError,
+    DbLifecycleNotImplementedError,
+    DbLifecycleService,
+    db_settings_from_mapping,
+)
+from raggd.modules.manifest import manifest_settings_from_config
 from raggd.source.config import SourceConfigError, SourceConfigStore
 
 
@@ -135,9 +141,14 @@ def configure_db_commands(
     )
 
     logger = get_logger(__name__, command="db")
+    config_payload = config.model_dump(mode="python")
+    manifest_settings = manifest_settings_from_config(config_payload)
+    db_settings = db_settings_from_mapping(config_payload)
+
     service = DbLifecycleService(
         workspace=paths,
-        manifest_settings=store.manifest_settings(),
+        manifest_settings=manifest_settings,
+        db_settings=db_settings,
         logger=logger.bind(component="service"),
     )
 

@@ -11,11 +11,12 @@ from typing import Callable, Iterable, Protocol, Sequence
 from raggd.core.logging import Logger, get_logger
 
 from raggd.core.paths import WorkspacePaths
-from raggd.modules.db import DbLifecycleService
+from raggd.modules.db import DbLifecycleService, db_settings_from_mapping
 from raggd.modules.manifest import (
     ManifestService,
     ManifestSettings,
     ManifestSnapshot,
+    manifest_settings_from_config,
     manifest_db_namespace,
 )
 from raggd.modules.manifest.migrator import MODULES_VERSION, SOURCE_MODULE_KEY
@@ -89,6 +90,10 @@ class SourceService:
                 "not both."
             )
 
+        config = config_store.load()
+        config_payload = config.model_dump(mode="python")
+        db_settings = db_settings_from_mapping(config_payload)
+
         if manifest_service is not None:
             resolved_manifest = manifest_service
             resolved_settings = manifest_service.settings
@@ -96,7 +101,7 @@ class SourceService:
             resolved_settings = (
                 manifest_settings
                 if manifest_settings is not None
-                else config_store.manifest_settings()
+                else manifest_settings_from_config(config_payload)
             )
             resolved_manifest = ManifestService(
                 workspace=workspace,
@@ -111,6 +116,7 @@ class SourceService:
             else DbLifecycleService(
                 workspace=workspace,
                 manifest_service=self._manifest,
+                db_settings=db_settings,
             )
         )
         modules_key, db_module_key = manifest_db_namespace(

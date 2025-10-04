@@ -69,7 +69,7 @@
 - **Phase 3 — Database module delivery**
   - [x] Scaffold `raggd.modules.db` package with Typer command group exposed in the root CLI and backed by `DbLifecycleService`.
   - [x] Implement lifecycle commands (`ensure`, `upgrade`, `downgrade`, `info`, `vacuum`, `run`, `reset`) with manifest mirroring via the shared service and cohesive error handling.
-  - [ ] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation while persisting both canonical UUID7 and shortened forms into `schema_meta`, the ledger, and manifest mirrors.
+  - [x] Build `MigrationRunner`, ledger schema, and `uuid7` helper wrapper with ordering + checksum validation while persisting both canonical UUID7 and shortened forms into `schema_meta`, the ledger, and manifest mirrors.
   - [ ] Seed migration resources (bootstrap + exemplar) and ensure packaging includes SQL assets.
   - [ ] Register the database module and health provider in `modules/registry.py`; integrate with `raggd checkhealth` and settings defaults (`config.db.*`).
   - [ ] Update `pyproject.toml` (`uuid7` dependency, `db` extra, package data), `raggd.defaults.toml`, CLI docs, and capture manual smoke verifications.
@@ -196,3 +196,13 @@ Implemented lifecycle service orchestration with backend stub and manifest mirro
 - Replaced placeholder lifecycle tests with backend doubles covering manifest sync, timestamping, and error wrapping
 **Tests**
 - `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/db/test_lifecycle.py tests/cli/test_db.py`
+
+### 2025-10-05 00:28 PST
+**Summary**
+Implemented migration runner, SQLite lifecycle backend, and supporting tests
+**Changes**
+- Added UUID7 helpers with deterministic short-ID ordering validation and migration loader utilities
+- Replaced the stub lifecycle backend with a SQLite-backed implementation persisting schema meta/ledger data and manifest mirrors
+- Wired CLI/source services to new db settings and introduced targeted backend, migrations, and CLI regression tests
+**Tests**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/db/test_uuid7.py tests/modules/db/test_migrations.py tests/modules/db/test_backend.py tests/modules/db/test_lifecycle.py tests/cli/test_db.py tests/source/test_service.py`
