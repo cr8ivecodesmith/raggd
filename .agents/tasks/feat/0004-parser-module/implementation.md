@@ -40,13 +40,26 @@
 - **DI & boundaries**: Use constructor injection for services (config, token encoder, DB lifecycle) following `engineering-guide.md`. Handlers receive a `ParseContext` object so they stay stateless; Typer layer resolves services via module registry.
 - **Stepwise checklist**:
   - [ ] Phase 1 — CLI scaffolding & configuration: add `raggd parser` Typer app, load new settings, wire module descriptor, and deprecate legacy command while keeping tests green.
+    - Establish dependency injection seams so later phases can plug services without circular imports.
   - [ ] Phase 2 — Database groundwork: design `chunk_slices` schema, write migrations + SQL files, update DB services and manifests, and migrate fixtures/tests.
+    - Confirm migration ordering with `DbLifecycleService` and refresh fixtures via `raggd db run` helpers.
   - [ ] Phase 3 — Core parser services: implement `ParserService`, traversal/hashing utilities, batch orchestration, and handler registry with dependency/health reporting.
+    - Reuse `raggd.core` traversal, manifest, and hashing helpers instead of duplicating logic; surface any missing seams for follow-up fixes.
+    - Ensure handler registry respects settings toggles and dependency probes before dispatching.
   - [ ] Phase 4 — Handler implementations: build text default, then python/libcst, markdown with delegation, html/css/js tree-sitter handlers, ensuring tokenization, splitting, and hashing behaviors plus delegation metadata.
+    - Text: implement double-newline paragraph splits with indentation fallback exactly as in the spec, emitting a single chunk when heuristics fail.
+    - Markdown: chunk per heading, attach intro text to the next heading, and delegate fenced code blocks (e.g., ```python```) while retaining inline code inside parent chunks.
+    - Python: traverse with `libcst` to capture modules/classes/functions, decorators, docstrings, and grouped class attributes with split-by-token overflow handling.
+    - JavaScript/TypeScript: use tree-sitter to detect modules, exports, classes, and re-exports; split large classes into constructor/method groups and route `.tsx`/`.jsx` through HTML delegation when configured.
+    - HTML & CSS: honor tree-sitter groupings, delegate `<script>`/`<style>` blocks to JS/CSS handlers, and maintain parent-child metadata for recomposition.
   - [ ] Phase 5 — Persistence & recomposition support: implement chunk write pipelines, delegation linkage, recomposition helpers (covering follow-up #2), and unchanged-detection logic with tombstone handling.
+    - Persist delegated child chunks under their handler namespaces while storing parent references for recomposition utilities.
   - [ ] Phase 6 — CLI subcommand behaviors: flesh out `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
+    - Leverage shared manifest readers from `raggd.core` so CLI output stays consistent with other modules.
   - [ ] Phase 7 — Concurrency & telemetry hardening: audit DB locks (follow-up #1), add structured logs/metrics, stress tests for parallel parses, and finalize health hook integration.
+    - Capture degraded handler states in telemetry when dependency fallbacks trigger.
   - [ ] Phase 8 — Documentation & cleanup: update user docs/config samples, finalize release notes, and remove superseded code/tests.
+    - Highlight handler fallback behavior and recomposition guarantees in docs for downstream consumers.
 
 ## Test Plan
 - **Unit**: handler chunking/token splitting, hashing utilities, manifest serialization, recomposition helpers, configuration parsing, CLI option validation.
@@ -60,6 +73,12 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-06 01:55 PST
+**Summary**
+Expanded phase checklist to nail handler heuristics and core service reuse.
+**Changes**
+- Broke down phases with sub-bullets covering `raggd.core` integration and language-specific parsing rules.
+- Clarified telemetry/documentation follow-through around dependency fallbacks and recomposition.
 ### 2025-10-06 01:32 PST
 **Summary**
 Initial implementation plan drafted from parser spec.
