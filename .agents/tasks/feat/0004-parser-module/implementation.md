@@ -41,11 +41,15 @@
 - **Stepwise checklist**:
   - [ ] Phase 1 — CLI scaffolding & configuration: add `raggd parser` Typer app, load new settings, wire module descriptor, and deprecate legacy command while keeping tests green.
     - Establish dependency injection seams so later phases can plug services without circular imports.
+    - Define the full `modules.parser` configuration surface (handlers map with `null` inheritance, `general_max_tokens`, `max_concurrency`, `fail_fast`, `gitignore_behavior`) and expose defaults plus workspace overrides through `info` output.
   - [ ] Phase 2 — Database groundwork: design `chunk_slices` schema, write migrations + SQL files, update DB services and manifests, and migrate fixtures/tests.
     - Confirm migration ordering with `DbLifecycleService` and refresh fixtures via `raggd db run` helpers.
+    - Bake in required columns (`chunk_id`, `parent_symbol_id`, `part_index`, overflow metadata, hashes, timestamps) plus constraints so recomposition and tombstone logic align with the spec.
   - [ ] Phase 3 — Core parser services: implement `ParserService`, traversal/hashing utilities, batch orchestration, and handler registry with dependency/health reporting.
     - Reuse `raggd.core` traversal, manifest, and hashing helpers instead of duplicating logic; surface any missing seams for follow-up fixes.
     - Ensure handler registry respects settings toggles and dependency probes before dispatching.
+    - Wire traversal to `.gitignore` parsing via `pathspec`, normalize paths, stream hashes, and cache tree-sitter parsers to meet performance notes.
+    - Persist manifest metadata (`last_batch_id`, handler versions, warning/error counts) and set health states to `OK/DEGRADED/ERROR` when fallbacks or failures occur.
   - [ ] Phase 4 — Handler implementations: deliver concrete handlers in manageable increments while keeping delegation metadata consistent.
     - [ ] Establish handler protocol scaffolding, dependency probes, and registry wiring so fallbacks land on the text handler by default.
     - [ ] Text handler: implement double-newline paragraph splits with indentation fallback, emitting a single chunk when heuristics fail.
@@ -59,6 +63,9 @@
     - Persist delegated child chunks under their handler namespaces while storing parent references for recomposition utilities.
   - [ ] Phase 6 — CLI subcommand behaviors: flesh out `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
     - Leverage shared manifest readers from `raggd.core` so CLI output stays consistent with other modules.
+    - `info`: surface last batch id (git SHA/uuid7), handler coverage, dependency gaps, and current config overrides.
+    - `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limits per CLI contract.
+    - `remove`: protect the latest successful batch unless `--force`, enforce dependency checks, and warn that vector indexes require a later `raggd vdb sync`.
   - [ ] Phase 7 — Concurrency & telemetry hardening: audit DB locks (follow-up #1), add structured logs/metrics, stress tests for parallel parses, and finalize health hook integration.
     - Capture degraded handler states in telemetry when dependency fallbacks trigger.
   - [ ] Phase 8 — Documentation & cleanup: update user docs/config samples, finalize release notes, and remove superseded code/tests.
@@ -76,6 +83,12 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-06 02:00 PST
+**Summary**
+Aligned plan details with parser spec requirements.
+**Changes**
+- Expanded phases to call out configuration keys, schema linkage, traversal caching, and manifest health wiring.
+- Clarified `info`/`batches`/`remove` responsibilities so CLI work mirrors documented behavior.
 ### 2025-10-06 01:58 PST
 **Summary**
 Split Phase 4 into granular handler sub-tasks.
