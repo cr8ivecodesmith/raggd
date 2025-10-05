@@ -46,12 +46,15 @@
   - [ ] Phase 3 — Core parser services: implement `ParserService`, traversal/hashing utilities, batch orchestration, and handler registry with dependency/health reporting.
     - Reuse `raggd.core` traversal, manifest, and hashing helpers instead of duplicating logic; surface any missing seams for follow-up fixes.
     - Ensure handler registry respects settings toggles and dependency probes before dispatching.
-  - [ ] Phase 4 — Handler implementations: build text default, then python/libcst, markdown with delegation, html/css/js tree-sitter handlers, ensuring tokenization, splitting, and hashing behaviors plus delegation metadata.
-    - Text: implement double-newline paragraph splits with indentation fallback exactly as in the spec, emitting a single chunk when heuristics fail.
-    - Markdown: chunk per heading, attach intro text to the next heading, and delegate fenced code blocks (e.g., ```python```) while retaining inline code inside parent chunks.
-    - Python: traverse with `libcst` to capture modules/classes/functions, decorators, docstrings, and grouped class attributes with split-by-token overflow handling.
-    - JavaScript/TypeScript: use tree-sitter to detect modules, exports, classes, and re-exports; split large classes into constructor/method groups and route `.tsx`/`.jsx` through HTML delegation when configured.
-    - HTML & CSS: honor tree-sitter groupings, delegate `<script>`/`<style>` blocks to JS/CSS handlers, and maintain parent-child metadata for recomposition.
+  - [ ] Phase 4 — Handler implementations: deliver concrete handlers in manageable increments while keeping delegation metadata consistent.
+    - [ ] Establish handler protocol scaffolding, dependency probes, and registry wiring so fallbacks land on the text handler by default.
+    - [ ] Text handler: implement double-newline paragraph splits with indentation fallback, emitting a single chunk when heuristics fail.
+    - [ ] Markdown handler: chunk per heading, attach intro text forward, delegate fenced code blocks (e.g., ```python```), and preserve inline code inside parent chunks.
+    - [ ] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, and grouped class attributes with token overflow splitting.
+    - [ ] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, and re-exports; split large classes into constructor/method slices and route `.tsx`/`.jsx` through HTML delegation when configured.
+    - [ ] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, and emit metadata linking child delegates.
+    - [ ] CSS handler: apply tree-sitter grouping, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
+    - [ ] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
   - [ ] Phase 5 — Persistence & recomposition support: implement chunk write pipelines, delegation linkage, recomposition helpers (covering follow-up #2), and unchanged-detection logic with tombstone handling.
     - Persist delegated child chunks under their handler namespaces while storing parent references for recomposition utilities.
   - [ ] Phase 6 — CLI subcommand behaviors: flesh out `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
@@ -73,6 +76,12 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-06 01:58 PST
+**Summary**
+Split Phase 4 into granular handler sub-tasks.
+**Changes**
+- Added checkbox sub-items covering handler protocol setup, per-language implementations, and shared delegation utilities.
+- Emphasized incremental delivery ahead of persistence work reviews.
 ### 2025-10-06 01:55 PST
 **Summary**
 Expanded phase checklist to nail handler heuristics and core service reuse.
