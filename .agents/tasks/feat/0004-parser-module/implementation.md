@@ -57,13 +57,16 @@
 - Design the `chunk_slices` schema, write migrations + SQL files, update DB services and manifests, and migrate fixtures/tests.
 - Confirm migration ordering with `DbLifecycleService` and refresh fixtures via `raggd db run` helpers.
 - Bake in required columns (`chunk_id`, `parent_symbol_id`, `part_index`, overflow metadata, hashes, timestamps) plus constraints so recomposition and tombstone logic align with the spec.
+- Author parser-owned CRUD statements in dedicated `src/raggd/modules/parser/sql/*.sql` files and exercise them through `raggd db run` (or the db service wrapper) so we keep query plans inspectable per spec.
 
 ### Phase 3 — Core parser services
 - Implement `ParserService`, traversal/hashing utilities, batch orchestration, and handler registry with dependency/health reporting.
 - Reuse `raggd.core` traversal, manifest, and hashing helpers instead of duplicating logic; surface any missing seams for follow-up fixes.
 - Ensure handler registry respects settings toggles and dependency probes before dispatching.
 - Wire traversal to `.gitignore` parsing via `pathspec`, normalize paths, stream hashes, and cache tree-sitter parsers to meet performance notes.
-- Persist manifest metadata (`last_batch_id`, handler versions, warning/error counts) and set health states to `OK/DEGRADED/ERROR` when fallbacks or failures occur.
+- Scope traversal to CLI-provided files/directories when present before walking the full source target so `parse` honors fine-grained inputs.
+- Standardize token counting on `tiktoken`’s `cl100k_base` encoder (configurable override) and expose encoder selection via the context shared with handlers.
+- Persist manifest metadata (`last_batch_id`, run timestamps, handler versions, handler notes, warning/error counts) and set health states to `OK/DEGRADED/ERROR` when fallbacks or failures occur.
 
 ### Phase 4 — Handler implementations
 - [ ] Establish handler protocol scaffolding, dependency probes, and registry wiring so fallbacks land on the text handler by default.
@@ -80,8 +83,9 @@
 - Persist delegated child chunks under their handler namespaces while storing parent references for recomposition utilities.
 
 ### Phase 6 — CLI subcommand behaviors
-- Flesh out `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
+- Flesh out `parse`, `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
 - Leverage shared manifest readers from `raggd.core` so CLI output stays consistent with other modules.
+- `parse`: surface a `--fail-fast` flag that flips the parser settings for the run, pass through explicit file/directory arguments to the traversal layer, and ensure logs report when scope filtering occurs.
 - `info`: surface last batch id (git SHA/uuid7), handler coverage, dependency gaps, and current config overrides.
 - `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limits per CLI contract.
 - `remove`: protect the latest successful batch unless `--force`, enforce dependency checks, and warn that vector indexes require a later `raggd vdb sync`.
@@ -89,6 +93,7 @@
 ### Phase 7 — Concurrency & telemetry hardening
 - Audit DB locks (follow-up #1), add structured logs/metrics, stress tests for parallel parses, and finalize health hook integration.
 - Capture degraded handler states in telemetry when dependency fallbacks trigger.
+- Verify health checks ensure manifest/db alignment (`modules.parser.last_batch_id` vs `batches`) and enforce chunk-slice integrity (contiguous part indices, valid delegated parent references) before surfacing `OK` status.
 
 ### Phase 8 — Documentation & cleanup
 - Update user docs/config samples, finalize release notes, and remove superseded code/tests.
@@ -106,6 +111,13 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-06 02:30 PST
+**Summary**
+Tightened plan to close spec-alignment gaps.
+**Changes**
+- Added Phase 2 work for dedicated SQL files executed via `raggd db run`.
+- Extended parser services to honor explicit path scopes, default to `cl100k_base`, and persist expanded manifest metadata.
+- Expanded CLI plan to include `parse` subcommand fail-fast flag wiring and Phase 7 health validations covering manifest/db and chunk-slice integrity.
 ### 2025-10-06 02:06 PST
 **Summary**
 Added per-phase subheadings to the solution plan.
