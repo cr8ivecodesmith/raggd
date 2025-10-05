@@ -1,0 +1,67 @@
+# Parser Module CLI — Implementation
+
+## Understanding
+- **Restate spec**: Build the `raggd parser` command group with `parse`, `info`, `batches`, and `remove` subcommands that drive a handler registry to tokenize, persist, and monitor source batches via the refreshed database schema and manifest metadata, while honoring `.gitignore`, max-token rules, and concurrency settings.
+- **Assumptions / Open questions**: Concurrency audit, delegated chunk recomposition helpers, and vector index messaging remain open follow-ups that we must analyze during implementation; tree-sitter grammars supplied by `tree_sitter_languages` are acceptable without re-measuring footprint; database locking helpers already exist but might need extension for chunk slices.
+- **Risks & mitigations**: Large schema/migration changes could disrupt existing DB consumers (mitigate with migration gating and fixture updates); handler dependency gaps may degrade UX (surface in health checks and docs); concurrency race conditions could corrupt batches (enforce transactional writes and locking; add stress tests).
+
+## Resources
+### Project docs
+- `.agents/tasks/feat/0004-parser-module/spec.md` — Source of truth for goals, behaviors, handler rules, and follow-ups.
+- `.agents/tasks/feat/0003-db-module/spec.md` — Reference for existing DB abstractions, locking helpers, and attachment schema alignment.
+- `src/raggd/modules/db/migrations/` — Current migration history; informs how to introduce `chunk_slices` and manifest updates.
+- `.agents/guides/engineering-guide.md` — DI, seam-first guidance for structuring parser services and handler boundaries.
+- `.agents/guides/patterns-and-architecture.md` — Module layout and logging conventions to reuse.
+- `.agents/guides/workflow.md` & `.agents/guides/workflow-extras/implementation-tpl.md` — Workflow expectations and template followed here.
+### External docs
+- https://libcst.readthedocs.io/ — API reference for Python handler AST traversal.
+- https://github.com/tree-sitter/tree-sitter/tree/master/docs — Grammar usage patterns for JavaScript, Markdown, HTML, CSS handlers.
+- https://github.com/openai/tiktoken — Token counting API surface used across handlers.
+- https://github.com/cpburnz/python-pathspec — `.gitignore` parsing behavior that we may adopt.
+
+## Impact Analysis
+### Affected behaviors & tests
+- CLI flows (`parse`, `info`, `batches`, `remove`) → end-to-end Typer CLI tests and manifest assertions.
+- Handler chunking/deduplication → unit tests per handler plus shared delegation/hashing cases.
+- Database batch lifecycle (`chunk_slices`, tombstones, reuse) → migration tests, integration DB tests, and regression coverage for attachment spec alignment.
+- Health/telemetry emission → health hook tests and structured log snapshot coverage.
+### Affected source files
+- **Create**: `src/raggd/cli/parser.py`, `src/raggd/modules/parser/__init__.py`, handler modules under `src/raggd/modules/parser/handlers/`, SQL files under `src/raggd/modules/parser/sql/`, new migrations under `src/raggd/modules/db/migrations/`.
+- **Modify**: `src/raggd/cli/__init__.py` (register sub-app), `src/raggd/modules/__init__.py` (add module descriptor), `src/raggd/modules/db/...` (lock helpers, lifecycle wiring), config defaults (`src/raggd/config/defaults.py`), manifest schemas, and test fixtures.
+- **Delete**: Legacy `raggd parse` CLI entry and obsolete parser prototypes/tests.
+- **Config/flags**: Introduce `modules.parser.*` settings; ensure defaults and workspace overrides cover handler toggles, max tokens, concurrency, fail-fast, and gitignore behavior.
+### Security considerations
+- Ensure traversal respects `.gitignore` to avoid ingesting secrets; continue redacting sensitive paths in telemetry logs.
+- Validate Typer commands sanitize user-supplied paths; avoid arbitrary SQL by using parameterized queries executed via DB service.
+- Confirm new dependencies do not execute arbitrary code (tree-sitter grammars are data files; validate versions in lockfile).
+
+## Solution Plan
+- **Architecture/pattern choices**: Follow façade + handler strategy aligning with `patterns-and-architecture.md`, using `ParserService` to orchestrate IO and delegating parsing to language-specific handlers that implement a shared protocol. Keep data persistence behind repository abstractions to maintain seam-first design.
+- **DI & boundaries**: Use constructor injection for services (config, token encoder, DB lifecycle) following `engineering-guide.md`. Handlers receive a `ParseContext` object so they stay stateless; Typer layer resolves services via module registry.
+- **Stepwise checklist**:
+  - [ ] Phase 1 — CLI scaffolding & configuration: add `raggd parser` Typer app, load new settings, wire module descriptor, and deprecate legacy command while keeping tests green.
+  - [ ] Phase 2 — Database groundwork: design `chunk_slices` schema, write migrations + SQL files, update DB services and manifests, and migrate fixtures/tests.
+  - [ ] Phase 3 — Core parser services: implement `ParserService`, traversal/hashing utilities, batch orchestration, and handler registry with dependency/health reporting.
+  - [ ] Phase 4 — Handler implementations: build text default, then python/libcst, markdown with delegation, html/css/js tree-sitter handlers, ensuring tokenization, splitting, and hashing behaviors plus delegation metadata.
+  - [ ] Phase 5 — Persistence & recomposition support: implement chunk write pipelines, delegation linkage, recomposition helpers (covering follow-up #2), and unchanged-detection logic with tombstone handling.
+  - [ ] Phase 6 — CLI subcommand behaviors: flesh out `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
+  - [ ] Phase 7 — Concurrency & telemetry hardening: audit DB locks (follow-up #1), add structured logs/metrics, stress tests for parallel parses, and finalize health hook integration.
+  - [ ] Phase 8 — Documentation & cleanup: update user docs/config samples, finalize release notes, and remove superseded code/tests.
+
+## Test Plan
+- **Unit**: handler chunking/token splitting, hashing utilities, manifest serialization, recomposition helpers, configuration parsing, CLI option validation.
+- **Contract**: persistence repository tests covering SQL queries executed via `raggd db run` harness, ensuring chunk slices obey schema contracts.
+- **Integration/E2E**: CLI runs against fixture sources (single/multi-source, handler fallback, delegations, large file splits), migrations applied end-to-end, concurrency stress scenario using temporary repos.
+- **Manual**: run `raggd parser parse` on sample workspace with mixed languages, verify `info`/`batches` output, exercise `remove` warning about vector indexes, inspect logs for dependency degradation cases.
+
+## Operability
+- **Telemetry**: structured logs via `structlog` for batch lifecycle, metrics stored in `modules.parser.health` (files parsed, reused ratio, split counts, handler durations, warnings).
+- **Dashboard/alerts**: extend existing health checks to surface parser status; plan follow-up dashboard cards once metrics accumulate.
+- **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
+
+## History
+### 2025-10-06 01:32 PST
+**Summary**
+Initial implementation plan drafted from parser spec.
+**Changes**
+- Captured understanding, impacts, phased execution plan, tests, and operability considerations aligned with workflow template.
