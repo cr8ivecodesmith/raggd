@@ -71,7 +71,7 @@ Establish a `raggd parser` command group that owns parsing workflows end-to-end.
 ### Logging, Telemetry & Error Handling
 - Emit structured logs (via `structlog`) with fields for source, handler, batch, file, symbol counts, and warnings. Promote consistent log levels for recoverable parsing issues.
 - Collect run metrics (files scanned, reused, skipped, split counts, handler durations) and store summary in `modules.parser.health` for health checks and future dashboards.
-- Provide graceful degradation when optional handler dependencies are missing: log a warning, fall back to text handler if allowed, and mark health as `DEGRADED` rather than failing the entire run (unless the handler was explicitly enabled).
+- Provide graceful degradation when optional handler dependencies are missing: keep the handler marked `enabled` by default, log a warning, record the dependency gap in the health manifest, fall back to the text handler for affected files, and mark health as `DEGRADED` rather than failing the entire run (unless the handler was explicitly enabled).
 
 ## Handler Rules
 - **text**: Split on double newlines, limit paragraphs by max tokens, emit fallback single chunk when heuristics fail, track original offsets for reassembly.
@@ -83,7 +83,7 @@ Establish a `raggd parser` command group that owns parsing workflows end-to-end.
 
 ## Settings
 - `modules.parser.enabled`: master toggle (default `true`).
-- `modules.parser.handlers`: map of handler name → `{enabled: bool, max_tokens: int|"auto"}`; unspecified handlers inherit defaults (enabled except experimental ones).
+- `modules.parser.handlers`: map of handler name → `{enabled: bool, max_tokens: int|"auto"|null}`; `null` means “inherit the general cap”. Handlers stay enabled by default (except experimental ones); if runtime dependencies are missing we warn, degrade health, and temporarily route those files through the text handler until dependencies are installed.
 - `modules.parser.general_max_tokens`: default token cap (default `2000`, accepts integer or `"auto"`).
 - `modules.parser.max_concurrency`: integer ≥1 or `"auto"` (default). `auto` selects `min(cpu_count, len(sources))`, but never below 1.
 - `modules.parser.fail_fast`: optional boolean to stop on first handler failure; default `false` for resiliency.
