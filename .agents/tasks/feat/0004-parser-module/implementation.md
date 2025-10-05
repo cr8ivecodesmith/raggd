@@ -62,25 +62,28 @@
 ### Phase 3 — Core parser services
 - Implement `ParserService`, traversal/hashing utilities, batch orchestration, and handler registry with dependency/health reporting.
 - Reuse `raggd.core` traversal, manifest, and hashing helpers instead of duplicating logic; surface any missing seams for follow-up fixes.
+- Define extension/shebang mapping tables and hot-plug hooks so handler selection mirrors the spec’s precedence rules (explicit path overrides > shebang > extension > default text).
 - Ensure handler registry respects settings toggles and dependency probes before dispatching.
 - Wire traversal to `.gitignore` parsing via `pathspec`, normalize paths, stream hashes, and cache tree-sitter parsers to meet performance notes.
 - Scope traversal to CLI-provided files/directories when present before walking the full source target so `parse` honors fine-grained inputs.
 - Standardize token counting on `tiktoken`’s `cl100k_base` encoder (configurable override) and expose encoder selection via the context shared with handlers.
+- Incorporate handler version identifiers into file/symbol hashing so unchanged detection bumps when handler heuristics evolve.
 - Persist manifest metadata (`last_batch_id`, run timestamps, handler versions, handler notes, warning/error counts) and set health states to `OK/DEGRADED/ERROR` when fallbacks or failures occur.
 
 ### Phase 4 — Handler implementations
 - [ ] Establish handler protocol scaffolding, dependency probes, and registry wiring so fallbacks land on the text handler by default.
-- [ ] Text handler: implement double-newline paragraph splits with indentation fallback, emitting a single chunk when heuristics fail.
-- [ ] Markdown handler: chunk per heading, attach intro text forward, delegate fenced code blocks (e.g., ```python```), and preserve inline code inside parent chunks.
-- [ ] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, and grouped class attributes with token overflow splitting.
-- [ ] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, and re-exports; split large classes into constructor/method slices and route `.tsx`/`.jsx` through HTML delegation when configured.
-- [ ] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, and emit metadata linking child delegates.
-- [ ] CSS handler: apply tree-sitter grouping, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
+- [ ] Text handler: implement double-newline paragraph splits with indentation fallback, emit stable byte/line offsets, and collapse to a single chunk when heuristics fail.
+- [ ] Markdown handler: combine a fast heading splitter with tree-sitter verification, attach intro text forward, delegate fenced code blocks (e.g., ```python```), retain front-matter + inline metadata, and stamp chunk offsets for recomposition.
+- [ ] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, grouped class attributes, and emit overflow slices with parent linkage + metadata.
+- [ ] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, re-exports; honor configuration toggles for TS/TSX routing, split large classes into constructor/method slices, and route `.tsx`/`.jsx` segments into HTML delegation when enabled.
+- [ ] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
+- [ ] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
 - [ ] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
 
 ### Phase 5 — Persistence & recomposition support
 - Implement chunk write pipelines, delegation linkage, recomposition helpers (covering follow-up #2), and unchanged-detection logic with tombstone handling.
-- Persist delegated child chunks under their handler namespaces while storing parent references for recomposition utilities.
+- Derive deterministic `chunk_key` values (batch id + handler namespace + path + offsets) and ensure overflow metadata is logged and stored for diagnostics.
+- Stage file/symbol/chunk CRUD in transactions, leveraging `DbLifecycleService` locks per batch before committing, while persisting delegated child chunks under their handler namespaces with parent references for recomposition utilities.
 
 ### Phase 6 — CLI subcommand behaviors
 - Flesh out `parse`, `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
@@ -111,6 +114,13 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-06 02:45 PST
+**Summary**
+Closed architect feedback about handler alignment and persistence details.
+**Changes**
+- Added Phase 3 items for extension/shebang mapping and handler-version-aware hashing.
+- Expanded handler bullets with offset guarantees, Markdown dual parsing, JS/TS toggles, and CSS cascade expectations.
+- Clarified Phase 5 on deterministic chunk keys, overflow logging, and staged transactional CRUD.
 ### 2025-10-06 02:30 PST
 **Summary**
 Tightened plan to close spec-alignment gaps.
