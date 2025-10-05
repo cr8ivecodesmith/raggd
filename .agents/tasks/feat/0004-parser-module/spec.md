@@ -29,13 +29,14 @@ Establish a `raggd parser` command group that owns parsing workflows end-to-end.
 - Given a group exceeds applicable max tokens, the handler creates sequential parts linked via parent metadata, records the split in logs, and persists each segment with a stable `part_index`.
 - Given a user runs `raggd parser info <source>`, the CLI reports the last successful batch id (git SHA preferred, uuid7 fallback), handler coverage, outstanding warnings/errors, and configuration diffs versus defaults.
 - Given a user runs `raggd parser batches <source> [--limit N]`, the CLI lists recent batches with timestamps, ref (git SHA/uuid7), counts of files/symbols/chunks, and flags batch health.
-- Given a user runs `raggd parser remove <source> <batch> [--force]`, the CLI validates no other modules reference the batch, deletes associated records (`files`, `symbols`, chunk slices, vdbs tied to that batch), updates manifest metadata, and logs the action. Without `--force`, the command refuses if the batch is the latest successful parse.
+- Given a user runs `raggd parser remove <source> <batch> [--force]`, the CLI validates no other modules reference the batch, deletes associated records (`files`, `symbols`, chunk slices), updates manifest metadata, and logs the action. Vector indexes are not removed automatically; the command warns about follow-up `raggd vdb sync <source>` work. Without `--force`, the command refuses if the batch is the latest successful parse.
 
 ## Architecture & Implementation Notes
 ### CLI & Module Surface
 - Add a Typer sub-app in `src/raggd/cli/parser.py` with subcommands `parse`, `info`, `batches`, and `remove`. Register it under the main CLI such that `raggd parser ...` is the canonical entry point.
 - Introduce `ParserService` (or similar façade) that orchestrates traversal, handler dispatch, database writes, and manifest updates. Keep CLI thin and testable.
 - Extend the module registry (`raggd.modules`) with a `ModuleDescriptor` named `parser`, default-enabled, referencing the new optional dependency group `parsers` for packaging clarity. Sub-groups for individual handlers (e.g., `parser.python`, `parser.javascript`) declare their dependencies so users can opt-in/out.
+- Reuse `raggd.core` facilities for configuration, logging, concurrency pools, and manifests instead of ad-hoc utilities; only extend them when hard requirements surface.
 
 ### Handler Framework
 - Implement a registry keyed by canonical language identifiers with hooks for extension mapping, shebang detection, and handler enable/disable checks.
@@ -46,7 +47,7 @@ Establish a `raggd parser` command group that owns parsing workflows end-to-end.
 - HTML handler: use `tree-sitter-html`; extract `<script>` and `<style>` blocks for delegation to JS/CSS handlers while maintaining parent-child metadata to reconnect inline code to the containing element.
 - CSS handler: use `tree-sitter-css` to group rulesets, keyframes, and custom properties. Provide fallbacks for syntax errors by chunking text blocks.
 - Text handler: implement simple heuristics (paragraph/sentence splitting) with optional indentation-aware grouping for config files. Acts as default for unsupported extensions.
-- Ensure each handler returns a normalized structure (`file`, `symbols`, `chunks`) with token counts, docstrings, parent IDs, and stable hashes. When handlers delegate (e.g., Markdown to Python), maintain metadata linking child parts to parent symbols via `symbol_id` and custom fields.
+- Ensure each handler returns a normalized structure (`file`, `symbols`, `chunks`) with token counts, docstrings, parent IDs, and stable hashes. When handlers delegate (e.g., Markdown to Python), persist delegated chunks under the child handler’s namespace while recording linkage back to the parent symbol so the reader can recompose the group later.
 
 ### Tokenization & Grouping
 - Standardize on `tiktoken` encoders (default `cl100k_base`) for token counting. Allow per-handler overrides if downstream models demand alternative encodings.
@@ -60,8 +61,10 @@ Establish a `raggd parser` command group that owns parsing workflows end-to-end.
 
 ### Batches, Database & Schema Work
 - Batch IDs default to git SHA (detected from target repo). When unavailable, generate uuid7 (see `modules/db/uuid7`). Store both the raw ref and derived short id in Manifest + `batches` table.
-- The current `chunks` table requires a `vdb_id`, which blocks storing raw chunk text before embeddings exist. Introduce a new `chunk_slices` table (or relax the FK) to persist parser output independently, then let future embedding runs materialize rows into `chunks`/`chunk_fts`. Update migrations and the attachment schema doc accordingly.
+- The current `chunks` table requires a `vdb_id`, which blocks storing raw chunk text before embeddings exist. Introduce a new `chunk_slices` table decoupled from `vdbs` so parser output persists independently, updating existing migrations to eliminate tight coupling. Fix or delete impacted tests as part of the migration refresh and sync the attachment schema doc.
 - Ensure parent-child linking for chunk splits is supported (e.g., add `part_index` and `parent_symbol_id` columns to the new table). Flag if additional manifest metadata is needed to expose this linkage.
+- Keep parser-owned SQL in dedicated `*.sql` files (mirroring current db conventions) and execute them via the database service or `raggd db run` so query plans stay inspectable.
+- Batch CRUD where possible: stage inserts/updates per table, verify alignment (e.g., orphan detection) before applying, and wrap operations in transactions to minimize lock churn.
 - Leverage the database module’s locking helpers to serialize writes per source. Confirm the lock covers chunk-slice inserts and manifest updates to avoid race conditions when `max_concurrency > 1`.
 - Reuse `DbLifecycleService` for migrations, but allow the parser to request schema upgrades if chunk tables change. Document that parser runs may trigger db migrations on first run.
 
@@ -97,20 +100,24 @@ Establish a `raggd parser` command group that owns parsing workflows end-to-end.
 - Surface metrics: files parsed, reused percentage, handler durations, warning counts, and concurrency used. Store summary under `modules.parser.health` for `raggd checkhealth` consumption.
 
 ## Dependencies & Constraints
-- Optional dependency group `parsers` already includes `libcst`, `markdown-it-py`, `tree-sitter`, `tree_sitter_languages`; ensure packaging splits handler extras (`parser.javascript`, `parser.markdown`, etc.) so users can trim install size. Document approximate wheel size impact (~80MB compressed for `tree_sitter_languages`) and consider lazy grammar downloads if size becomes prohibitive.
+- Optional dependency group `parsers` already includes `libcst`, `markdown-it-py`, `tree-sitter`, `tree_sitter_languages`; ensure packaging splits handler extras (`parser.javascript`, `parser.markdown`, etc.) so users can trim install size. Rely on upstream size guidance (~80MB compressed for `tree_sitter_languages`) rather than re-measuring, and flag packaging complaints if they surface.
 - Continue using `platformdirs` and standard `pathlib` utilities for cross-platform path handling. Introduce `pathspec` (if missing) to interpret `.gitignore` patterns consistently across OSes.
 - Tree-sitter grammars can increase startup time; cache parser instances and guard against multi-threaded race conditions during initialization.
 - SQLite access must reuse database module abstractions (`DbLifecycleService`, transaction context managers) to benefit from existing locking and vacuum strategies. Confirm the lock applies when chunk schema changes.
 - Tokenization via `tiktoken` requires models to be installed; provide a clear error when the encoder is unavailable and allow configuration to pick alternative encoders if future embedding modules require them.
 
-## Open Questions & Follow-ups
-1. Schema changes: confirm whether introducing a `chunk_slices` table (decoupled from `vdb_id`) or making `vdb_id` nullable best aligns with future embedding tasks. Coordinate with the DB module owner before finalizing migrations.
-2. Handler delegation: define the persistence format for cross-handler delegations (e.g., Markdown → Python). Do we store delegated chunks in the child handler's namespace while referencing parent symbol IDs, or create a dedicated junction table?
-3. Package footprint: measure the final size impact of bundling `tree_sitter_languages` in installer artifacts and decide whether to gate some grammars behind optional extras.
-4. Concurrency validation: audit the database lock implementation to ensure simultaneous source parses cannot starve each other or deadlock, especially when migrations trigger on first run.
-5. CLI UX: for `parser remove`, determine whether we also delete associated vector indexes (`vdbs`) automatically or leave them for future cleanup tooling; spec currently assumes removal cascades but this needs validation.
+## Follow-ups & Risks
+1. Concurrency audit: investigate the database locking layer under `max_concurrency` before implementation closes, document any starvation/deadlock risks, and propose mitigations if found.
+2. Recomposing delegated chunks: prototype or at least outline reader utilities that can stitch delegated child chunks back to their parent groups using the new metadata so downstream modules do not lose structure.
+3. Batch removal gap: highlight in docs/CLI help that `parser remove` leaves vector indexes in place until future `raggd vdb sync <source>` tooling exists; track user feedback in case we need interim scripts.
 
 ## History
+### 2025-10-06 01:05 PST
+**Summary** - Incorporated schema decoupling and CLI follow-up decisions
+**Changes**
+- Locked in `chunk_slices` migration strategy, SQL file handling, and batch CRUD expectations.
+- Updated handler delegation rules, `parser remove` behavior, and dependency notes per new guidance.
+- Reframed follow-ups toward concurrency auditing, recomposition tooling, and vector cleanup messaging.
 ### 2025-10-06 00:23 PST
 **Summary** — Backfilled parser CLI restructure decisions
 **Changes**
