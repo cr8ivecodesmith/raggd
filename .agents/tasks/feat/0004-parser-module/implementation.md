@@ -39,8 +39,8 @@
 - **Architecture/pattern choices**: Follow façade + handler strategy aligning with `patterns-and-architecture.md`, using `ParserService` to orchestrate IO and delegating parsing to language-specific handlers that implement a shared protocol. Keep data persistence behind repository abstractions to maintain seam-first design.
 - **DI & boundaries**: Use constructor injection for services (config, token encoder, DB lifecycle) following `engineering-guide.md`. Handlers receive a `ParseContext` object so they stay stateless; Typer layer resolves services via module registry.
 - **Stepwise checklist**:
-  - [ ] Phase 1 — CLI scaffolding & configuration (see Phase 1 notes below).
-  - [ ] Phase 2 — Database groundwork (see Phase 2 notes below).
+  - [x] Phase 1 — CLI scaffolding & configuration (see Phase 1 notes below).
+  - [x] Phase 2 — Database groundwork (see Phase 2 notes below).
   - [ ] Phase 3 — Core parser services (see Phase 3 notes below).
   - [ ] Phase 4 — Handler implementations (see Phase 4 notes below).
   - [ ] Phase 5 — Persistence & recomposition support (see Phase 5 notes below).
@@ -84,6 +84,7 @@
 - Implement chunk write pipelines, delegation linkage, recomposition helpers (covering follow-up #2), and unchanged-detection logic with tombstone handling.
 - Derive deterministic `chunk_key` values (batch id + handler namespace + path + offsets) and ensure overflow metadata is logged and stored for diagnostics.
 - Stage file/symbol/chunk CRUD in transactions, leveraging `DbLifecycleService` locks per batch before committing, while persisting delegated child chunks under their handler namespaces with parent references for recomposition utilities.
+- Treat `chunk_slices` as the canonical parser artifact. Plan a follow-up migration that introduces a `chunk_assemblies` (name TBD) join table mapping stable `chunk_id` values to one-or-many slice rows, then have the existing `chunks` table reference assemblies instead of storing duplicate text. Edges/vectors can migrate to the same assembly key, keeping VDB materialization decoupled from slice storage.
 
 ### Phase 6 — CLI subcommand behaviors
 - Flesh out `parse`, `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
@@ -114,6 +115,14 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-06 14:09 PST
+**Summary**
+Finished Phase 2 database groundwork with the chunk slices schema and parser SQL resource pack.
+**Changes**
+- Added migration `06CVG7EEZ5YH` introducing the `chunk_slices` table plus supporting indexes and teardown script.
+- Extended database manifest snapshots to capture `last_sql_run_at` and ensured the lifecycle backend mirrors the value.
+- Packaged parser SQL statements (`upsert`/`select`/`delete`) under `modules/parser/sql` with resource helpers and targeted tests.
+- Updated packaged data configuration and database/backend tests; new parser SQL tests exercise chunk slice CRUD roundtrips. Ran `UV_CACHE_DIR=.tmp/uv-cache uv run pytest tests/modules/db tests/modules/parser` (coverage threshold not met because only the focused suites were executed).
 ### 2025-10-06 02:45 PST
 **Summary**
 Closed architect feedback about handler alignment and persistence details.

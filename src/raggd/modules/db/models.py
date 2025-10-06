@@ -60,6 +60,7 @@ class DbManifestState:
     ledger_checksum: str | None = None
     last_vacuum_at: datetime | None = None
     last_ensure_at: datetime | None = None
+    last_sql_run_at: datetime | None = None
     pending_migrations: tuple[str, ...] = ()
 
     @classmethod
@@ -90,6 +91,9 @@ class DbManifestState:
             last_ensure_at=_parse_datetime(payload.get("last_ensure_at"))
             if payload.get("last_ensure_at") is not None
             else None,
+            last_sql_run_at=_parse_datetime(payload.get("last_sql_run_at"))
+            if payload.get("last_sql_run_at") is not None
+            else None,
             pending_migrations=_normalize_pending(
                 payload.get("pending_migrations")
             ),
@@ -103,6 +107,7 @@ class DbManifestState:
             "ledger_checksum": self.ledger_checksum,
             "last_vacuum_at": _serialize_datetime(self.last_vacuum_at),
             "last_ensure_at": _serialize_datetime(self.last_ensure_at),
+            "last_sql_run_at": _serialize_datetime(self.last_sql_run_at),
             "pending_migrations": list(self.pending_migrations),
         }
 

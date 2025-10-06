@@ -109,7 +109,7 @@ CREATE INDEX IF NOT EXISTS idx_symbols_symbol_path
 CREATE INDEX IF NOT EXISTS idx_symbols_kind
     ON symbols(kind);
 
--- Table: chunks - Embeddable text slices associated with symbols and VDBs.
+-- Table: chunks - Vector-ready aggregates produced from chunk_slices for specific VDBs.
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY,
     symbol_id INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,

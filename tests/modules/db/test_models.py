@@ -17,6 +17,7 @@ def test_manifest_state_roundtrip_and_normalization() -> None:
         "ledger_checksum": "sha256:deadbeef",
         "last_vacuum_at": recorded.isoformat(),
         "last_ensure_at": recorded.replace(tzinfo=None).isoformat(),
+        "last_sql_run_at": recorded.isoformat(),
         "pending_migrations": ["0002-next", None, 123],
     }
 
@@ -25,10 +26,12 @@ def test_manifest_state_roundtrip_and_normalization() -> None:
     assert state.last_vacuum_at == recorded
     # Naive datetime values should coerce to UTC.
     assert state.last_ensure_at.tzinfo is timezone.utc
+    assert state.last_sql_run_at == recorded
     assert state.pending_migrations == ("0002-next", "123")
 
     mapping = state.to_mapping()
     assert mapping["last_vacuum_at"] == recorded.isoformat()
+    assert mapping["last_sql_run_at"] == recorded.isoformat()
     assert mapping["pending_migrations"] == ["0002-next", "123"]
 
     assert DbManifestState.from_mapping(None) == DbManifestState()

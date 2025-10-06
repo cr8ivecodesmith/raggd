@@ -643,6 +643,7 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
             head_migration_shortuuid7=state.meta.head_short,
             ledger_checksum=state.meta.ledger_checksum,
             last_vacuum_at=state.meta.last_vacuum_at,
+            last_sql_run_at=state.meta.last_sql_run_at,
             pending_migrations=state.pending,
         )
 

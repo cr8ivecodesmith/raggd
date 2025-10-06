@@ -136,6 +136,7 @@ include-package-data = true
     "resources/**/*.toml",
     "resources/**/*.j2",
     "modules/db/resources/**/*.sql",
+    "modules/parser/sql/**/*.sql",
 ]
 
 [tool.uv]

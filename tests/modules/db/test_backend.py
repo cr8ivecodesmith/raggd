@@ -143,7 +143,7 @@ def test_backend_uses_packaged_migrations(tmp_path: Path) -> None:
     modules = manifest.ensure_module(manifest_service.settings.db_module_key)
 
     assert modules["bootstrap_shortuuid7"] == "066C4MFM01VQ"
-    assert modules["head_migration_shortuuid7"] == "066CEY2G01SG"
+    assert modules["head_migration_shortuuid7"] == "06CVG7EEZ5YH"
     assert modules["pending_migrations"] == []
 
     with sqlite3.connect(db_path) as conn:
@@ -168,6 +168,7 @@ def test_backend_uses_packaged_migrations(tmp_path: Path) -> None:
             "vectors",
             "sources",
             "migrations_audit",
+            "chunk_slices",
         }
         assert expected_tables.issubset(table_names)
 
