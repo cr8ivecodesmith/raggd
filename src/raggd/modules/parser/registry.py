@@ -460,6 +460,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
                 "mkd",
             ),
             probe=import_dependency_probe("tree_sitter_languages"),
+            factory="raggd.modules.parser.handlers.markdown:MarkdownHandler",
         ),
         ParserHandlerDescriptor(
             name="python",

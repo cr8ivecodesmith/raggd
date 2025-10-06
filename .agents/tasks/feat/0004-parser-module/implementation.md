@@ -71,9 +71,9 @@
 - Persist manifest metadata (`last_batch_id`, run timestamps, handler versions, handler notes, warning/error counts) and set health states to `OK/DEGRADED/ERROR` when fallbacks or failures occur.
 
 ### Phase 4 — Handler implementations
-- [ ] Establish handler protocol scaffolding, dependency probes, and registry wiring so fallbacks land on the text handler by default.
-- [ ] Text handler: implement double-newline paragraph splits with indentation fallback, emit stable byte/line offsets, and collapse to a single chunk when heuristics fail.
-- [ ] Markdown handler: combine a fast heading splitter with tree-sitter verification, attach intro text forward, delegate fenced code blocks (e.g., ```python```), retain front-matter + inline metadata, and stamp chunk offsets for recomposition.
+- [x] Establish handler protocol scaffolding, dependency probes, and registry wiring so fallbacks land on the text handler by default.
+- [x] Text handler: implement double-newline paragraph splits with indentation fallback, emit stable byte/line offsets, and collapse to a single chunk when heuristics fail.
+- [x] Markdown handler: combine a fast heading splitter with tree-sitter verification, attach intro text forward, delegate fenced code blocks (e.g., ```python```), retain front-matter + inline metadata, and stamp chunk offsets for recomposition.
 - [ ] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, grouped class attributes, and emit overflow slices with parent linkage + metadata.
 - [ ] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, re-exports; honor configuration toggles for TS/TSX routing, split large classes into constructor/method slices, and route `.tsx`/`.jsx` segments into HTML delegation when enabled.
 - [ ] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
@@ -115,6 +115,16 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 01:29 PST
+**Summary**
+WIP: Markdown handler heuristics landed for Phase 4 item 3.
+**Changes**
+- Added a Markdown handler with heading-aware chunking, intro attachment, front-matter capture, and fenced code delegation stubs.
+- Registered the handler factory and introduced `tests/modules/parser/test_handler_markdown.py` covering front-matter, heading hierarchy, fenced code delegation, and fallback behavior.
+- Ran `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser` (tokenizer test still skipped without `tiktoken`).
+**Notes**
+- Remaining Phase 4 work covers Python, JS/TS, HTML, CSS handlers, and shared delegation utilities.
+
 ### 2025-10-06 23:05 PST
 **Summary**
 WIP: Text handler heuristics landed as part of Phase 4 item 2.
