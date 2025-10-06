@@ -3,21 +3,30 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Iterable, Mapping, TYPE_CHECKING
 
 from raggd.core.config import ParserModuleSettings, ParserHandlerSettings
 from raggd.modules import HealthStatus
 
+from .handlers import ParserHandlerFactory, load_factory
+
+if TYPE_CHECKING:  # pragma: no cover - imported for typing only
+    from .handlers import ParseContext, ParserHandler
+
 __all__ = [
     "HandlerProbe",
     "HandlerProbeResult",
+    "ParserHandlerFactory",
     "ParserHandlerDescriptor",
     "HandlerAvailability",
     "HandlerSelection",
     "HandlerRegistry",
+    "HandlerFactoryError",
+    "import_dependency_probe",
     "build_default_registry",
 ]
 
@@ -47,6 +56,7 @@ class ParserHandlerDescriptor:
     extensions: tuple[str, ...] = ()
     shebangs: tuple[str, ...] = ()
     probe: HandlerProbe | None = None
+    factory: ParserHandlerFactory | str | None = None
 
     def __post_init__(self) -> None:  # pragma: no cover - defensive cleanup
         object.__setattr__(
@@ -59,6 +69,9 @@ class ParserHandlerDescriptor:
             "shebangs",
             tuple({normalize_shebang(sh) for sh in self.shebangs if sh}),
         )
+        factory = self.factory
+        if isinstance(factory, str):
+            object.__setattr__(self, "factory", factory.strip())
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +93,10 @@ class HandlerSelection:
     resolved_via: str
     fallback: bool
     probe: HandlerProbeResult
+
+
+class HandlerFactoryError(RuntimeError):
+    """Raised when a handler factory cannot be resolved."""
 
 
 class HandlerRegistry:
@@ -105,6 +122,7 @@ class HandlerRegistry:
         self._shebangs: dict[str, str] = {}
         self._path_overrides: dict[str, str] = {}
         self._probe_cache: dict[str, HandlerProbeResult] = {}
+        self._factory_cache: dict[str, ParserHandlerFactory] = {}
         for descriptor in descriptors:
             for extension in descriptor.extensions:
                 self._extensions[extension] = descriptor.name
@@ -132,6 +150,28 @@ class HandlerRegistry:
         """Return a read-only view of registered descriptors."""
 
         return dict(self._descriptors)
+
+    def handler_factory(self, handler: str) -> ParserHandlerFactory:
+        """Return the factory callable for ``handler``."""
+
+        if handler not in self._descriptors:
+            raise HandlerFactoryError(f"Unknown handler {handler!r}")
+        if handler not in self._factory_cache:
+            self._factory_cache[handler] = _normalize_factory(
+                self._descriptors[handler],
+            )
+        return self._factory_cache[handler]
+
+    def create_handler(
+        self,
+        handler: str,
+        *,
+        context: "ParseContext",
+    ) -> "ParserHandler":
+        """Instantiate ``handler`` using the provided ``context``."""
+
+        factory = self.handler_factory(handler)
+        return factory(context)
 
     # ------------------------------------------------------------------
     # Dependency probe helpers
@@ -339,21 +379,62 @@ def normalize_shebang(text: str) -> str:
     return Path(command).name.lower()
 
 
-def _probe_import(module: str) -> HandlerProbeResult:
-    try:
-        importlib.import_module(module)
-    except ModuleNotFoundError as exc:
-        return HandlerProbeResult(
-            status=HealthStatus.ERROR,
-            summary=f"Missing dependency: {module}",
-            warnings=(str(exc),),
+def _normalize_factory(
+    descriptor: ParserHandlerDescriptor,
+) -> ParserHandlerFactory:
+    """Return a callable factory configured for ``descriptor``."""
+
+    factory = descriptor.factory
+    if factory is None:
+        raise HandlerFactoryError(
+            f"Handler {descriptor.name!r} does not define a factory."
         )
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        return HandlerProbeResult(
-            status=HealthStatus.ERROR,
-            summary=str(exc),
-        )
-    return HandlerProbeResult(status=HealthStatus.OK)
+    if isinstance(factory, str):
+        return load_factory(factory)
+    if inspect.isclass(factory):
+        def _factory(context: "ParseContext", _cls=factory):
+            return _cls(context=context)  # type: ignore[arg-type]
+
+        return _factory
+
+    def _factory(context: "ParseContext"):
+        try:
+            return factory(context=context)  # type: ignore[misc]
+        except TypeError:
+            return factory(context)  # type: ignore[misc]
+
+    return _factory
+
+
+def import_dependency_probe(*modules: str) -> HandlerProbe:
+    """Return a probe verifying that ``modules`` can be imported."""
+
+    normalized = tuple(dict.fromkeys(module.strip() for module in modules if module))
+
+    def _probe() -> HandlerProbeResult:
+        missing: list[str] = []
+        warnings: list[str] = []
+        for module in normalized:
+            try:
+                importlib.import_module(module)
+            except ModuleNotFoundError as exc:
+                missing.append(module)
+                warnings.append(str(exc))
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                return HandlerProbeResult(
+                    status=HealthStatus.ERROR,
+                    summary=str(exc),
+                )
+        if missing:
+            summary = "Missing dependency: " + ", ".join(missing)
+            return HandlerProbeResult(
+                status=HealthStatus.ERROR,
+                summary=summary,
+                warnings=tuple(warnings),
+            )
+        return HandlerProbeResult(status=HealthStatus.OK)
+
+    return _probe
 
 
 def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
@@ -365,6 +446,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
             version="1.0.0",
             display_name="Plain Text",
             extensions=("txt", "log", "ini", "toml", "cfg"),
+            factory="raggd.modules.parser.handlers.text:TextHandler",
         ),
         ParserHandlerDescriptor(
             name="markdown",
@@ -377,7 +459,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
                 "mkdn",
                 "mkd",
             ),
-            probe=lambda: _probe_import("tree_sitter_languages"),
+            probe=import_dependency_probe("tree_sitter_languages"),
         ),
         ParserHandlerDescriptor(
             name="python",
@@ -385,7 +467,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
             display_name="Python",
             extensions=("py", "pyw", "pyi"),
             shebangs=("python", "python3", "python2"),
-            probe=lambda: _probe_import("libcst"),
+            probe=import_dependency_probe("libcst"),
         ),
         ParserHandlerDescriptor(
             name="javascript",
@@ -393,29 +475,28 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
             display_name="JavaScript",
             extensions=("js", "cjs", "mjs", "jsx"),
             shebangs=("node",),
-            probe=lambda: _probe_import("tree_sitter_languages"),
+            probe=import_dependency_probe("tree_sitter_languages"),
         ),
         ParserHandlerDescriptor(
             name="typescript",
             version="1.0.0",
             display_name="TypeScript",
             extensions=("ts", "tsx", "cts", "mts"),
-            probe=lambda: _probe_import("tree_sitter_languages"),
+            probe=import_dependency_probe("tree_sitter_languages"),
         ),
         ParserHandlerDescriptor(
             name="html",
             version="1.0.0",
             display_name="HTML",
             extensions=("html", "htm"),
-            probe=lambda: _probe_import("tree_sitter_languages"),
+            probe=import_dependency_probe("tree_sitter_languages"),
         ),
         ParserHandlerDescriptor(
             name="css",
             version="1.0.0",
             display_name="CSS",
             extensions=("css", "scss", "less"),
-            probe=lambda: _probe_import("tree_sitter_languages"),
+            probe=import_dependency_probe("tree_sitter_languages"),
         ),
     )
     return HandlerRegistry(descriptors=descriptors, settings=settings)
-

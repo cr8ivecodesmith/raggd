@@ -8,6 +8,15 @@ from .hashing import (
     hash_stream,
     hash_text,
 )
+from .handlers import (
+    HandlerChunk,
+    HandlerFile,
+    HandlerResult,
+    HandlerSymbol,
+    ParseContext,
+    ParserHandler,
+    ParserHandlerFactory,
+)
 from .models import (
     ParserManifestState,
     ParserRunMetrics,
@@ -15,6 +24,7 @@ from .models import (
 )
 from .registry import (
     HandlerAvailability,
+    HandlerFactoryError,
     HandlerProbe,
     HandlerProbeResult,
     HandlerRegistry,
@@ -44,12 +54,20 @@ from .traversal import (
 __all__ = [
     "DEFAULT_ENCODER",
     "DEFAULT_HASH_ALGORITHM",
+    "HandlerChunk",
     "HandlerAvailability",
+    "HandlerFile",
     "HandlerProbe",
     "HandlerProbeResult",
     "HandlerRegistry",
     "HandlerSelection",
+    "HandlerResult",
+    "HandlerSymbol",
+    "ParseContext",
     "ParserHandlerDescriptor",
+    "ParserHandler",
+    "ParserHandlerFactory",
+    "HandlerFactoryError",
     "ParserManifestState",
     "ParserRunMetrics",
     "ParserRunRecord",
