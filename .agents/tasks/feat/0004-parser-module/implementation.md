@@ -128,6 +128,13 @@ Finished Phase 2 database groundwork with the chunk slices schema and parser SQL
 Closed architect feedback about handler alignment and persistence details.
 **Changes**
 - Added Phase 3 items for extension/shebang mapping and handler-version-aware hashing.
+### 2025-10-06 16:46 PST
+**Summary**
+Landed ParserService planning/manifest scaffolding for Phase 3.
+**Changes**
+- Added parser run/manifest models and `ParserService` composing registry, traversal, hashing, and manifest updates.
+- Exposed new service types via module exports and built focused unit coverage for planning, fallbacks, and manifest health.
+- Ran `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser/test_service.py`.
 - Expanded handler bullets with offset guarantees, Markdown dual parsing, JS/TS toggles, and CSS cascade expectations.
 - Clarified Phase 5 on deterministic chunk keys, overflow logging, and staged transactional CRUD.
 ### 2025-10-06 02:30 PST

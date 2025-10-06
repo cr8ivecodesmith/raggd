@@ -8,6 +8,11 @@ from .hashing import (
     hash_stream,
     hash_text,
 )
+from .models import (
+    ParserManifestState,
+    ParserRunMetrics,
+    ParserRunRecord,
+)
 from .registry import (
     HandlerAvailability,
     HandlerProbe,
@@ -16,6 +21,13 @@ from .registry import (
     HandlerSelection,
     ParserHandlerDescriptor,
     build_default_registry,
+)
+from .service import (
+    ParserBatchPlan,
+    ParserPlanEntry,
+    ParserService,
+    ParserModuleDisabledError,
+    ParserSourceNotConfiguredError,
 )
 from .tokenizer import (
     DEFAULT_ENCODER,
@@ -38,6 +50,14 @@ __all__ = [
     "HandlerRegistry",
     "HandlerSelection",
     "ParserHandlerDescriptor",
+    "ParserManifestState",
+    "ParserRunMetrics",
+    "ParserRunRecord",
+    "ParserBatchPlan",
+    "ParserPlanEntry",
+    "ParserService",
+    "ParserModuleDisabledError",
+    "ParserSourceNotConfiguredError",
     "TokenEncoder",
     "TokenEncoderError",
     "TraversalResult",
