@@ -115,6 +115,16 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-06 23:05 PST
+**Summary**
+WIP: Text handler heuristics landed as part of Phase 4 item 2.
+**Changes**
+- Implemented paragraph and indentation chunking in the text handler with byte/line metadata and fallback coverage.
+- Added `tests/modules/parser/test_handler_text.py` to cover paragraph splits, indentation fallback, and single-chunk collapse.
+- Ran `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser` (one optional tokenizer test still skipped without `tiktoken`).
+**Notes**
+- Remaining Phase 4 work covers Markdown, Python, JS/TS, HTML, CSS handlers, and shared delegation utilities.
+
 ### 2025-10-06 14:09 PST
 **Summary**
 Finished Phase 2 database groundwork with the chunk slices schema and parser SQL resource pack.
