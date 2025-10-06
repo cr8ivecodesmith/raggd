@@ -469,6 +469,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
             extensions=("py", "pyw", "pyi"),
             shebangs=("python", "python3", "python2"),
             probe=import_dependency_probe("libcst"),
+            factory="raggd.modules.parser.handlers.python:PythonHandler",
         ),
         ParserHandlerDescriptor(
             name="javascript",

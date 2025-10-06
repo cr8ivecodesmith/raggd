@@ -74,7 +74,7 @@
 - [x] Establish handler protocol scaffolding, dependency probes, and registry wiring so fallbacks land on the text handler by default.
 - [x] Text handler: implement double-newline paragraph splits with indentation fallback, emit stable byte/line offsets, and collapse to a single chunk when heuristics fail.
 - [x] Markdown handler: combine a fast heading splitter with tree-sitter verification, attach intro text forward, delegate fenced code blocks (e.g., ```python```), retain front-matter + inline metadata, and stamp chunk offsets for recomposition.
-- [ ] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, grouped class attributes, and emit overflow slices with parent linkage + metadata.
+- [x] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, grouped class attributes, and emit overflow slices with parent linkage + metadata.
 - [ ] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, re-exports; honor configuration toggles for TS/TSX routing, split large classes into constructor/method slices, and route `.tsx`/`.jsx` segments into HTML delegation when enabled.
 - [ ] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
 - [ ] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
@@ -115,6 +115,17 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 15:30 PST
+**Summary**
+WIP: Python handler landed for Phase 4 item 4.
+**Changes**
+- Implemented the libcst-backed Python handler with docstring/metadata capture, module docstring chunking, and token-cap splitting plus depot fallback when dependencies are absent.
+- Registered the handler factory/export and added `tests/modules/parser/test_handler_python.py` covering dependency errors, symbol extraction, and overflow splitting heuristics.
+- Ran `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser` (two Python handler tests skipped when `libcst` is unavailable, tokenizer skip unchanged).
+**Notes**
+- Remaining Phase 4 work includes JavaScript/TypeScript, HTML, CSS handlers, and shared delegation utilities.
+- Consider expanding Python handler coverage once parser extras are installed to exercise full libcst behavior in CI.
+
 ### 2025-10-07 01:29 PST
 **Summary**
 WIP: Markdown handler heuristics landed for Phase 4 item 3.

@@ -14,6 +14,7 @@ from .base import (
     ParseContext,
     ParserHandler,
 )
+from .python import PythonHandler
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from .base import ParseContext
@@ -30,6 +31,7 @@ __all__ = [
     "ParserHandler",
     "ParserHandlerFactory",
     "load_factory",
+    "PythonHandler",
 ]
 
 
