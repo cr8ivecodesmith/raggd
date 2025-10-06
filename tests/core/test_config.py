@@ -12,9 +12,15 @@ from raggd.core.config import (
     AppConfig,
     DbSettings,
     ModuleToggle,
+    ParserModuleSettings,
+    ParserGitignoreBehavior,
+    ParserHandlerSettings,
+    PARSER_MODULE_KEY,
     WorkspaceSettings,
     _apply_module_overrides,
+    _coerce_parser_module,
     _coerce_toggle,
+    _normalize_token_cap,
     _normalize_modules,
     iter_module_configs,
     iter_workspace_sources,
@@ -151,6 +157,15 @@ def test_load_packaged_defaults_resource() -> None:
     assert modules["db"]["enabled"] is True
     assert modules["db"]["extras"] == ["db"]
     assert modules["file-monitoring"]["extras"] == ["file-monitoring"]
+    parser_defaults = modules["parser"]
+    assert parser_defaults["enabled"] is True
+    assert parser_defaults["extras"] == ["parser"]
+    assert parser_defaults["general_max_tokens"] == 2000
+    assert parser_defaults["max_concurrency"] == "auto"
+    assert parser_defaults["fail_fast"] is False
+    handlers = parser_defaults["handlers"]
+    assert handlers["text"]["enabled"] is True
+    assert "max_tokens" not in handlers["text"]
 
 
 def test_internal_module_helpers_cover_branches() -> None:
@@ -176,6 +191,16 @@ def test_internal_module_helpers_cover_branches() -> None:
         {"alpha": ModuleToggle(enabled=True, extras=("gamma",))},
     )
     assert replaced["alpha"].extras == ("gamma",)
+
+    parser_base = _normalize_modules({PARSER_MODULE_KEY: {"enabled": True}})
+    parser_overrides = _apply_module_overrides(
+        parser_base,
+        {PARSER_MODULE_KEY: {"enabled": False, "general_max_tokens": "auto"}},
+    )
+    parser_toggle = parser_overrides[PARSER_MODULE_KEY]
+    assert isinstance(parser_toggle, ParserModuleSettings)
+    assert parser_toggle.enabled is False
+    assert parser_toggle.general_max_tokens == "auto"
 
     config = load_config(defaults={"modules": {"alpha": False}})
     pairs = list(iter_module_configs(config))
@@ -255,3 +280,119 @@ def test_load_config_accepts_workspace_settings_instance() -> None:
     config = load_config(defaults={"workspace": custom})
 
     assert config.workspace_settings is custom
+
+
+def test_parser_settings_loaded_from_defaults() -> None:
+    defaults = load_packaged_defaults()
+    config = load_config(defaults=defaults)
+
+    parser_settings = config.parser
+
+    assert isinstance(parser_settings, ParserModuleSettings)
+    assert parser_settings.enabled is True
+    assert parser_settings.general_max_tokens == 2000
+    assert parser_settings.max_concurrency == "auto"
+    assert parser_settings.fail_fast is False
+    assert (
+        parser_settings.gitignore_behavior is ParserGitignoreBehavior.COMBINED
+    )
+    assert "text" in parser_settings.handlers
+    text_handler = parser_settings.handlers["text"]
+    assert text_handler.enabled is True
+    assert text_handler.max_tokens is None
+
+
+def test_render_user_config_serializes_parser_settings() -> None:
+    defaults = load_packaged_defaults()
+    config = load_config(defaults=defaults)
+
+    rendered = render_user_config(config, include_defaults=False)
+    parsed = tomllib.loads(rendered)
+    parser_section = parsed["modules"]["parser"]
+
+    assert parser_section["general_max_tokens"] == 2000
+    assert parser_section["max_concurrency"] == "auto"
+    assert parser_section["fail_fast"] is False
+    assert parser_section["gitignore_behavior"] == "combined"
+    assert "max_tokens" not in parser_section["handlers"]["markdown"]
+
+
+def test_parser_settings_validation_errors() -> None:
+    with pytest.raises(ValueError):
+        ParserHandlerSettings(max_tokens="invalid")
+
+    with pytest.raises(ValueError):
+        ParserModuleSettings(max_concurrency="fast")
+
+    with pytest.raises(ValueError):
+        ParserModuleSettings(max_concurrency=0)
+
+    with pytest.raises(ValueError):
+        ParserModuleSettings(handlers={" ": ParserHandlerSettings()})
+
+    with pytest.raises(ValueError):
+        ParserModuleSettings._validate_max_concurrency("fast")
+
+    with pytest.raises(ValueError):
+        ParserModuleSettings._validate_max_concurrency(0)
+
+
+def test_parser_coercion_helpers() -> None:
+    module_toggle = ModuleToggle(enabled=True, extras=("parser",))
+    coerced = _coerce_parser_module(module_toggle)
+    assert isinstance(coerced, ParserModuleSettings)
+    assert coerced.enabled is True
+
+    mapping_coerced = _coerce_parser_module({"enabled": False})
+    assert mapping_coerced.enabled is False
+
+    bool_coerced = _coerce_parser_module(True)
+    assert bool_coerced.enabled is True
+
+    existing = ParserModuleSettings(enabled=False)
+    same = _coerce_parser_module(existing)
+    assert same is existing
+
+    with pytest.raises(TypeError):
+        _coerce_parser_module(123)
+
+
+def test_app_config_parser_property_converts_toggle() -> None:
+    config = load_config(defaults={})
+    default_settings = config.parser
+    assert isinstance(default_settings, ParserModuleSettings)
+    assert default_settings.enabled is True
+
+    config.modules[PARSER_MODULE_KEY] = ModuleToggle(enabled=False)
+
+    settings = config.parser
+    assert isinstance(settings, ParserModuleSettings)
+    assert settings.enabled is False
+
+    override = ParserModuleSettings(enabled=True, max_concurrency=3)
+    config.modules[PARSER_MODULE_KEY] = override
+    same_settings = config.parser
+    assert same_settings is override
+
+
+def test_parser_normalize_token_cap_constraints() -> None:
+    with pytest.raises(ValueError):
+        _normalize_token_cap(None, allow_none=False)
+
+    with pytest.raises(ValueError):
+        _normalize_token_cap(0, allow_none=True)
+
+    with pytest.raises(ValueError):
+        _normalize_token_cap("invalid", allow_none=True)
+
+
+def test_render_user_config_includes_handler_overrides() -> None:
+    derived = ParserModuleSettings(
+        handlers={"markdown": ParserHandlerSettings(max_tokens=500)}
+    )
+    config = load_config(defaults={"modules": {PARSER_MODULE_KEY: derived}})
+
+    rendered = render_user_config(config, include_defaults=False)
+    parsed = tomllib.loads(rendered)
+    markdown_handler = parsed["modules"]["parser"]["handlers"]["markdown"]
+    assert markdown_handler["max_tokens"] == 500

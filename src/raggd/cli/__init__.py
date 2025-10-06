@@ -23,10 +23,16 @@ import typer
 from raggd.cli.checkhealth import register_checkhealth_command
 from raggd.cli.db import create_db_app
 from raggd.cli.init import init_workspace
+from raggd.cli.parser import create_parser_app
 from raggd.cli.source import create_source_app
 from raggd.modules.db import db_health_hook
 from raggd.source import source_health_hook
-from raggd.core.config import AppConfig, ModuleToggle, DEFAULTS_RESOURCE_NAME
+from raggd.core.config import (
+    AppConfig,
+    ModuleToggle,
+    ParserModuleSettings,
+    DEFAULTS_RESOURCE_NAME,
+)
 from raggd.core.logging import configure_logging, get_logger
 from raggd.core.paths import resolve_workspace
 from raggd.modules.registry import ModuleDescriptor, ModuleRegistry
@@ -94,13 +100,10 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
         ),
     ),
     ModuleDescriptor(
-        name="parsers",
+        name="parser",
         description="Rich document and source parsing utilities.",
-        extras=("parsers",),
-        default_toggle=ModuleToggle(
-            enabled=False,
-            extras=("parsers",),
-        ),
+        extras=("parser",),
+        default_toggle=ParserModuleSettings(enabled=True),
     ),
     ModuleDescriptor(
         name="rag",
@@ -121,7 +124,7 @@ _EXTRA_SENTINELS: Mapping[str, tuple[str, ...]] = {
     "local-embeddings": ("onnxruntime", "sentence_transformers"),
     "mcp": ("mcp",),
     "mcp-rest": ("fastapi", "uvicorn"),
-    "parsers": (
+    "parser": (
         "libcst",
         "markdown_it",
         "tree_sitter",
@@ -280,6 +283,7 @@ def create_app() -> "typer.Typer":
 
     app.add_typer(create_source_app(), name="source")
     app.add_typer(create_db_app(), name="db")
+    app.add_typer(create_parser_app(), name="parser")
 
     registry = ModuleRegistry(_DEFAULT_MODULE_DESCRIPTORS)
     register_checkhealth_command(app, registry=registry)
@@ -419,6 +423,20 @@ def create_app() -> "typer.Typer":
             refresh=refresh,
             existing=workspace_exists,
         )
+
+    @app.command(
+        "parse",
+        help="Deprecated entry point. Use `raggd parser parse` instead.",
+    )
+    def legacy_parse_command() -> None:
+        typer.secho(
+            (
+                "`raggd parse` has moved. Invoke `raggd parser parse` "
+                "going forward."
+            ),
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=1)
 
     return app
 

@@ -49,9 +49,36 @@ extras = ["mcp"]
 enabled = false
 extras = ["mcp-rest"]
 
-[modules.parsers]
-enabled = false
-extras = ["parsers"]
+[modules.parser]
+enabled = true
+extras = ["parser"]
+general_max_tokens = 2000
+max_concurrency = "auto"
+fail_fast = false
+gitignore_behavior = "combined"
+
+[modules.parser.handlers]
+
+[modules.parser.handlers.text]
+enabled = true
+
+[modules.parser.handlers.markdown]
+enabled = true
+
+[modules.parser.handlers.python]
+enabled = true
+
+[modules.parser.handlers.javascript]
+enabled = true
+
+[modules.parser.handlers.typescript]
+enabled = true
+
+[modules.parser.handlers.html]
+enabled = true
+
+[modules.parser.handlers.css]
+enabled = true
 
 [modules.rag]
 enabled = false

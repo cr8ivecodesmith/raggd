@@ -128,6 +128,13 @@ Tightened plan to close spec-alignment gaps.
 - Added Phase 2 work for dedicated SQL files executed via `raggd db run`.
 - Extended parser services to honor explicit path scopes, default to `cl100k_base`, and persist expanded manifest metadata.
 - Expanded CLI plan to include `parse` subcommand fail-fast flag wiring and Phase 7 health validations covering manifest/db and chunk-slice integrity.
+### 2025-10-06 12:08 PST
+**Summary**
+Completed Phase 1 CLI scaffolding with parser configuration defaults.
+**Changes**
+- Added parser-specific configuration models, defaults, and serialization updates.
+- Introduced the `raggd parser` Typer app with stub subcommands and legacy alias messaging.
+- Renamed the parser module descriptor/extras and refreshed tests covering config and CLI output.
 ### 2025-10-06 02:06 PST
 **Summary**
 Added per-phase subheadings to the solution plan.

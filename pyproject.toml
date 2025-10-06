@@ -35,7 +35,7 @@ mcp-rest = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
 ]
-parsers = [
+parser = [
     "libcst>=1.4",
     "markdown-it-py>=3",
     "tree-sitter>=0.21",
@@ -73,7 +73,7 @@ modules = [
     { include-group = "local-embeddings" },
     { include-group = "mcp" },
     { include-group = "mcp-rest" },
-    { include-group = "parsers" },
+    { include-group = "parser" },
     { include-group = "rag" },
 ]
 
@@ -97,7 +97,7 @@ mcp-rest = [
     "uvicorn[standard]>=0.30",
 ]
 
-parsers = [
+parser = [
     "libcst>=1.4",
     "markdown-it-py>=3",
     "tree-sitter>=0.21",

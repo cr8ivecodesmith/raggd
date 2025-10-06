@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping as MappingABC
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from enum import StrEnum
+from typing import Any, Iterable, Mapping, Literal
 
 import tomllib
 import tomlkit
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from raggd.resources import get_resource
 from raggd.source.models import WorkspaceSourceConfig
@@ -220,6 +221,181 @@ class ModuleToggle(BaseModel):
         return self.enabled
 
 
+PARSER_MODULE_KEY = "parser"
+
+ParserTokenLimit = int | Literal["auto"] | None
+ParserConcurrencyValue = int | Literal["auto"]
+
+
+class ParserGitignoreBehavior(StrEnum):
+    """Supported `.gitignore` precedence modes for the parser."""
+
+    REPO = "repo"
+    WORKSPACE = "workspace"
+    COMBINED = "combined"
+
+
+def _normalize_token_cap(
+    value: ParserTokenLimit,
+    *,
+    allow_none: bool,
+) -> ParserTokenLimit:
+    """Normalize and validate token cap values."""
+
+    if value is None:
+        if allow_none:
+            return None
+        raise ValueError("Token cap cannot be null for this field.")
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized != "auto":
+            raise ValueError("Token cap string values must be 'auto'.")
+        return "auto"
+
+    if value < 1:
+        raise ValueError("Token cap integers must be >= 1.")
+
+    return value
+
+
+class ParserHandlerSettings(BaseModel):
+    """Configuration for an individual parser handler."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Whether the handler is enabled for dispatch.",
+    )
+    max_tokens: ParserTokenLimit = Field(
+        default=None,
+        description=(
+            "Maximum tokens for handler output; ``null`` inherits the "
+            "general cap and ``'auto'`` defers to handler heuristics."
+        ),
+    )
+
+    model_config = {
+        "frozen": True,
+        "str_strip_whitespace": True,
+    }
+
+    @field_validator("max_tokens")
+    @classmethod
+    def _validate_max_tokens(
+        cls,
+        value: ParserTokenLimit,
+    ) -> ParserTokenLimit:
+        return _normalize_token_cap(value, allow_none=True)
+
+
+_DEFAULT_PARSER_HANDLER_NAMES: tuple[str, ...] = (
+    "text",
+    "markdown",
+    "python",
+    "javascript",
+    "typescript",
+    "html",
+    "css",
+)
+
+
+def _default_parser_handlers() -> dict[str, ParserHandlerSettings]:
+    """Return the baseline handler configuration mapping."""
+
+    return {
+        name: ParserHandlerSettings() for name in _DEFAULT_PARSER_HANDLER_NAMES
+    }
+
+
+class ParserModuleSettings(ModuleToggle):
+    """Extended toggle carrying parser module configuration values."""
+
+    extras: tuple[str, ...] = Field(
+        default=("parser",),
+        description="Optional dependency extras required for the parser.",
+    )
+    handlers: dict[str, ParserHandlerSettings] = Field(
+        default_factory=_default_parser_handlers,
+        description="Per-handler overrides keyed by handler name.",
+    )
+    general_max_tokens: ParserTokenLimit = Field(
+        default=2000,
+        description=(
+            "Default token cap applied when handlers do not override it."
+        ),
+    )
+    max_concurrency: ParserConcurrencyValue = Field(
+        default="auto",
+        description=(
+            "Number of sources parsed concurrently or 'auto' for dynamic"
+            " selection."
+        ),
+    )
+    fail_fast: bool = Field(
+        default=False,
+        description=(
+            "Stop parsing on first handler failure when true; default to "
+            "resilient mode."
+        ),
+    )
+    gitignore_behavior: ParserGitignoreBehavior = Field(
+        default=ParserGitignoreBehavior.COMBINED,
+        description=(
+            "How repository and workspace ignore rules are combined during "
+            "traversal."
+        ),
+    )
+
+    model_config = {
+        "frozen": True,
+        "str_strip_whitespace": True,
+    }
+
+    @field_validator("general_max_tokens")
+    @classmethod
+    def _validate_general_max_tokens(
+        cls,
+        value: ParserTokenLimit,
+    ) -> ParserTokenLimit:
+        return _normalize_token_cap(value, allow_none=True)
+
+    @field_validator("max_concurrency")
+    @classmethod
+    def _validate_max_concurrency(
+        cls,
+        value: ParserConcurrencyValue,
+    ) -> ParserConcurrencyValue:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized != "auto":
+                raise ValueError(
+                    (
+                        "Parser max_concurrency must be a positive integer "
+                        "or 'auto'."
+                    )
+                )
+            return "auto"
+        if value < 1:
+            raise ValueError(
+                (
+                    "Parser max_concurrency must be >= 1 when provided as "
+                    "an integer."
+                )
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _normalize_handlers(self) -> "ParserModuleSettings":
+        normalized: dict[str, ParserHandlerSettings] = {}
+        for name, settings in self.handlers.items():
+            key = name.strip()
+            if not key:
+                raise ValueError("Parser handler names cannot be blank.")
+            normalized[key] = settings
+        object.__setattr__(self, "handlers", normalized)
+        return self
+
+
 class AppConfig(BaseModel):
     """Root configuration for the :mod:`raggd` application."""
 
@@ -265,6 +441,17 @@ class AppConfig(BaseModel):
         """Return registered workspace sources keyed by name."""
 
         return self.workspace_settings.sources
+
+    @property
+    def parser(self) -> ParserModuleSettings:
+        """Return parser module settings, falling back to defaults."""
+
+        toggle = self.modules.get(PARSER_MODULE_KEY)
+        if isinstance(toggle, ParserModuleSettings):
+            return toggle
+        if toggle is not None:
+            return ParserModuleSettings(**toggle.model_dump())
+        return ParserModuleSettings()
 
     def iter_workspace_sources(
         self,
@@ -335,6 +522,21 @@ def _coerce_toggle(value: Any) -> ModuleToggle:
     raise TypeError(f"Unsupported module toggle value: {value!r}")
 
 
+def _coerce_parser_module(value: Any) -> ParserModuleSettings:
+    """Convert inputs to :class:`ParserModuleSettings`."""
+
+    if isinstance(value, ParserModuleSettings):
+        return value
+    if isinstance(value, ModuleToggle):
+        payload = value.model_dump()
+        return ParserModuleSettings(**payload)
+    if isinstance(value, MappingABC):
+        return ParserModuleSettings(**value)
+    if isinstance(value, bool):
+        return ParserModuleSettings(enabled=bool(value))
+    raise TypeError(f"Unsupported parser module value: {value!r}")
+
+
 def _normalize_modules(
     raw: Mapping[str, Any] | None,
 ) -> dict[str, ModuleToggle]:
@@ -345,7 +547,10 @@ def _normalize_modules(
         return modules
 
     for name, value in raw.items():
-        modules[name] = _coerce_toggle(value)
+        if name == PARSER_MODULE_KEY:
+            modules[name] = _coerce_parser_module(value)
+        else:
+            modules[name] = _coerce_toggle(value)
     return modules
 
 
@@ -360,7 +565,10 @@ def _apply_module_overrides(
 
     updated = dict(modules)
     for name, override in overrides.items():
-        override_toggle = _coerce_toggle(override)
+        if name == PARSER_MODULE_KEY:
+            override_toggle = _coerce_parser_module(override)
+        else:
+            override_toggle = _coerce_toggle(override)
         current = updated.get(name)
         if current is None:
             updated[name] = override_toggle
@@ -372,8 +580,50 @@ def _apply_module_overrides(
             # Preserve existing extras when the override does not provide them.
             override_data.pop("extras", None)
         data.update(override_data)
-        updated[name] = ModuleToggle(**data)
+        target_cls: type[ModuleToggle]
+        if name == PARSER_MODULE_KEY:
+            target_cls = ParserModuleSettings
+        else:
+            target_cls = ModuleToggle
+        updated[name] = target_cls(**data)
     return updated
+
+
+def _build_parser_handlers_table(
+    toggle: ParserModuleSettings,
+) -> tomlkit.table:
+    handlers_table = tomlkit.table(is_super_table=True)
+    for handler_name in sorted(toggle.handlers):
+        handler_settings = toggle.handlers[handler_name]
+        handler_entry = tomlkit.table()
+        handler_entry["enabled"] = handler_settings.enabled
+        if handler_settings.max_tokens is not None:
+            handler_entry["max_tokens"] = handler_settings.max_tokens
+        handlers_table.add(handler_name, handler_entry)
+    return handlers_table
+
+
+def _render_module_entry(toggle: ModuleToggle) -> tomlkit.table:
+    if isinstance(toggle, ParserModuleSettings):
+        entry = tomlkit.table()
+        entry["enabled"] = toggle.enabled
+        if toggle.extras:
+            entry["extras"] = list(toggle.extras)
+        entry["general_max_tokens"] = toggle.general_max_tokens
+        entry["max_concurrency"] = toggle.max_concurrency
+        entry["fail_fast"] = toggle.fail_fast
+        entry["gitignore_behavior"] = toggle.gitignore_behavior.value
+
+        if toggle.handlers:
+            handlers_table = _build_parser_handlers_table(toggle)
+            entry.add("handlers", handlers_table)
+        return entry
+
+    entry = tomlkit.table()
+    entry["enabled"] = toggle.enabled
+    if toggle.extras:
+        entry["extras"] = list(toggle.extras)
+    return entry
 
 
 def load_config(
@@ -507,10 +757,7 @@ def render_user_config(
         modules_table = tomlkit.table()
         for name in sorted(config.modules):
             toggle = config.modules[name]
-            entry = tomlkit.table()
-            entry["enabled"] = toggle.enabled
-            if toggle.extras:
-                entry["extras"] = list(toggle.extras)
+            entry = _render_module_entry(toggle)
             modules_table.add(name, entry)
         document["modules"] = modules_table
 
@@ -538,6 +785,10 @@ __all__ = [
     "ModuleToggle",
     "WorkspaceSettings",
     "DbSettings",
+    "ParserGitignoreBehavior",
+    "ParserHandlerSettings",
+    "ParserModuleSettings",
+    "PARSER_MODULE_KEY",
     "DEFAULTS_RESOURCE_NAME",
     "iter_module_configs",
     "iter_workspace_sources",

@@ -2085,7 +2085,7 @@ mcp-rest = [
     { name = "fastapi" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-parsers = [
+parser = [
     { name = "libcst" },
     { name = "markdown-it-py" },
     { name = "tree-sitter" },
@@ -2157,7 +2157,7 @@ modules = [
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchdog" },
 ]
-parsers = [
+parser = [
     { name = "libcst" },
     { name = "markdown-it-py" },
     { name = "tree-sitter" },
@@ -2183,8 +2183,8 @@ requires-dist = [
     { name = "faiss-cpu", marker = "extra == 'rag'", specifier = ">=1.8" },
     { name = "fastapi", marker = "extra == 'mcp-rest'", specifier = ">=0.111" },
     { name = "jinja2", specifier = ">=3.1" },
-    { name = "libcst", marker = "extra == 'parsers'", specifier = ">=1.4" },
-    { name = "markdown-it-py", marker = "extra == 'parsers'", specifier = ">=3" },
+    { name = "libcst", marker = "extra == 'parser'", specifier = ">=1.4" },
+    { name = "markdown-it-py", marker = "extra == 'parser'", specifier = ">=3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1" },
     { name = "onnxruntime", marker = "extra == 'local-embeddings'", specifier = ">=1.17" },
     { name = "openai", marker = "extra == 'rag'", specifier = ">=1" },
@@ -2197,13 +2197,13 @@ requires-dist = [
     { name = "structlog", specifier = ">=24" },
     { name = "tiktoken", marker = "extra == 'rag'", specifier = ">=0.7" },
     { name = "tomlkit", specifier = ">=0.12" },
-    { name = "tree-sitter", marker = "extra == 'parsers'", specifier = ">=0.21" },
-    { name = "tree-sitter-languages", marker = "extra == 'parsers'", specifier = ">=1.9" },
+    { name = "tree-sitter", marker = "extra == 'parser'", specifier = ">=0.21" },
+    { name = "tree-sitter-languages", marker = "extra == 'parser'", specifier = ">=1.9" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'mcp-rest'", specifier = ">=0.30" },
     { name = "watchdog", marker = "extra == 'file-monitoring'", specifier = ">=4" },
 ]
-provides-extras = ["source", "db", "file-monitoring", "local-embeddings", "mcp", "mcp-rest", "parsers", "rag"]
+provides-extras = ["source", "db", "file-monitoring", "local-embeddings", "mcp", "mcp-rest", "parser", "rag"]
 
 [package.metadata.requires-dev]
 db = []
@@ -2261,7 +2261,7 @@ modules = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "watchdog", specifier = ">=4" },
 ]
-parsers = [
+parser = [
     { name = "libcst", specifier = ">=1.4" },
     { name = "markdown-it-py", specifier = ">=3" },
     { name = "tree-sitter", specifier = ">=0.21" },
