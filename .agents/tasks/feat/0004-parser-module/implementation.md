@@ -41,7 +41,7 @@
 - **Stepwise checklist**:
   - [x] Phase 1 — CLI scaffolding & configuration (see Phase 1 notes below).
   - [x] Phase 2 — Database groundwork (see Phase 2 notes below).
-  - [ ] Phase 3 — Core parser services (see Phase 3 notes below).
+  - [x] Phase 3 — Core parser services (see Phase 3 notes below).
   - [ ] Phase 4 — Handler implementations (see Phase 4 notes below).
   - [ ] Phase 5 — Persistence & recomposition support (see Phase 5 notes below).
   - [ ] Phase 6 — CLI subcommand behaviors (see Phase 6 notes below).
@@ -128,6 +128,13 @@ Finished Phase 2 database groundwork with the chunk slices schema and parser SQL
 Closed architect feedback about handler alignment and persistence details.
 **Changes**
 - Added Phase 3 items for extension/shebang mapping and handler-version-aware hashing.
+### 2025-10-06 17:00 PST
+**Summary**
+Closed out Phase 3 by validating the parser service stack and documenting completion.
+**Changes**
+- Confirmed handler registry, traversal, hashing, and manifest orchestration behave as expected; no additional code changes required.
+- Marked the Phase 3 checklist item complete and noted outstanding work for later phases.
+- Ran `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser` (one optional tokenizer test skipped when `tiktoken` is absent).
 ### 2025-10-06 16:46 PST
 **Summary**
 Landed ParserService planning/manifest scaffolding for Phase 3.
