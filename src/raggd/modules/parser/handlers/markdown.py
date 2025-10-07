@@ -522,7 +522,10 @@ class MarkdownHandler(ParserHandler):
                     extra=chunk_metadata,
                 )
             else:
-                chunk_id = f"{self.name}:fence:{code_start_byte}:{code_end_byte}:{fence_index}"
+                chunk_id = (
+                    f"{self.name}:fence:{code_start_byte}"
+                    f":{code_end_byte}:{fence_index}"
+                )
                 metadata = chunk_metadata
 
             fence_chunks.append(
