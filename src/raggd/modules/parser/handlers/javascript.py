@@ -506,39 +506,60 @@ class _JavaScriptCollector:
         )
         self.chunks.append(chunk)
 
-    def _handle_export(self, node: Any) -> None:  # noqa: C901 - many export forms
+    def _handle_export(self, node: Any) -> None:
         text = self._slice(node.start_byte, node.end_byte)
-        if node.type == "export_assignment":
-            name = self._extract_identifier(node) or "default"
-            metadata = {
-                "kind": "reexport",
-                "exported": True,
-                "default_export": True,
-                "assignment": text.strip(),
-            }
-            symbol = self._emit_symbol(
-                name=name,
-                kind="reexport",
-                node=node,
-                exported=True,
-                is_default=True,
-                metadata=metadata,
-            )
-            self._emit_text_chunk(node, parent=symbol.symbol_id)
+        if (
+            self._handle_export_assignment(node, text)
+            or self._handle_export_default_declaration(node)
+            or self._handle_export_declaration(node, text)
+            or self._handle_export_clause(node)
+            or self._handle_namespace_export(node, text)
+        ):
             return
 
-        if node.type == "export_default_declaration":
-            declaration = node.child_by_field_name("declaration")
-            if declaration is None and node.named_children:
-                declaration = node.named_children[0]
-            if declaration is not None:
-                self._dispatch_declaration(
-                    declaration,
-                    exported=True,
-                    is_default=True,
-                )
-                return
+        # Fallback: treat the export statement as a chunk without symbol.
+        self._emit_text_chunk(node, parent=self._module_symbol_id)
 
+    def _handle_export_assignment(self, node: Any, text: str) -> bool:
+        if node.type != "export_assignment":
+            return False
+
+        name = self._extract_identifier(node) or "default"
+        metadata = {
+            "kind": "reexport",
+            "exported": True,
+            "default_export": True,
+            "assignment": text.strip(),
+        }
+        symbol = self._emit_symbol(
+            name=name,
+            kind="reexport",
+            node=node,
+            exported=True,
+            is_default=True,
+            metadata=metadata,
+        )
+        self._emit_text_chunk(node, parent=symbol.symbol_id)
+        return True
+
+    def _handle_export_default_declaration(self, node: Any) -> bool:
+        if node.type != "export_default_declaration":
+            return False
+
+        declaration = node.child_by_field_name("declaration")
+        if declaration is None and node.named_children:
+            declaration = node.named_children[0]
+        if declaration is None:
+            return False
+
+        self._dispatch_declaration(
+            declaration,
+            exported=True,
+            is_default=True,
+        )
+        return True
+
+    def _handle_export_declaration(self, node: Any, text: str) -> bool:
         declaration = node.child_by_field_name("declaration")
         if declaration is None:
             declaration = self._first_matching_child(
@@ -549,46 +570,49 @@ class _JavaScriptCollector:
                 | self._TS_DECLARATIONS,
             )
 
-        if declaration is not None:
-            is_default = "export default" in text
-            self._dispatch_declaration(
-                declaration,
-                exported=True,
-                is_default=is_default,
-            )
-            return
+        if declaration is None:
+            return False
 
+        self._dispatch_declaration(
+            declaration,
+            exported=True,
+            is_default="export default" in text,
+        )
+        return True
+
+    def _handle_export_clause(self, node: Any) -> bool:
         clause = node.child_by_field_name("clause")
         if clause is None:
             clause = self._first_child_of_type(node, "export_clause")
+        if clause is None:
+            return False
+
         source = node.child_by_field_name("source")
         if source is None:
             source = self._first_child_of_type(node, "string")
-        if clause is not None:
-            self._emit_export_clause(clause, source)
-            return
+        self._emit_export_clause(clause, source)
+        return True
 
-        # Namespace export (e.g., export * from "./foo";)
-        if "*" in text:
-            metadata = {
-                "kind": "reexport",
-                "exported": True,
-                "default_export": False,
-                "namespace": text.strip(),
-            }
-            symbol = self._emit_symbol(
-                name="*",
-                kind="reexport",
-                node=node,
-                exported=True,
-                is_default=False,
-                metadata=metadata,
-            )
-            self._emit_text_chunk(node, parent=symbol.symbol_id)
-            return
+    def _handle_namespace_export(self, node: Any, text: str) -> bool:
+        if "*" not in text:
+            return False
 
-        # Fallback: treat the export statement as a chunk without symbol.
-        self._emit_text_chunk(node, parent=self._module_symbol_id)
+        metadata = {
+            "kind": "reexport",
+            "exported": True,
+            "default_export": False,
+            "namespace": text.strip(),
+        }
+        symbol = self._emit_symbol(
+            name="*",
+            kind="reexport",
+            node=node,
+            exported=True,
+            is_default=False,
+            metadata=metadata,
+        )
+        self._emit_text_chunk(node, parent=symbol.symbol_id)
+        return True
 
     def _dispatch_declaration(
         self,
