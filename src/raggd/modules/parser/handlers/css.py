@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
 from typing import Any, Sequence
@@ -15,6 +15,7 @@ from .base import (
     HandlerSymbol,
     ParseContext,
     ParserHandler,
+    ts_point_row,
 )
 
 __all__ = ["CSSHandler"]
@@ -262,13 +263,11 @@ class _CSSCollector:
     byte_offsets: Sequence[int]
     module_symbol_id: str
     token_cap: int | None
-
-    def __post_init__(self) -> None:
-        self._symbols: list[HandlerSymbol] = []
-        self._chunks: list[HandlerChunk] = []
-        self._warnings: list[str] = []
-        self._part_index = 0
-        self._cascade: list[str] = []
+    _symbols: list[HandlerSymbol] = field(init=False, default_factory=list)
+    _chunks: list[HandlerChunk] = field(init=False, default_factory=list)
+    _warnings: list[str] = field(init=False, default_factory=list)
+    _part_index: int = field(init=False, default=0)
+    _cascade: list[str] = field(init=False, default_factory=list)
 
     @property
     def symbols(self) -> list[HandlerSymbol]:
@@ -310,7 +309,7 @@ class _CSSCollector:
         if node_type in {"rule_set", "qualified_rule"}:
             self._emit_rule_set(node, parent_symbol_id)
             return
-        if node_type == "at_rule":
+        if node_type == "at_rule" or node_type.endswith("_statement"):
             self._emit_at_rule(node, parent_symbol_id)
             return
         if node_type == "keyframe_block":
@@ -329,6 +328,11 @@ class _CSSCollector:
     def _emit_rule_set(self, node: Any, parent_symbol_id: str) -> None:
         selector_node = self._selector_node(node)
         block_node = node.child_by_field_name("block")
+        if block_node is None:
+            for child in getattr(node, "named_children", []) or []:
+                if getattr(child, "type", "") == "block":
+                    block_node = child
+                    break
         selector_segments = (
             self._extract_selectors(selector_node) if selector_node else ()
         )
@@ -349,8 +353,8 @@ class _CSSCollector:
             "kind": "rule",
             "selectors": selector_texts or None,
             "cascade": tuple(self._cascade),
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(start_offset),
             "char_end": self._char_index(end_offset),
         }
@@ -392,8 +396,8 @@ class _CSSCollector:
                     "selector_index": index,
                     "selector_count": selector_count,
                     "cascade": tuple(self._cascade),
-                    "start_line": node.start_point.row + 1,
-                    "end_line": node.end_point.row + 1,
+                    "start_line": ts_point_row(node.start_point) + 1,
+                    "end_line": ts_point_row(node.end_point) + 1,
                     "char_start": self._char_index(segment.start),
                     "char_end": self._char_index(end_marker),
                 }
@@ -414,8 +418,8 @@ class _CSSCollector:
             "kind": "rule",
             "selectors": selector_texts or None,
             "cascade": tuple(self._cascade),
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(start_offset),
             "char_end": self._char_index(end_offset),
         }
@@ -437,26 +441,39 @@ class _CSSCollector:
                     self._visit(child, parent_symbol_id=symbol.symbol_id)
 
     def _emit_at_rule(self, node: Any, parent_symbol_id: str) -> None:
-        name_node = node.child_by_field_name("name")
-        prelude_node = node.child_by_field_name("prelude")
         block_node = node.child_by_field_name("block")
-
-        name = self._slice(name_node.start_byte, name_node.end_byte).strip() if name_node else ""
-        prelude = self._slice(prelude_node.start_byte, prelude_node.end_byte).strip() if prelude_node else ""
-        cascade_label = f"@{name}" if name else "@unknown"
-        if prelude:
-            cascade_label = f"{cascade_label} {prelude}"
+        if block_node is None:
+            for child in getattr(node, "named_children", []) or []:
+                child_type = getattr(child, "type", "")
+                if child_type in {"block", "keyframe_block_list"}:
+                    block_node = child
+                    break
 
         start_offset = node.start_byte
         end_offset = node.end_byte
+        header_end = block_node.start_byte if block_node else end_offset
+
+        raw_header = self._slice(start_offset, header_end)
+        header_text = self._normalize_rule(raw_header)
+        stripped_header = raw_header.strip()
+
+        if stripped_header.startswith("@"):
+            stripped_header = stripped_header[1:]
+        parts = stripped_header.split(None, 1)
+        name = parts[0] if parts else ""
+        prelude = parts[1] if len(parts) > 1 else ""
+
+        cascade_label = f"@{name}" if name else "@unknown"
+        if prelude:
+            cascade_label = f"{cascade_label} {prelude}".strip()
 
         metadata = {
             "kind": "at_rule",
             "name": name or None,
             "prelude": prelude or None,
             "cascade": tuple(self._cascade),
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(start_offset),
             "char_end": self._char_index(end_offset),
         }
@@ -476,15 +493,13 @@ class _CSSCollector:
         )
         self._symbols.append(symbol)
 
-        header_end = block_node.start_byte if block_node else end_offset
-        header_text = self._normalize_rule(self._slice(start_offset, header_end))
         chunk_metadata = {
             "kind": "at_rule",
             "name": name or None,
             "prelude": prelude or None,
             "cascade": tuple(self._cascade),
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(start_offset),
             "char_end": self._char_index(header_end),
             "has_block": bool(block_node),
@@ -526,8 +541,8 @@ class _CSSCollector:
             "kind": "keyframe",
             "selectors": selectors or None,
             "cascade": tuple(self._cascade),
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(start_offset),
             "char_end": self._char_index(end_offset),
         }
@@ -576,8 +591,8 @@ class _CSSCollector:
             metadata={
                 "kind": "comment",
                 "cascade": tuple(self._cascade),
-                "start_line": node.start_point.row + 1,
-                "end_line": node.end_point.row + 1,
+                "start_line": ts_point_row(node.start_point) + 1,
+                "end_line": ts_point_row(node.end_point) + 1,
                 "char_start": self._char_index(node.start_byte),
                 "char_end": self._char_index(node.end_byte),
             },
@@ -602,8 +617,8 @@ class _CSSCollector:
             metadata={
                 "kind": "error",
                 "cascade": tuple(self._cascade),
-                "start_line": node.start_point.row + 1,
-                "end_line": node.end_point.row + 1,
+                "start_line": ts_point_row(node.start_point) + 1,
+                "end_line": ts_point_row(node.end_point) + 1,
                 "char_start": self._char_index(node.start_byte),
                 "char_end": self._char_index(node.end_byte),
             },

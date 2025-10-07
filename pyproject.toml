@@ -38,7 +38,7 @@ mcp-rest = [
 parser = [
     "libcst>=1.4",
     "markdown-it-py>=3",
-    "tree-sitter>=0.21",
+    "tree-sitter>=0.21,<0.22",
     "tree_sitter_languages>=1.9",
 ]
 rag = [
@@ -100,7 +100,7 @@ mcp-rest = [
 parser = [
     "libcst>=1.4",
     "markdown-it-py>=3",
-    "tree-sitter>=0.21",
+    "tree-sitter>=0.21,<0.22",
     "tree_sitter_languages>=1.9",
 ]
 

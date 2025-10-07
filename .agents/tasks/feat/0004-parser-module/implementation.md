@@ -138,6 +138,18 @@ Completed HTML handler for Phase 4 item 5 with tree-sitter-backed structural gro
 **Summary**
 Completed CSS handler for Phase 4 by adding tree-sitter grouping, cascade-aware metadata, selector-based splitting, and comment coverage.
 
+### 2025-10-07 15:18 PST
+**Summary**
+Pinned tree-sitter to a version compatible with `tree_sitter_languages` and updated HTML/CSS/JS handlers to work with tuple-based point APIs so the tree-sitter suites execute instead of skipping.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=/home/matt/Projects/matt/raggd/.tmp/test-workspace uv run pytest --no-cov tests/modules/parser/test_handler_markdown.py tests/modules/parser/test_handler_html.py tests/modules/parser/test_handler_css.py tests/modules/parser/test_handler_javascript.py`
+
+**Changes**
+- Restricted the parser extra to `tree-sitter>=0.21,<0.22`, regenerated the lockfile, and resynced the environment via `uv sync --group parser`.
+- Normalized HTML/CSS/JS collectors for slot initialization and tuple point handling, expanded CSS to accept `*_statement` nodes and continue splitting selectors under token caps.
+- Tweaked JavaScript re-export symbol naming so default exports preserve their local identifiers in symbol metadata.
+
 **Testing**
 - `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run pytest --no-cov tests/modules/parser/test_handler_css.py` *(skipped: optional tree_sitter_languages dependency absent in sandbox)*
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
 from typing import Any, Sequence
@@ -15,6 +15,7 @@ from .base import (
     HandlerSymbol,
     ParseContext,
     ParserHandler,
+    ts_point_row,
 )
 from .delegation import delegated_chunk_id, delegated_metadata
 
@@ -282,12 +283,10 @@ class _HTMLCollector:
     tree: Any
     byte_offsets: Sequence[int]
     module_symbol_id: str
-
-    def __post_init__(self) -> None:
-        self._symbols: list[HandlerSymbol] = []
-        self._chunks: list[HandlerChunk] = []
-        self._warnings: list[str] = []
-        self._part_index = 0
+    _symbols: list[HandlerSymbol] = field(init=False, default_factory=list)
+    _chunks: list[HandlerChunk] = field(init=False, default_factory=list)
+    _warnings: list[str] = field(init=False, default_factory=list)
+    _part_index: int = field(init=False, default=0)
 
     def collect(self) -> _CollectorResult:
         root = self.tree.root_node
@@ -341,8 +340,8 @@ class _HTMLCollector:
         )
         metadata = {
             "tag": tag_name,
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(start_offset),
             "char_end": self._char_index(end_offset),
         }
@@ -374,8 +373,8 @@ class _HTMLCollector:
         metadata = {
             "kind": "element",
             "tag": tag_name,
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(node.start_byte),
             "char_end": self._char_index(node.end_byte),
         }
@@ -402,8 +401,8 @@ class _HTMLCollector:
             return
         metadata = {
             "kind": node.type,
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(node.start_byte),
             "char_end": self._char_index(node.end_byte),
         }
@@ -443,8 +442,8 @@ class _HTMLCollector:
             metadata = {
                 "kind": kind,
                 "delegate": delegate,
-                "start_line": raw_node.start_point.row + 1,
-                "end_line": raw_node.end_point.row + 1,
+                "start_line": ts_point_row(raw_node.start_point) + 1,
+                "end_line": ts_point_row(raw_node.end_point) + 1,
                 "char_start": self._char_index(raw_node.start_byte),
                 "char_end": self._char_index(raw_node.end_byte),
                 "handler_enabled": False,
@@ -475,8 +474,8 @@ class _HTMLCollector:
             parent_chunk_id=shell_chunk.chunk_id,
             extra={
                 "kind": kind,
-                "start_line": raw_node.start_point.row + 1,
-                "end_line": raw_node.end_point.row + 1,
+                "start_line": ts_point_row(raw_node.start_point) + 1,
+                "end_line": ts_point_row(raw_node.end_point) + 1,
                 "char_start": self._char_index(raw_node.start_byte),
                 "char_end": self._char_index(raw_node.end_byte),
             },
@@ -510,8 +509,8 @@ class _HTMLCollector:
         metadata = {
             "tag": tag_name,
             "kind": kind,
-            "start_line": node.start_point.row + 1,
-            "end_line": node.end_point.row + 1,
+            "start_line": ts_point_row(node.start_point) + 1,
+            "end_line": ts_point_row(node.end_point) + 1,
             "char_start": self._char_index(start_offset),
             "char_end": self._char_index(end_offset),
         }

@@ -24,6 +24,7 @@ __all__ = [
     "HandlerChunk",
     "HandlerResult",
     "ParserHandler",
+    "ts_point_row",
 ]
 
 
@@ -167,3 +168,11 @@ class ParserHandler(Protocol):
     ) -> HandlerResult:
         """Parse ``path`` returning a normalized handler result."""
 
+
+def ts_point_row(point: Any) -> int:
+    """Return the row index from a tree-sitter point."""
+
+    row = getattr(point, "row", None)
+    if row is not None:
+        return int(row)
+    return int(point[0])

@@ -28,9 +28,24 @@ def _load_libcst(context: ParseContext) -> dict[str, Any] | None:
         try:
             import libcst as cst  # type: ignore[import]
             from libcst import metadata as cst_metadata  # type: ignore[import]
-            from libcst.helpers import get_docstring  # type: ignore[import]
         except Exception:  # pragma: no cover - optional dependency missing
             return None
+
+        def get_docstring(node: Any, *, clean: bool = True) -> str | None:
+            """Return the docstring for ``node`` if supported."""
+
+            attr = getattr(node, "get_docstring", None)
+            if attr is None:
+                return None
+
+            try:
+                return attr(clean=clean)
+            except TypeError:
+                # Older libcst builds accepted positional ``clean`` or no args.
+                try:
+                    return attr(clean)
+                except TypeError:
+                    return attr()
 
         return {
             "cst": cst,
@@ -204,7 +219,10 @@ class PythonHandler(ParserHandler):
         token_cap = self._resolve_token_cap(context)
 
         class _Collector(cst.CSTVisitor):
-            METADATA_DEPENDENCIES = (metadata.PositionProvider,)
+            METADATA_DEPENDENCIES = (
+                metadata.PositionProvider,
+                metadata.WhitespaceInclusivePositionProvider,
+            )
 
             def __init__(
                 self,
@@ -543,14 +561,25 @@ class PythonHandler(ParserHandler):
             def _node_span(self, node: Any) -> tuple[int, int]:
                 code_range = self.get_metadata(metadata.PositionProvider, node)
                 start_char = self._char_from_position(code_range.start)
+                try:
+                    inclusive_range = self.get_metadata(
+                        metadata.WhitespaceInclusivePositionProvider, node
+                    )
+                except KeyError:  # pragma: no cover - optional provider gaps
+                    pass
+                else:
+                    start_char = min(
+                        start_char, self._char_from_position(inclusive_range.start)
+                    )
                 end_char = self._char_from_position(code_range.end)
                 return start_char, end_char
 
             def _char_from_position(self, position: Any) -> int:
                 line = getattr(position, "line", 0)
                 column = getattr(position, "column", 0)
-                if line < len(self._line_offsets):
-                    return self._line_offsets[line] + column
+                index = max(line - 1, 0)
+                if index < len(self._line_offsets):
+                    return self._line_offsets[index] + column
                 return column
 
             def _byte_offset(self, char_index: int) -> int:

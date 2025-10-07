@@ -15,6 +15,7 @@ from .base import (
     HandlerSymbol,
     ParseContext,
     ParserHandler,
+    ts_point_row,
 )
 from .delegation import delegated_chunk_id, delegated_metadata
 
@@ -655,8 +656,8 @@ class _JavaScriptCollector:
                         "kind": "class_fields",
                         "class": name,
                         "overflow": len(segments) > 1,
-                        "start_line": field_nodes[0].start_point.row + 1,
-                        "end_line": field_nodes[-1].end_point.row + 1,
+                        "start_line": ts_point_row(field_nodes[0].start_point) + 1,
+                        "end_line": ts_point_row(field_nodes[-1].end_point) + 1,
                         "char_start": char_start,
                         "char_end": char_end,
                     },
@@ -678,8 +679,8 @@ class _JavaScriptCollector:
             metadata = {
                 "kind": "class_method",
                 "method": name,
-                "start_line": node.start_point.row + 1,
-                "end_line": node.end_point.row + 1,
+                "start_line": ts_point_row(node.start_point) + 1,
+                "end_line": ts_point_row(node.end_point) + 1,
                 "char_start": self._char_index(start),
                 "char_end": self._char_index(end),
             }
@@ -733,8 +734,8 @@ class _JavaScriptCollector:
                 "name": name,
                 "overflow": len(segments) > 1,
                 "split_index": index,
-                "start_line": node.start_point.row + 1,
-                "end_line": node.end_point.row + 1,
+                "start_line": ts_point_row(node.start_point) + 1,
+                "end_line": ts_point_row(node.end_point) + 1,
                 "char_start": self._char_index(node.start_byte),
                 "char_end": self._char_index(node.end_byte),
             }
@@ -830,8 +831,9 @@ class _JavaScriptCollector:
             }
             if source_text:
                 metadata["source"] = source_text
+            display_name = exported_name if exported_name != "default" else local_name
             symbol = self._emit_symbol(
-                name=exported_name,
+                name=display_name,
                 kind="reexport",
                 node=spec,
                 exported=True,
@@ -869,8 +871,8 @@ class _JavaScriptCollector:
                 parent_symbol_id=self._module_symbol_id,
                 extra={
                     "kind": "jsx",
-                    "start_line": node.start_point.row + 1,
-                    "end_line": node.end_point.row + 1,
+                    "start_line": ts_point_row(node.start_point) + 1,
+                    "end_line": ts_point_row(node.end_point) + 1,
                     "char_start": self._char_index(node.start_byte),
                     "char_end": self._char_index(node.end_byte),
                 },
@@ -942,8 +944,8 @@ class _JavaScriptCollector:
             part_index=self._next_part_index(),
             parent_symbol_id=parent,
             metadata={
-                "start_line": node.start_point.row + 1,
-                "end_line": node.end_point.row + 1,
+                "start_line": ts_point_row(node.start_point) + 1,
+                "end_line": ts_point_row(node.end_point) + 1,
                 "char_start": self._char_index(start),
                 "char_end": self._char_index(end),
             },

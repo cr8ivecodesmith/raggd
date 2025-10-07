@@ -57,7 +57,14 @@ def _make_context(
     )
 
 
-def test_python_handler_reports_missing_dependency(tmp_path: Path) -> None:
+def test_python_handler_reports_missing_dependency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "raggd.modules.parser.handlers.python._load_libcst",
+        lambda context: None,
+    )
+
     context = _make_context(tmp_path)
     handler = PythonHandler(context=context)
     path = tmp_path / "example.py"
@@ -138,7 +145,7 @@ def test_python_handler_splits_long_functions(tmp_path: Path) -> None:
     handler = PythonHandler(context=context)
     path = tmp_path / "overflow.py"
 
-    long_body = "\n".join(["        value += %d" % index for index in range(20)])
+    long_body = "\n".join(["    value += %d" % index for index in range(20)])
     path.write_text(
         f"""def huge(value: int) -> int:\n    \"\"\"Docstring\"\"\"\n{long_body}\n    return value\n""",
         encoding="utf-8",
