@@ -6,7 +6,7 @@ from bisect import bisect_right
 from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Iterable, Sequence
 
 from .base import (
     HandlerChunk,
@@ -571,43 +571,58 @@ class _HTMLCollector:
             return None
         return self._slice(target.start_byte, target.end_byte).strip().lower()
 
-    def _attributes(self, node: Any) -> dict[str, str]:  # noqa: C901 - HTML attr cases
-        start_tag = (
-            node.child_by_field_name("start_tag")
-            if hasattr(node, "child_by_field_name")
-            else None
-        )
-        if start_tag is None:
-            start_tag = self._first_child_of_type(node, "start_tag")
+    def _attributes(self, node: Any) -> dict[str, str]:
+        start_tag = self._start_tag_node(node)
         if start_tag is None:
             return {}
         attributes: dict[str, str] = {}
-        for child in getattr(start_tag, "named_children", []) or []:
-            if getattr(child, "type", "") != "attribute":
-                continue
-            name_node = child.child_by_field_name("name")
-            if name_node is None:
-                name_node = self._first_child_of_type(child, "attribute_name")
-            if name_node is None:
-                continue
-            value_node = child.child_by_field_name("value")
-            if value_node is None:
-                value_node = self._first_child_of_type(
-                    child, "quoted_attribute_value"
-                )
-            name = self._slice(name_node.start_byte, name_node.end_byte).strip()
+        for attribute_node in self._attribute_nodes(start_tag):
+            name = self._attribute_name(attribute_node)
             if not name:
                 continue
-            if value_node is None:
-                attributes[name] = ""
-                continue
-            raw = self._slice(
-                value_node.start_byte, value_node.end_byte
-            ).strip()
-            if raw.startswith(("'", '"')) and raw.endswith(raw[0]):
-                raw = raw[1:-1]
-            attributes[name] = raw.replace("\r\n", "\n").replace("\r", "\n")
+            attributes[name] = self._attribute_value(attribute_node)
         return attributes
+
+    def _start_tag_node(self, node: Any) -> Any | None:
+        if hasattr(node, "child_by_field_name"):
+            start_tag = node.child_by_field_name("start_tag")
+        else:
+            start_tag = None
+        if start_tag is None:
+            start_tag = self._first_child_of_type(node, "start_tag")
+        return start_tag
+
+    def _attribute_nodes(self, start_tag: Any) -> Iterable[Any]:
+        for child in getattr(start_tag, "named_children", []) or []:
+            if getattr(child, "type", "") == "attribute":
+                yield child
+
+    def _attribute_name(self, attribute_node: Any) -> str | None:
+        name_node = attribute_node.child_by_field_name("name")
+        if name_node is None:
+            name_node = self._first_child_of_type(
+                attribute_node, "attribute_name"
+            )
+        if name_node is None:
+            return None
+        value = self._slice(name_node.start_byte, name_node.end_byte).strip()
+        return value or None
+
+    def _attribute_value(self, attribute_node: Any) -> str:
+        value_node = attribute_node.child_by_field_name("value")
+        if value_node is None:
+            value_node = self._first_child_of_type(
+                attribute_node, "quoted_attribute_value"
+            )
+        if value_node is None:
+            return ""
+        raw = self._slice(value_node.start_byte, value_node.end_byte).strip()
+        return self._normalize_attribute_value(raw)
+
+    def _normalize_attribute_value(self, raw: str) -> str:
+        if raw and raw[0] in {"'", '"'} and raw.endswith(raw[0]):
+            raw = raw[1:-1]
+        return raw.replace("\r\n", "\n").replace("\r", "\n")
 
     def _raw_text_node(self, node: Any) -> Any | None:
         for child in getattr(node, "children", []) or []:
