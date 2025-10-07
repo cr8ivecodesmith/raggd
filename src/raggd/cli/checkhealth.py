@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Callable, Iterable, Sequence
 
 import tomllib
 import typer
@@ -208,21 +208,138 @@ def _emit_module_output(
                 typer.echo(f"      - {action}")
 
 
-def register_checkhealth_command(  # noqa: C901 - keep Typer wiring inline
-    app: typer.Typer,
+def _ensure_workspace_and_config(
+    workspace: Path | None,
+) -> tuple[WorkspacePaths, AppConfig]:
+    try:
+        paths = _resolve_workspace(workspace)
+    except ValueError as exc:
+        typer.secho(f"Workspace error: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        config = _load_app_config(paths)
+    except (FileNotFoundError, RuntimeError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    return paths, config
+
+
+def _setup_cli_logging(config: AppConfig) -> Logger:
+    configure_logging(level=config.log_level, workspace_path=config.workspace)
+    return get_logger(__name__, command=_COMMAND_NAME)
+
+
+def _ensure_hooks(
+    registry: ModuleRegistry,
+) -> dict[str, Callable[[WorkspaceHandle], Sequence[HealthReport]]]:
+    hooks = registry.health_registry()
+    if not hooks:
+        typer.echo("No modules with health hooks are registered.")
+        raise typer.Exit(code=0)
+    return hooks
+
+
+def _determine_target_modules(
+    registry: ModuleRegistry,
+    modules: Sequence[str],
+) -> list[str]:
+    try:
+        return _select_modules(registry, modules)
+    except KeyError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+
+def _evaluate_modules(
+    module_names: Sequence[str],
+    hooks: dict[str, Callable[[WorkspaceHandle], Sequence[HealthReport]]],
+    handle: WorkspaceHandle,
+    logger: Logger,
+) -> tuple[list[tuple[str, HealthModuleSnapshot]], int]:
+    results: list[tuple[str, HealthModuleSnapshot]] = []
+    highest_exit = 0
+
+    for name in module_names:
+        hook = hooks[name]
+        _, snapshot = _execute_hook(name, hook, handle, logger)
+        results.append((name, snapshot))
+        highest_exit = max(highest_exit, _EXIT_CODES[snapshot.status])
+
+    return results, highest_exit
+
+
+def _emit_run_results(
+    results: Sequence[tuple[str, HealthModuleSnapshot]],
+) -> None:
+    if not results:
+        return
+
+    typer.echo()
+    for name, snapshot in results:
+        _emit_module_output(name, snapshot)
+        if snapshot.details:
+            typer.echo()
+
+
+def _persist_health_document(
+    paths: WorkspacePaths,
+    results: Sequence[tuple[str, HealthModuleSnapshot]],
+) -> list[str]:
+    store = HealthDocumentStore(paths.workspace / ".health.json")
+
+    try:
+        previous = store.load()
+    except HealthDocumentError as exc:
+        typer.secho(
+            f"Failed to load health document: {exc}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1) from exc
+
+    updates = {name: snapshot for name, snapshot in results}
+    carried_forward = sorted(set(previous.modules()) - set(updates))
+    merged = previous.merge(updates)
+
+    try:
+        store.write(merged)
+    except HealthDocumentError as exc:
+        typer.secho(
+            f"Failed to write health document: {exc}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1) from exc
+
+    return carried_forward
+
+
+def _log_run_summary(
+    logger: Logger,
+    modules: Sequence[str],
+    results: Sequence[tuple[str, HealthModuleSnapshot]],
+    exit_code: int,
+    carried_forward: Sequence[str],
+) -> None:
+    if carried_forward:
+        logger.info(
+            "checkhealth-carried-forward",
+            modules=list(carried_forward),
+        )
+
+    logger.info(
+        "checkhealth-run",
+        modules=list(modules),
+        statuses={name: snapshot.status.value for name, snapshot in results},
+        exit_code=exit_code,
+    )
+
+
+def _build_checkhealth_command(
     *,
     registry: ModuleRegistry,
-) -> None:
-    """Register the ``raggd checkhealth`` command on the Typer app."""
-
-    @app.command(
-        "checkhealth",
-        help=(
-            "Evaluate registered module health hooks and persist results to "
-            "<workspace>/.health.json."
-        ),
-    )
-    def checkhealth_command(  # noqa: C901, PLR0915 - CLI flow is verbose
+) -> Callable[[list[str], Path | None], None]:
+    def checkhealth_command(
         modules: list[str] = typer.Argument(
             (),
             metavar="[MODULE]",
@@ -238,93 +355,51 @@ def register_checkhealth_command(  # noqa: C901 - keep Typer wiring inline
             ),
         ),
     ) -> None:
-        try:
-            paths = _resolve_workspace(workspace)
-        except ValueError as exc:
-            typer.secho(f"Workspace error: {exc}", fg=typer.colors.RED)
-            raise typer.Exit(code=1) from exc
-
-        try:
-            config = _load_app_config(paths)
-        except (FileNotFoundError, RuntimeError) as exc:
-            typer.secho(str(exc), fg=typer.colors.RED)
-            raise typer.Exit(code=1) from exc
-
-        configure_logging(
-            level=config.log_level, workspace_path=config.workspace
-        )
-        logger = get_logger(__name__, command="checkhealth")
-
-        hooks = registry.health_registry()
-        if not hooks:
-            typer.echo("No modules with health hooks are registered.")
-            raise typer.Exit(code=0)
-
-        try:
-            target_modules = _select_modules(registry, modules)
-        except KeyError as exc:
-            typer.secho(str(exc), fg=typer.colors.RED)
-            raise typer.Exit(code=1) from exc
+        paths, config = _ensure_workspace_and_config(workspace)
+        logger = _setup_cli_logging(config)
+        hooks = _ensure_hooks(registry)
+        target_modules = _determine_target_modules(registry, modules)
 
         handle = _CLIWorkspaceHandle(paths=paths, config=config)
+        results, highest_exit = _evaluate_modules(
+            target_modules,
+            hooks,
+            handle,
+            logger,
+        )
 
-        results: list[tuple[str, HealthModuleSnapshot]] = []
-        highest_exit = 0
-
-        for name in target_modules:
-            hook = hooks[name]
-            _, snapshot = _execute_hook(name, hook, handle, logger)
-            results.append((name, snapshot))
-            highest_exit = max(highest_exit, _EXIT_CODES[snapshot.status])
-
-        typer.echo()
-        for name, snapshot in results:
-            _emit_module_output(name, snapshot)
-            if snapshot.details:
-                typer.echo()
-
-        store = HealthDocumentStore(paths.workspace / ".health.json")
-
-        try:
-            previous = store.load()
-        except HealthDocumentError as exc:
-            typer.secho(
-                f"Failed to load health document: {exc}", fg=typer.colors.RED
-            )
-            raise typer.Exit(code=1) from exc
-
-        updates = {name: snapshot for name, snapshot in results}
-        carried_forward = sorted(set(previous.modules()) - set(updates))
-
-        merged = previous.merge(updates)
-
-        try:
-            store.write(merged)
-        except HealthDocumentError as exc:
-            typer.secho(
-                f"Failed to write health document: {exc}", fg=typer.colors.RED
-            )
-            raise typer.Exit(code=1) from exc
-
-        if carried_forward:
-            logger.info(
-                "checkhealth-carried-forward",
-                modules=carried_forward,
-            )
-
-        logger.info(
-            "checkhealth-run",
-            modules=target_modules,
-            statuses={
-                name: snapshot.status.value for name, snapshot in results
-            },
-            exit_code=highest_exit,
+        _emit_run_results(results)
+        carried_forward = _persist_health_document(paths, results)
+        _log_run_summary(
+            logger,
+            target_modules,
+            results,
+            highest_exit,
+            carried_forward,
         )
 
         if highest_exit:
             raise typer.Exit(code=highest_exit)
 
-    return None
+    return checkhealth_command
+
+
+def register_checkhealth_command(
+    app: typer.Typer,
+    *,
+    registry: ModuleRegistry,
+) -> None:
+    """Register the ``raggd checkhealth`` command on the Typer app."""
+
+    handler = _build_checkhealth_command(registry=registry)
+
+    app.command(
+        "checkhealth",
+        help=(
+            "Evaluate registered module health hooks and persist results to "
+            "<workspace>/.health.json."
+        ),
+    )(handler)
 
 
 __all__ = ["register_checkhealth_command"]

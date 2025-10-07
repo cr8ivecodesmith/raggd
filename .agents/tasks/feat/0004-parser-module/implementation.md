@@ -79,8 +79,8 @@
 - [x] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
 - [x] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
 - [x] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
-- [ ] Reduce `register_checkhealth_command` complexity below C901 by extracting Typer wiring helpers in `src/raggd/cli/checkhealth.py`.
-- [ ] Reduce nested `checkhealth_command` complexity below C901 with focused CLI flow helpers and validation utilities.
+- [x] Reduce `register_checkhealth_command` complexity below C901 by extracting Typer wiring helpers in `src/raggd/cli/checkhealth.py`.
+- [x] Reduce nested `checkhealth_command` complexity below C901 with focused CLI flow helpers and validation utilities.
 - [ ] Break down `_is_ignored` traversal logic in `src/raggd/modules/parser/traversal.py` so gitignore resolution passes Ruff C901 without `noqa`.
 - [ ] Simplify HTML `_attributes` extraction to keep branching under the C901 threshold while preserving metadata fidelity.
 - [ ] Refactor JavaScript `_handle_export` to delegate per-export form handling and eliminate the existing C901 suppression.
@@ -123,6 +123,14 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 21:05 PST
+**Summary**
+Refactored `register_checkhealth_command` by extracting workspace/config setup, hook evaluation, and persistence helpers so the Typer wiring meets the new Phase 4 complexity target without `noqa: C901` suppressions.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run ruff check src/raggd/cli/checkhealth.py`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run pytest --no-cov tests/cli/test_checkhealth.py`
+
 ### 2025-10-07 16:20 PST
 **Summary**
 Patched the Python handler overflow fixture so libcst can parse the generated source during split tests.
