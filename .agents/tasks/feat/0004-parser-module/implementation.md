@@ -97,12 +97,12 @@
 - [x] Formalize treating `chunk_slices` as the canonical artifact and enumerate the follow-up migration introducing a `chunk_assemblies` join table to anchor stable `chunk_id` values shared with vectors.
 
 ### Phase 6 — CLI subcommand behaviors
-- Flesh out `parse`, `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
-- Leverage shared manifest readers from `raggd.core` so CLI output stays consistent with other modules.
-- `parse`: surface a `--fail-fast` flag that flips the parser settings for the run, pass through explicit file/directory arguments to the traversal layer, and ensure logs report when scope filtering occurs.
-- `info`: surface last batch id (git SHA/uuid7), handler coverage, dependency gaps, and current config overrides.
-- `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limits per CLI contract.
-- `remove`: protect the latest successful batch unless `--force`, enforce dependency checks, and warn that vector indexes require a later `raggd vdb sync`.
+- [ ] Centralize parser CLI wiring so all subcommands share manifest readers, service resolution, and concurrency/session guards consistent with follow-up #3.
+- [ ] `parse`: implement the Typer command to honor `--fail-fast`, thread explicit path arguments to traversal, enforce concurrency limits, validate batch preconditions, and emit scope-filter logs.
+- [ ] `parse`: after staging, surface batch summaries, raise vector-index warnings, persist manifest updates, and ensure non-zero exits align with Phase 3 service semantics.
+- [ ] `info`: reuse shared manifest readers to expose the last batch id (git SHA/uuid7), handler coverage, dependency gaps, and effective configuration overrides.
+- [ ] `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limit/pagination behavior per CLI contract.
+- [ ] `remove`: guard the latest successful batch unless `--force`, perform dependency checks, emit vector-index warnings, and persist tombstones for removed batches.
 
 ### Phase 7 — Concurrency & telemetry hardening
 - Audit DB locks (follow-up #1), add structured logs/metrics, stress tests for parallel parses, and finalize health hook integration.
