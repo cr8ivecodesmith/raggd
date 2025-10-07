@@ -54,7 +54,8 @@ class ParserRunMetrics(BaseModel):
         for name, count in (value or {}).items():
             if count < 0:
                 raise ValueError(
-                    f"Handler invocation counts must be >= 0 (got {count} for {name!r})."
+                    "Handler invocation counts must be >= 0 (got "
+                    f"{count} for {name!r})."
                 )
             normalized[str(name).strip()] = int(count)
         return normalized

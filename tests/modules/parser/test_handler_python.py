@@ -7,7 +7,11 @@ from textwrap import dedent
 
 import pytest
 
-from raggd.core.config import AppConfig, ParserHandlerSettings, ParserModuleSettings
+from raggd.core.config import (
+    AppConfig,
+    ParserHandlerSettings,
+    ParserModuleSettings,
+)
 from raggd.core.logging import get_logger
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.parser.handlers import ParseContext
@@ -16,7 +20,9 @@ from raggd.modules.parser.tokenizer import TokenEncoder
 
 
 class _DummyEncoding:
-    def encode(self, text: str, *, allowed_special: set[str] | None = None) -> list[int]:
+    def encode(
+        self, text: str, *, allowed_special: set[str] | None = None
+    ) -> list[int]:
         return [0] * len(text)
 
 
@@ -119,7 +125,9 @@ def test_python_handler_extracts_symbols(tmp_path: Path) -> None:
     module_symbol = next(sym for sym in result.symbols if sym.kind == "module")
     class_symbol = next(sym for sym in result.symbols if sym.kind == "class")
     method_symbol = next(sym for sym in result.symbols if sym.name == "method")
-    function_symbol = next(sym for sym in result.symbols if sym.name == "top_func")
+    function_symbol = next(
+        sym for sym in result.symbols if sym.name == "top_func"
+    )
 
     assert class_symbol.parent_id == module_symbol.symbol_id
     assert function_symbol.parent_id == module_symbol.symbol_id
@@ -128,11 +136,19 @@ def test_python_handler_extracts_symbols(tmp_path: Path) -> None:
     assert class_symbol.docstring == "Class docstring."
     assert method_symbol.docstring == "Method docstring."
 
-    method_chunks = [chunk for chunk in result.chunks if chunk.parent_symbol_id == method_symbol.symbol_id]
+    method_chunks = [
+        chunk
+        for chunk in result.chunks
+        if chunk.parent_symbol_id == method_symbol.symbol_id
+    ]
     assert method_chunks
     assert any("def method" in chunk.text for chunk in method_chunks)
 
-    module_chunks = [chunk for chunk in result.chunks if chunk.metadata.get("kind") == "module_docstring"]
+    module_chunks = [
+        chunk
+        for chunk in result.chunks
+        if chunk.metadata.get("kind") == "module_docstring"
+    ]
     assert module_chunks
     assert "Module docstring." in module_chunks[0].text
 
@@ -146,17 +162,30 @@ def test_python_handler_splits_long_functions(tmp_path: Path) -> None:
     path = tmp_path / "overflow.py"
 
     long_body = "\n".join(["    value += %d" % index for index in range(20)])
-    path.write_text(
-        f"""def huge(value: int) -> int:\n    \"\"\"Docstring\"\"\"\n{long_body}\n    return value\n""",
-        encoding="utf-8",
+    docstring = '    """Docstring"""'
+    contents = "\n".join(
+        [
+            "def huge(value: int) -> int:",
+            docstring,
+            long_body,
+            "    return value",
+            "",
+        ]
     )
+    path.write_text(contents, encoding="utf-8")
 
     result = handler.parse(path=path, context=context)
 
     func_symbol = next(sym for sym in result.symbols if sym.name == "huge")
-    func_chunks = [chunk for chunk in result.chunks if chunk.parent_symbol_id == func_symbol.symbol_id]
+    func_chunks = [
+        chunk
+        for chunk in result.chunks
+        if chunk.parent_symbol_id == func_symbol.symbol_id
+    ]
 
     assert len(func_chunks) > 1
     assert all(chunk.metadata.get("overflow") for chunk in func_chunks)
-    assert {chunk.part_index for chunk in func_chunks} == set(range(len(func_chunks)))
+    assert {chunk.part_index for chunk in func_chunks} == set(
+        range(len(func_chunks))
+    )
     assert any("split into" in warning for warning in result.warnings)

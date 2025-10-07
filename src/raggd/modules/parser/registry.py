@@ -392,6 +392,7 @@ def _normalize_factory(
     if isinstance(factory, str):
         return load_factory(factory)
     if inspect.isclass(factory):
+
         def _factory(context: "ParseContext", _cls=factory):
             return _cls(context=context)  # type: ignore[arg-type]
 
@@ -409,7 +410,9 @@ def _normalize_factory(
 def import_dependency_probe(*modules: str) -> HandlerProbe:
     """Return a probe verifying that ``modules`` can be imported."""
 
-    normalized = tuple(dict.fromkeys(module.strip() for module in modules if module))
+    normalized = tuple(
+        dict.fromkeys(module.strip() for module in modules if module)
+    )
 
     def _probe() -> HandlerProbeResult:
         missing: list[str] = []

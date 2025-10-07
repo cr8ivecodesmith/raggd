@@ -44,12 +44,17 @@ def test_chunk_slice_statements_roundtrip(tmp_path: Path) -> None:
         conn.row_factory = sqlite3.Row
         # Seed minimal foreign key rows so the insert succeeds.
         conn.execute(
-            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (
+                "INSERT INTO batches (id, ref, generated_at, notes) "
+                "VALUES (?, ?, ?, ?)"
+            ),
             ("batch-1", None, now, None),
         )
         conn.execute(
-            "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, size_bytes)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
             ("batch-1", "src/example.py", "python", "sha:file", 0, 123),
         )
         file_id = conn.execute(
@@ -57,10 +62,13 @@ def test_chunk_slice_statements_roundtrip(tmp_path: Path) -> None:
             ("batch-1",),
         ).fetchone()[0]
         conn.execute(
-            "INSERT INTO symbols (file_id, kind, symbol_path, start_line, end_line,"
-            " symbol_sha, symbol_norm_sha, args_json, returns_json, imports_json,"
-            " deps_out_json, docstring, summary, tokens, first_seen_batch,"
-            " last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+                "end_line, symbol_sha, symbol_norm_sha, args_json, "
+                "returns_json, imports_json, deps_out_json, docstring, "
+                "summary, tokens, first_seen_batch, last_seen_batch) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
             (
                 file_id,
                 "module",

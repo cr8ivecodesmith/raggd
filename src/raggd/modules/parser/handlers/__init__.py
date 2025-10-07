@@ -59,21 +59,25 @@ def load_factory(reference: str) -> ParserHandlerFactory:
     """
 
     if "" == reference or ":" not in reference:
-        raise ImportError(f"Handler factory reference must contain ':' (got {reference!r}).")
+        raise ImportError(
+            f"Handler factory reference must contain ':' (got {reference!r})."
+        )
     module_name, attr_name = reference.split(":", 1)
     module = import_module(module_name)
     try:
         resolved = getattr(module, attr_name)
     except AttributeError as exc:  # pragma: no cover - defensive branch
         raise AttributeError(
-            f"Handler factory attribute {attr_name!r} not found in {module_name!r}."
+            "Handler factory attribute "
+            f"{attr_name!r} not found in {module_name!r}."
         ) from exc
 
     if callable(resolved):
         return _wrap_callable(resolved)
 
     raise TypeError(
-        f"Handler factory reference {reference!r} must resolve to a callable, got {type(resolved)!r}."
+        "Handler factory reference "
+        f"{reference!r} must resolve to a callable, got {type(resolved)!r}."
     )
 
 
@@ -83,6 +87,7 @@ def _wrap_callable(value: Any) -> ParserHandlerFactory:
     from inspect import isclass
 
     if isclass(value):
+
         def _factory(context: "ParseContext", _cls=value):
             return _cls(context=context)  # type: ignore[arg-type]
 

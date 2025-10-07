@@ -88,7 +88,9 @@ class HTMLHandler(ParserHandler):
         try:
             raw = path.read_bytes()
         except OSError as exc:  # pragma: no cover - filesystem failure edge
-            logger.error("Failed to read HTML source", path=str(path), error=str(exc))
+            logger.error(
+                "Failed to read HTML source", path=str(path), error=str(exc)
+            )
             file_meta = HandlerFile(
                 path=path,
                 language=self.name,
@@ -118,7 +120,8 @@ class HTMLHandler(ParserHandler):
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(
-                    "File is not valid UTF-8; configure a specialized handler or re-encode",
+                    "File is not valid UTF-8; configure a specialized handler "
+                    "or re-encode",
                 ),
             )
 
@@ -150,7 +153,11 @@ class HTMLHandler(ParserHandler):
         try:
             tree = resources.parser.parse(source_bytes)
         except Exception as exc:  # pragma: no cover - tree-sitter failure
-            logger.error("tree-sitter failed to parse HTML", path=str(path), error=str(exc))
+            logger.error(
+                "tree-sitter failed to parse HTML",
+                path=str(path),
+                error=str(exc),
+            )
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(f"tree-sitter parse error: {exc}",),
@@ -213,12 +220,14 @@ class HTMLHandler(ParserHandler):
                 from tree_sitter_languages import get_parser  # type: ignore[import]
             except Exception as exc:  # pragma: no cover - dependency missing
                 raise _MissingDependencyError(
-                    "HTML handler requires the 'parser' extras (tree_sitter_languages)."
+                    "HTML handler requires the 'parser' extras "
+                    "(tree_sitter_languages)."
                 ) from exc
 
             try:
                 parser = get_parser("html")
-            except Exception as exc:  # pragma: no cover - parser creation failure
+            except Exception as exc:  # pragma: no cover
+                # tree-sitter parser creation failure
                 raise _MissingDependencyError(
                     f"tree-sitter parser for 'html' is unavailable: {exc}"
                 ) from exc
@@ -229,11 +238,14 @@ class HTMLHandler(ParserHandler):
             resources = context.cache.get(cache_key, _factory)
         except _MissingDependencyError:
             raise
-        except Exception as exc:  # pragma: no cover - unexpected caching failure
+        except Exception as exc:  # pragma: no cover
+            # Unexpected caching failure when storing parser resources
             raise _MissingDependencyError(str(exc)) from exc
 
         if not isinstance(resources, _ParserResources):
-            raise _MissingDependencyError("tree-sitter parser cache returned invalid payload")
+            raise _MissingDependencyError(
+                "tree-sitter parser cache returned invalid payload"
+            )
         return resources
 
     @staticmethod
@@ -309,7 +321,9 @@ class _HTMLCollector:
         if node_type == "element":
             tag_name = self._tag_name(node)
             if tag_name and tag_name in self.handler._STRUCTURAL_TAGS:
-                symbol = self._emit_element_symbol(node, tag_name, parent_symbol_id)
+                symbol = self._emit_element_symbol(
+                    node, tag_name, parent_symbol_id
+                )
                 self._emit_element_chunk(node, tag_name, symbol.symbol_id)
                 for child in getattr(node, "named_children", []) or []:
                     self._visit(child, parent_symbol_id=symbol.symbol_id)
@@ -422,9 +436,13 @@ class _HTMLCollector:
     # Script/style handling
     # ------------------------------------------------------------------
     def _handle_script_or_style(self, node: Any, parent_symbol_id: str) -> None:
-        tag_name = self._tag_name(node) or ("script" if node.type == "script_element" else "style")
+        tag_name = self._tag_name(node) or (
+            "script" if node.type == "script_element" else "style"
+        )
         kind = "script" if node.type == "script_element" else "style"
-        symbol = self._emit_special_symbol(node, tag_name, kind, parent_symbol_id)
+        symbol = self._emit_special_symbol(
+            node, tag_name, kind, parent_symbol_id
+        )
         shell_chunk = self._emit_element_chunk(node, tag_name, symbol.symbol_id)
         raw_node = self._raw_text_node(node)
         if raw_node is None:
@@ -436,7 +454,9 @@ class _HTMLCollector:
         delegate = "javascript" if kind == "script" else "css"
         if not HTMLHandler._handler_enabled(self.context, delegate):
             warning = (
-                f"Inline {kind} block could not delegate because {delegate} handler is disabled"
+                "Inline "
+                f"{kind} block could not delegate because {delegate} handler "
+                "is disabled"
             )
             self._warnings.append(warning)
             metadata = {
@@ -533,7 +553,11 @@ class _HTMLCollector:
     # Node inspection helpers
     # ------------------------------------------------------------------
     def _tag_name(self, node: Any) -> str | None:
-        start_tag = node.child_by_field_name("start_tag") if hasattr(node, "child_by_field_name") else None
+        start_tag = (
+            node.child_by_field_name("start_tag")
+            if hasattr(node, "child_by_field_name")
+            else None
+        )
         if start_tag is None:
             start_tag = self._first_child_of_type(node, "start_tag")
         target = None
@@ -547,8 +571,12 @@ class _HTMLCollector:
             return None
         return self._slice(target.start_byte, target.end_byte).strip().lower()
 
-    def _attributes(self, node: Any) -> dict[str, str]:
-        start_tag = node.child_by_field_name("start_tag") if hasattr(node, "child_by_field_name") else None
+    def _attributes(self, node: Any) -> dict[str, str]:  # noqa: C901 - HTML attr cases
+        start_tag = (
+            node.child_by_field_name("start_tag")
+            if hasattr(node, "child_by_field_name")
+            else None
+        )
         if start_tag is None:
             start_tag = self._first_child_of_type(node, "start_tag")
         if start_tag is None:
@@ -564,14 +592,18 @@ class _HTMLCollector:
                 continue
             value_node = child.child_by_field_name("value")
             if value_node is None:
-                value_node = self._first_child_of_type(child, "quoted_attribute_value")
+                value_node = self._first_child_of_type(
+                    child, "quoted_attribute_value"
+                )
             name = self._slice(name_node.start_byte, name_node.end_byte).strip()
             if not name:
                 continue
             if value_node is None:
                 attributes[name] = ""
                 continue
-            raw = self._slice(value_node.start_byte, value_node.end_byte).strip()
+            raw = self._slice(
+                value_node.start_byte, value_node.end_byte
+            ).strip()
             if raw.startswith(("'", '"')) and raw.endswith(raw[0]):
                 raw = raw[1:-1]
             attributes[name] = raw.replace("\r\n", "\n").replace("\r", "\n")
@@ -603,7 +635,9 @@ class _HTMLCollector:
 
     def _normalize_text(self, text: str) -> str:
         normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-        collapsed = " ".join(segment for segment in normalized.split() if segment)
+        collapsed = " ".join(
+            segment for segment in normalized.split() if segment
+        )
         return collapsed
 
     def _normalize_code_block(self, text: str) -> str:
@@ -613,7 +647,9 @@ class _HTMLCollector:
         if not non_empty:
             return ""
         indent = min(len(line) - len(line.lstrip()) for line in non_empty)
-        trimmed = [line[indent:] if len(line) >= indent else line for line in lines]
+        trimmed = [
+            line[indent:] if len(line) >= indent else line for line in lines
+        ]
         return "\n".join(line.rstrip() for line in trimmed).strip("\n")
 
     def _slice(self, start: int, end: int) -> str:

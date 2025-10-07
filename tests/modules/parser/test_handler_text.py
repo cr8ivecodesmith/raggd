@@ -13,7 +13,9 @@ from raggd.modules.parser.tokenizer import TokenEncoder
 
 
 class _DummyEncoding:
-    def encode(self, text: str, *, allowed_special: set[str] | None = None) -> list[int]:
+    def encode(
+        self, text: str, *, allowed_special: set[str] | None = None
+    ) -> list[int]:
         return [0] * len(text)
 
 
@@ -81,7 +83,9 @@ def test_indentation_fallback(tmp_path: Path) -> None:
     result = handler.parse(path=path, context=context)
 
     assert len(result.chunks) == 2
-    assert all(chunk.metadata["strategy"] == "indentation" for chunk in result.chunks)
+    assert all(
+        chunk.metadata["strategy"] == "indentation" for chunk in result.chunks
+    )
 
     first, second = result.chunks
     assert "section_a:" in first.text

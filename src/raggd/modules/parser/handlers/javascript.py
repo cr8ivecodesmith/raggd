@@ -60,7 +60,11 @@ class _JavaScriptBaseHandler(ParserHandler):
         try:
             raw = path.read_bytes()
         except OSError as exc:  # pragma: no cover - filesystem failure edge
-            logger.error("Failed to read JavaScript source", path=str(path), error=str(exc))
+            logger.error(
+                "Failed to read JavaScript source",
+                path=str(path),
+                error=str(exc),
+            )
             file_meta = HandlerFile(
                 path=path,
                 language=self.name,
@@ -90,7 +94,8 @@ class _JavaScriptBaseHandler(ParserHandler):
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(
-                    "File is not valid UTF-8; configure a specialized handler or re-encode",
+                    "File is not valid UTF-8; configure a specialized handler "
+                    "or re-encode",
                 ),
             )
 
@@ -130,7 +135,11 @@ class _JavaScriptBaseHandler(ParserHandler):
         try:
             tree = resources.parser.parse(source_bytes)
         except Exception as exc:  # pragma: no cover - tree-sitter failure
-            logger.error("tree-sitter failed to parse JavaScript", path=str(path), error=str(exc))
+            logger.error(
+                "tree-sitter failed to parse JavaScript",
+                path=str(path),
+                error=str(exc),
+            )
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(f"tree-sitter parse error: {exc}",),
@@ -203,7 +212,9 @@ class _JavaScriptBaseHandler(ParserHandler):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-    def _load_parser(self, path: Path, *, context: ParseContext) -> _ParserResources:
+    def _load_parser(
+        self, path: Path, *, context: ParseContext
+    ) -> _ParserResources:
         language = self._language_for_path(path)
 
         cache_key = f"parser::{self.name}::{language}"
@@ -213,12 +224,14 @@ class _JavaScriptBaseHandler(ParserHandler):
                 from tree_sitter_languages import get_parser  # type: ignore[import]
             except Exception as exc:  # pragma: no cover - dependency missing
                 raise _MissingDependencyError(
-                    "JavaScript handler requires the 'parser' extras (tree_sitter_languages)."
+                    "JavaScript handler requires the 'parser' extras "
+                    "(tree_sitter_languages)."
                 ) from exc
 
             try:
                 parser = get_parser(language)
-            except Exception as exc:  # pragma: no cover - parser creation failure
+            except Exception as exc:  # pragma: no cover
+                # tree-sitter parser creation failure
                 raise _MissingDependencyError(
                     f"tree-sitter parser for {language!r} is unavailable: {exc}"
                 ) from exc
@@ -229,11 +242,14 @@ class _JavaScriptBaseHandler(ParserHandler):
             resources = context.cache.get(cache_key, _factory)
         except _MissingDependencyError:
             raise
-        except Exception as exc:  # pragma: no cover - unexpected caching failure
+        except Exception as exc:  # pragma: no cover
+            # Unexpected caching failure when storing parser resources
             raise _MissingDependencyError(str(exc)) from exc
 
         if not isinstance(resources, _ParserResources):
-            raise _MissingDependencyError("tree-sitter parser cache returned invalid payload")
+            raise _MissingDependencyError(
+                "tree-sitter parser cache returned invalid payload"
+            )
         return resources
 
     def _language_for_path(self, path: Path) -> str:
@@ -296,7 +312,9 @@ class _JavaScriptBaseHandler(ParserHandler):
                 continue
             if child.type != "comment":
                 break
-            raw = source_bytes[child.start_byte : child.end_byte].decode("utf-8")
+            raw = source_bytes[child.start_byte : child.end_byte].decode(
+                "utf-8"
+            )
             normalized = _normalize_comment(raw)
             if normalized:
                 comments.append(normalized)
@@ -488,7 +506,7 @@ class _JavaScriptCollector:
         )
         self.chunks.append(chunk)
 
-    def _handle_export(self, node: Any) -> None:
+    def _handle_export(self, node: Any) -> None:  # noqa: C901 - many export forms
         text = self._slice(node.start_byte, node.end_byte)
         if node.type == "export_assignment":
             name = self._extract_identifier(node) or "default"
@@ -582,15 +600,21 @@ class _JavaScriptCollector:
         if node.type in self._CLASS_NODES:
             self._handle_class(node, exported=exported, is_default=is_default)
         elif node.type in self._FUNCTION_NODES:
-            self._handle_function(node, exported=exported, is_default=is_default)
+            self._handle_function(
+                node, exported=exported, is_default=is_default
+            )
         elif node.type in self._VARIABLE_NODES:
-            self._handle_variable(node, exported=exported, is_default=is_default)
+            self._handle_variable(
+                node, exported=exported, is_default=is_default
+            )
         elif node.type in self._TS_DECLARATIONS:
-            self._handle_ts_declaration(node, exported=exported, is_default=is_default)
+            self._handle_ts_declaration(
+                node, exported=exported, is_default=is_default
+            )
         else:
             self._emit_text_chunk(node, parent=self._module_symbol_id)
 
-    def _handle_class(
+    def _handle_class(  # noqa: C901 - class traversal spans multiple constructs
         self,
         node: Any,
         *,
@@ -644,8 +668,7 @@ class _JavaScriptCollector:
                 char_start = self._char_index(start)
                 char_end = self._char_index(end)
                 chunk = HandlerChunk(
-                    chunk_id=
-                    f"{self._handler.name}:class-field:{start}:{end}:{index}",
+                    chunk_id=f"{self._handler.name}:class-field:{start}:{end}:{index}",
                     text=segment,
                     token_count=self._context.token_encoder.count(segment),
                     start_offset=start,
@@ -656,7 +679,8 @@ class _JavaScriptCollector:
                         "kind": "class_fields",
                         "class": name,
                         "overflow": len(segments) > 1,
-                        "start_line": ts_point_row(field_nodes[0].start_point) + 1,
+                        "start_line": ts_point_row(field_nodes[0].start_point)
+                        + 1,
                         "end_line": ts_point_row(field_nodes[-1].end_point) + 1,
                         "char_start": char_start,
                         "char_end": char_end,
@@ -665,7 +689,9 @@ class _JavaScriptCollector:
                 self.chunks.append(chunk)
             if len(segments) > 1:
                 self.warnings.append(
-                    f"Class {name!r} fields split into {len(segments)} parts due to token cap",
+                    "Class "
+                    f"{name!r} fields split into {len(segments)} parts due to "
+                    "token cap",
                 )
 
     def _emit_method_chunk(self, node: Any, *, parent_symbol: str) -> None:
@@ -700,7 +726,8 @@ class _JavaScriptCollector:
             self.chunks.append(chunk)
         if overflow:
             self.warnings.append(
-                f"Method {name!r} split into {len(segments)} parts due to token cap",
+                "Method "
+                f"{name!r} split into {len(segments)} parts due to token cap",
             )
 
     def _handle_function(
@@ -710,7 +737,9 @@ class _JavaScriptCollector:
         exported: bool,
         is_default: bool,
     ) -> None:
-        name = self._extract_identifier(node) or ("default" if is_default else "anonymous")
+        name = self._extract_identifier(node) or (
+            "default" if is_default else "anonymous"
+        )
         metadata = {
             "kind": "function",
             "exported": exported,
@@ -752,7 +781,8 @@ class _JavaScriptCollector:
             self.chunks.append(chunk)
         if len(segments) > 1:
             self.warnings.append(
-                f"Function {name!r} split into {len(segments)} parts due to token cap",
+                "Function "
+                f"{name!r} split into {len(segments)} parts due to token cap",
             )
 
     def _handle_variable(
@@ -762,8 +792,16 @@ class _JavaScriptCollector:
         exported: bool,
         is_default: bool,
     ) -> None:
-        keyword = self._slice(node.start_byte, node.end_byte).lstrip().split(None, 1)[0]
-        declarators = [child for child in node.named_children if child.type == "variable_declarator"]
+        keyword = (
+            self._slice(node.start_byte, node.end_byte)
+            .lstrip()
+            .split(None, 1)[0]
+        )
+        declarators = [
+            child
+            for child in node.named_children
+            if child.type == "variable_declarator"
+        ]
         if keyword != "const" or not declarators:
             self._emit_text_chunk(node, parent=self._module_symbol_id)
             return
@@ -772,7 +810,11 @@ class _JavaScriptCollector:
             identifier = declarator.child_by_field_name("name")
             if identifier is None:
                 identifier = self._first_child_of_type(declarator, "identifier")
-            name = self._slice(identifier.start_byte, identifier.end_byte) if identifier else "const"
+            name = (
+                self._slice(identifier.start_byte, identifier.end_byte)
+                if identifier
+                else "const"
+            )
             metadata = {
                 "kind": "const",
                 "exported": exported,
@@ -816,7 +858,9 @@ class _JavaScriptCollector:
     def _emit_export_clause(self, clause: Any, source: Any | None) -> None:
         source_text = None
         if source is not None:
-            source_text = self._slice(source.start_byte, source.end_byte).strip("'\"")
+            source_text = self._slice(source.start_byte, source.end_byte).strip(
+                "'\""
+            )
         for spec in clause.named_children:
             if spec.type != "export_specifier":
                 continue
@@ -831,7 +875,9 @@ class _JavaScriptCollector:
             }
             if source_text:
                 metadata["source"] = source_text
-            display_name = exported_name if exported_name != "default" else local_name
+            display_name = (
+                exported_name if exported_name != "default" else local_name
+            )
             symbol = self._emit_symbol(
                 name=display_name,
                 kind="reexport",
@@ -921,7 +967,8 @@ class _JavaScriptCollector:
             end_offset=end,
             docstring=docstring,
             parent_id=parent or self._module_symbol_id,
-            metadata=metadata | {
+            metadata=metadata
+            | {
                 "char_start": char_start,
                 "char_end": char_end,
                 "exported": exported,
@@ -964,7 +1011,12 @@ class _JavaScriptCollector:
         current: list[str] = []
         for line in lines:
             candidate = "".join(current + [line])
-            if candidate and self._context.token_encoder.count(candidate) > self._token_cap and current:
+            if (
+                candidate
+                and self._context.token_encoder.count(candidate)
+                > self._token_cap
+                and current
+            ):
                 segments.append("".join(current))
                 current = [line]
             else:
@@ -979,7 +1031,9 @@ class _JavaScriptCollector:
             return self._slice(direct.start_byte, direct.end_byte).strip()
         identifier = self._first_child_of_type(node, "identifier")
         if identifier is not None:
-            return self._slice(identifier.start_byte, identifier.end_byte).strip()
+            return self._slice(
+                identifier.start_byte, identifier.end_byte
+            ).strip()
         prop = node.child_by_field_name("property")
         if prop is not None:
             return self._slice(prop.start_byte, prop.end_byte).strip()
@@ -1012,7 +1066,9 @@ class _JavaScriptCollector:
         self._part_index += 1
         return value
 
-    def _first_matching_child(self, node: Any, types: Iterable[str]) -> Any | None:
+    def _first_matching_child(
+        self, node: Any, types: Iterable[str]
+    ) -> Any | None:
         for child in node.named_children:
             if child.type in types:
                 return child

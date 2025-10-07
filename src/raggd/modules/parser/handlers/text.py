@@ -8,7 +8,13 @@ import re
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from .base import HandlerChunk, HandlerFile, HandlerResult, ParseContext, ParserHandler
+from .base import (
+    HandlerChunk,
+    HandlerFile,
+    HandlerResult,
+    ParseContext,
+    ParserHandler,
+)
 
 
 class TextHandler(ParserHandler):
@@ -32,7 +38,9 @@ class TextHandler(ParserHandler):
         try:
             raw = path.read_bytes()
         except OSError as exc:  # pragma: no cover - filesystem failure edge
-            logger.error("Failed to read text file", path=str(path), error=str(exc))
+            logger.error(
+                "Failed to read text file", path=str(path), error=str(exc)
+            )
             file_meta = HandlerFile(
                 path=path,
                 language=self.name,
@@ -49,7 +57,9 @@ class TextHandler(ParserHandler):
             text = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
             logger.warning(
-                "UTF-8 decode error, skipping text handler", path=str(path), error=str(exc)
+                "UTF-8 decode error, skipping text handler",
+                path=str(path),
+                error=str(exc),
             )
             file_meta = HandlerFile(
                 path=path,
@@ -60,7 +70,8 @@ class TextHandler(ParserHandler):
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(
-                    "File is not valid UTF-8; install a specialized handler or re-encode",
+                    "File is not valid UTF-8; install a specialized handler "
+                    "or re-encode",
                 ),
             )
 
@@ -69,7 +80,10 @@ class TextHandler(ParserHandler):
             language=self.name,
             encoding="utf-8",
             checksum=checksum,
-            metadata={"size_bytes": len(raw), "line_count": text.count("\n") + 1},
+            metadata={
+                "size_bytes": len(raw),
+                "line_count": text.count("\n") + 1,
+            },
         )
 
         if not text:
@@ -132,7 +146,9 @@ class TextHandler(ParserHandler):
                     metadata={
                         "strategy": strategy,
                         "start_line": 1,
-                        "end_line": self._line_for_offset(line_starts, len(text) - 1)
+                        "end_line": self._line_for_offset(
+                            line_starts, len(text) - 1
+                        )
                         if text
                         else 1,
                         "char_start": 0,
@@ -178,7 +194,7 @@ class TextHandler(ParserHandler):
         for match in pattern.finditer(text):
             start = last
             end = match.end()
-            segment = text[start:match.start()]
+            segment = text[start : match.start()]
             if segment.strip():
                 yield (start, end)
             last = match.end()

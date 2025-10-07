@@ -41,4 +41,3 @@ def test_hash_stream_with_extra_payload() -> None:
     )
 
     assert digest_a != digest_b
-

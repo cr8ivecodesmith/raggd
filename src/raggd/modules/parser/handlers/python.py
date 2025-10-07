@@ -110,7 +110,7 @@ class PythonHandler(ParserHandler):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def parse(
+    def parse(  # noqa: C901 - python handler handles many AST shapes
         self,
         *,
         path: Path,
@@ -121,7 +121,9 @@ class PythonHandler(ParserHandler):
         try:
             raw = path.read_bytes()
         except OSError as exc:  # pragma: no cover - filesystem failure edge
-            logger.error("Failed to read python file", path=str(path), error=str(exc))
+            logger.error(
+                "Failed to read python file", path=str(path), error=str(exc)
+            )
             file_meta = HandlerFile(
                 path=path,
                 language=self.name,
@@ -151,7 +153,8 @@ class PythonHandler(ParserHandler):
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(
-                    "File is not valid UTF-8; install a specialized handler or re-encode",
+                    "File is not valid UTF-8; install a specialized handler "
+                    "or re-encode",
                 ),
             )
 
@@ -248,7 +251,9 @@ class PythonHandler(ParserHandler):
                 self._line_offsets = line_offsets
                 self._byte_offsets = byte_offsets
                 self._token_encoder = token_encoder
-                self._token_cap = token_cap if token_cap and token_cap > 0 else None
+                self._token_cap = (
+                    token_cap if token_cap and token_cap > 0 else None
+                )
                 self._handler_name = handler_name
                 self._get_docstring = get_docstring_fn
                 self._logger = logger
@@ -266,7 +271,7 @@ class PythonHandler(ParserHandler):
             # ----------------------------------------------------------
             # Visitor helpers
             # ----------------------------------------------------------
-            def visit_Module(self, node: Any) -> bool:
+            def visit_Module(self, node: Any) -> bool:  # noqa: N802 - libcst API
                 start_char, end_char = self._node_span(node)
                 symbol_id = f"{self._symbol_prefix}::{self.module_name}"
                 self.module_symbol_id = symbol_id
@@ -292,43 +297,47 @@ class PythonHandler(ParserHandler):
                 self._emit_module_docstring(node, symbol_id)
                 return True
 
-            def leave_Module(self, node: Any) -> None:
+            def leave_Module(self, node: Any) -> None:  # noqa: N802 - libcst API
                 if self._scope_stack:
                     self._scope_stack.pop()
                 if self._symbol_stack:
                     self._symbol_stack.pop()
 
-            def visit_ClassDef(self, node: Any) -> bool:
+            def visit_ClassDef(self, node: Any) -> bool:  # noqa: N802 - libcst API
                 symbol_id = self._emit_definition(node, kind="class")
                 self._scope_stack.append(node.name.value)
                 self._symbol_stack.append(symbol_id)
                 return True
 
-            def leave_ClassDef(self, node: Any) -> None:
+            def leave_ClassDef(self, node: Any) -> None:  # noqa: N802 - libcst API
                 if self._scope_stack:
                     self._scope_stack.pop()
                 if self._symbol_stack:
                     self._symbol_stack.pop()
 
-            def visit_FunctionDef(self, node: Any) -> bool:
-                symbol_id = self._emit_definition(node, kind="function", is_async=False)
+            def visit_FunctionDef(self, node: Any) -> bool:  # noqa: N802 - libcst API
+                symbol_id = self._emit_definition(
+                    node, kind="function", is_async=False
+                )
                 self._scope_stack.append(node.name.value)
                 self._symbol_stack.append(symbol_id)
                 return True
 
-            def leave_FunctionDef(self, node: Any) -> None:
+            def leave_FunctionDef(self, node: Any) -> None:  # noqa: N802 - libcst API
                 if self._scope_stack:
                     self._scope_stack.pop()
                 if self._symbol_stack:
                     self._symbol_stack.pop()
 
-            def visit_AsyncFunctionDef(self, node: Any) -> bool:
-                symbol_id = self._emit_definition(node, kind="function", is_async=True)
+            def visit_AsyncFunctionDef(self, node: Any) -> bool:  # noqa: N802 - libcst API
+                symbol_id = self._emit_definition(
+                    node, kind="function", is_async=True
+                )
                 self._scope_stack.append(node.name.value)
                 self._symbol_stack.append(symbol_id)
                 return True
 
-            def leave_AsyncFunctionDef(self, node: Any) -> None:
+            def leave_AsyncFunctionDef(self, node: Any) -> None:  # noqa: N802 - libcst API
                 if self._scope_stack:
                     self._scope_stack.pop()
                 if self._symbol_stack:
@@ -346,7 +355,9 @@ class PythonHandler(ParserHandler):
             ) -> str:
                 name = node.name.value
                 qualified_name = self._qualified_name(name)
-                parent_id = self._symbol_stack[-1] if self._symbol_stack else None
+                parent_id = (
+                    self._symbol_stack[-1] if self._symbol_stack else None
+                )
                 start_char, end_char = self._node_span(node)
                 docstring = self._get_docstring(node, clean=True)
                 decorators = tuple(
@@ -375,7 +386,9 @@ class PythonHandler(ParserHandler):
                         metadata["parameters"] = str(params).strip()
                     returns = getattr(node, "returns", None)
                     if returns is not None and returns.annotation is not None:
-                        metadata["return_annotation"] = str(returns.annotation).strip()
+                        metadata["return_annotation"] = str(
+                            returns.annotation
+                        ).strip()
 
                 symbol_id = f"{self._symbol_prefix}::{qualified_name}"
                 symbol = HandlerSymbol(
@@ -462,7 +475,8 @@ class PythonHandler(ParserHandler):
 
                 if part_total > 1:
                     self.warnings.append(
-                        f"{qualified_name} split into {part_total} chunks due to token cap"
+                        f"{qualified_name} split into {part_total} chunks "
+                        "due to token cap"
                     )
                     self._logger.debug(
                         "Split python symbol due to token cap",
@@ -471,7 +485,9 @@ class PythonHandler(ParserHandler):
                         token_cap=self._token_cap,
                     )
 
-            def _split_ranges(self, start_char: int, end_char: int) -> list[tuple[int, int]]:
+            def _split_ranges(
+                self, start_char: int, end_char: int
+            ) -> list[tuple[int, int]]:
                 if self._token_cap is None:
                     return [(start_char, end_char)]
 
@@ -569,7 +585,8 @@ class PythonHandler(ParserHandler):
                     pass
                 else:
                     start_char = min(
-                        start_char, self._char_from_position(inclusive_range.start)
+                        start_char,
+                        self._char_from_position(inclusive_range.start),
                     )
                 end_char = self._char_from_position(code_range.end)
                 return start_char, end_char

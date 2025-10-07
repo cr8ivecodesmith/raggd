@@ -115,6 +115,13 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 16:20 PST
+**Summary**
+Patched the Python handler overflow fixture so libcst can parse the generated source during split tests.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run pytest --no-cov tests/modules/parser/test_handler_python.py -q`
+
 ### 2025-10-07 14:53 PST
 **Summary**
 Implemented shared delegation utilities so delegated chunks adopt child handler namespaces while preserving parent linkage for recomposition.
@@ -137,6 +144,13 @@ Completed HTML handler for Phase 4 item 5 with tree-sitter-backed structural gro
 ### 2025-10-07 20:25 PST
 **Summary**
 Completed CSS handler for Phase 4 by adding tree-sitter grouping, cascade-aware metadata, selector-based splitting, and comment coverage.
+
+### 2025-10-07 15:53 PST
+**Summary**
+Resolved Ruff lint violations across parser handlers, shared utilities, and supporting tests by formatting long literals, adjusting warning strings, and adding targeted `noqa` annotations where third-party APIs require non-standard naming or complexity.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run ruff check`
 
 ### 2025-10-07 15:18 PST
 **Summary**

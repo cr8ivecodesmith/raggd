@@ -118,7 +118,8 @@ def test_plan_source_collects_entries(tmp_path: Path) -> None:
         "README.txt",
     }
     handler_map = {
-        entry.relative_path.as_posix(): entry.handler.name for entry in plan.entries
+        entry.relative_path.as_posix(): entry.handler.name
+        for entry in plan.entries
     }
     assert handler_map["alpha.py"] == "python"
     assert handler_map["README.txt"] == "text"

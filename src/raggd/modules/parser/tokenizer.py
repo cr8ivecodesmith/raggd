@@ -20,8 +20,9 @@ __all__ = [
 class TokenEncoderProtocol(Protocol):
     """Lightweight protocol covering the subset used by handlers."""
 
-    def encode(self, text: str, *, allowed_special: set[str] | None = None) -> list[int]:
-        ...
+    def encode(
+        self, text: str, *, allowed_special: set[str] | None = None
+    ) -> list[int]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +48,9 @@ def _load_encoding(name: str) -> TokenEncoderProtocol:
     try:
         import tiktoken
     except ImportError as exc:  # pragma: no cover - dependency guard
-        raise TokenEncoderError("tiktoken is required for token counting") from exc
+        raise TokenEncoderError(
+            "tiktoken is required for token counting"
+        ) from exc
 
     try:
         return tiktoken.get_encoding(name)
@@ -60,4 +63,3 @@ def get_token_encoder(name: str = DEFAULT_ENCODER) -> TokenEncoder:
 
     encoding = _load_encoding(name)
     return TokenEncoder(name=name, encoding=encoding)
-

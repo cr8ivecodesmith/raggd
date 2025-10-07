@@ -16,7 +16,9 @@ from raggd.modules.parser.tokenizer import TokenEncoder
 
 
 class _DummyEncoding:
-    def encode(self, text: str, *, allowed_special: set[str] | None = None) -> list[int]:
+    def encode(
+        self, text: str, *, allowed_special: set[str] | None = None
+    ) -> list[int]:
         return [0] * max(len(text), 1)
 
 
@@ -49,7 +51,9 @@ def _make_context(tmp_path: Path) -> ParseContext:
     )
 
 
-def test_html_handler_emits_structural_chunks_and_delegates(tmp_path: Path) -> None:
+def test_html_handler_emits_structural_chunks_and_delegates(
+    tmp_path: Path,
+) -> None:
     pytest.importorskip("tree_sitter_languages")
 
     context = _make_context(tmp_path)
@@ -90,35 +94,51 @@ def test_html_handler_emits_structural_chunks_and_delegates(tmp_path: Path) -> N
     section_chunk = next(
         chunk
         for chunk in result.chunks
-        if chunk.metadata.get("tag") == "section" and chunk.metadata.get("kind") == "element"
+        if chunk.metadata.get("tag") == "section"
+        and chunk.metadata.get("kind") == "element"
     )
     assert "Welcome" in section_chunk.text
     assert section_chunk.parent_symbol_id == section_symbol.symbol_id
 
-    script_chunk = next(chunk for chunk in result.chunks if chunk.delegate == "javascript")
+    script_chunk = next(
+        chunk for chunk in result.chunks if chunk.delegate == "javascript"
+    )
     assert "console.log" in script_chunk.text
     assert script_chunk.parent_symbol_id == script_symbol.symbol_id
     script_shell = next(
         chunk
         for chunk in result.chunks
-        if chunk.chunk_id.startswith("html:script:") and chunk.parent_symbol_id == script_symbol.symbol_id
+        if chunk.chunk_id.startswith("html:script:")
+        and chunk.parent_symbol_id == script_symbol.symbol_id
     )
-    assert script_chunk.chunk_id.startswith("javascript:delegate:html:inline_script:")
+    assert script_chunk.chunk_id.startswith(
+        "javascript:delegate:html:inline_script:"
+    )
     assert script_chunk.metadata["delegate_parent_handler"] == "html"
-    assert script_chunk.metadata["delegate_parent_symbol"] == script_symbol.symbol_id
-    assert script_chunk.metadata["delegate_parent_chunk"] == script_shell.chunk_id
+    assert (
+        script_chunk.metadata["delegate_parent_symbol"]
+        == script_symbol.symbol_id
+    )
+    assert (
+        script_chunk.metadata["delegate_parent_chunk"] == script_shell.chunk_id
+    )
 
-    style_chunk = next(chunk for chunk in result.chunks if chunk.delegate == "css")
+    style_chunk = next(
+        chunk for chunk in result.chunks if chunk.delegate == "css"
+    )
     assert "body" in style_chunk.text
     assert style_chunk.parent_symbol_id == style_symbol.symbol_id
     style_shell = next(
         chunk
         for chunk in result.chunks
-        if chunk.chunk_id.startswith("html:style:") and chunk.parent_symbol_id == style_symbol.symbol_id
+        if chunk.chunk_id.startswith("html:style:")
+        and chunk.parent_symbol_id == style_symbol.symbol_id
     )
     assert style_chunk.chunk_id.startswith("css:delegate:html:inline_style:")
     assert style_chunk.metadata["delegate_parent_handler"] == "html"
-    assert style_chunk.metadata["delegate_parent_symbol"] == style_symbol.symbol_id
+    assert (
+        style_chunk.metadata["delegate_parent_symbol"] == style_symbol.symbol_id
+    )
     assert style_chunk.metadata["delegate_parent_chunk"] == style_shell.chunk_id
 
     assert not result.warnings

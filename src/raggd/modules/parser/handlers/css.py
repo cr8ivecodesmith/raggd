@@ -56,7 +56,9 @@ class CSSHandler(ParserHandler):
         try:
             raw = path.read_bytes()
         except OSError as exc:  # pragma: no cover - filesystem failure edge
-            logger.error("Failed to read CSS source", path=str(path), error=str(exc))
+            logger.error(
+                "Failed to read CSS source", path=str(path), error=str(exc)
+            )
             file_meta = HandlerFile(
                 path=path,
                 language=self.name,
@@ -86,7 +88,8 @@ class CSSHandler(ParserHandler):
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(
-                    "File is not valid UTF-8; configure a specialized handler or re-encode",
+                    "File is not valid UTF-8; configure a specialized handler "
+                    "or re-encode",
                 ),
             )
 
@@ -118,7 +121,11 @@ class CSSHandler(ParserHandler):
         try:
             tree = resources.parser.parse(source_bytes)
         except Exception as exc:  # pragma: no cover - tree-sitter failure
-            logger.error("tree-sitter failed to parse CSS", path=str(path), error=str(exc))
+            logger.error(
+                "tree-sitter failed to parse CSS",
+                path=str(path),
+                error=str(exc),
+            )
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(f"tree-sitter parse error: {exc}",),
@@ -181,12 +188,14 @@ class CSSHandler(ParserHandler):
                 from tree_sitter_languages import get_parser  # type: ignore[import]
             except Exception as exc:  # pragma: no cover - dependency missing
                 raise _MissingDependencyError(
-                    "CSS handler requires the 'parser' extras (tree_sitter_languages)."
+                    "CSS handler requires the 'parser' extras "
+                    "(tree_sitter_languages)."
                 ) from exc
 
             try:
                 parser = get_parser("css")
-            except Exception as exc:  # pragma: no cover - parser creation failure
+            except Exception as exc:  # pragma: no cover
+                # tree-sitter parser creation failure
                 raise _MissingDependencyError(
                     f"tree-sitter parser for 'css' is unavailable: {exc}"
                 ) from exc
@@ -197,11 +206,14 @@ class CSSHandler(ParserHandler):
             resources = context.cache.get(cache_key, _factory)
         except _MissingDependencyError:
             raise
-        except Exception as exc:  # pragma: no cover - unexpected caching failure
+        except Exception as exc:  # pragma: no cover
+            # Unexpected caching failure when storing parser resources
             raise _MissingDependencyError(str(exc)) from exc
 
         if not isinstance(resources, _ParserResources):
-            raise _MissingDependencyError("tree-sitter parser cache returned invalid payload")
+            raise _MissingDependencyError(
+                "tree-sitter parser cache returned invalid payload"
+            )
         return resources
 
     @staticmethod
@@ -297,7 +309,10 @@ class _CSSCollector:
     def _visit(self, node: Any, *, parent_symbol_id: str) -> None:
         if getattr(node, "is_missing", False):
             return
-        if getattr(node, "has_error", False) and getattr(node, "type", "") != "ERROR":
+        if (
+            getattr(node, "has_error", False)
+            and getattr(node, "type", "") != "ERROR"
+        ):
             self._emit_error_chunk(node, parent_symbol_id)
             return
 
@@ -339,7 +354,9 @@ class _CSSCollector:
         if not selector_segments and selector_node is not None:
             selector_segments = (
                 _SelectorSegment(
-                    text=self._slice(selector_node.start_byte, selector_node.end_byte).strip(),
+                    text=self._slice(
+                        selector_node.start_byte, selector_node.end_byte
+                    ).strip(),
                     start=selector_node.start_byte,
                     end=selector_node.end_byte,
                 ),
@@ -374,14 +391,19 @@ class _CSSCollector:
         )
         self._symbols.append(symbol)
 
-        block_text = self._slice(block_node.start_byte, block_node.end_byte) if block_node else ""
+        block_text = (
+            self._slice(block_node.start_byte, block_node.end_byte)
+            if block_node
+            else ""
+        )
         rule_text = self._slice(start_offset, end_offset)
         normalized_rule_text = self._normalize_rule(rule_text)
 
         if (
             self.token_cap is not None
             and selector_segments
-            and self.context.token_encoder.count(normalized_rule_text) > self.token_cap
+            and self.context.token_encoder.count(normalized_rule_text)
+            > self.token_cap
             and len(selector_segments) > 1
             and block_text
         ):
@@ -526,13 +548,12 @@ class _CSSCollector:
 
     def _emit_keyframe_block(self, node: Any, parent_symbol_id: str) -> None:
         selectors = []
-        block_node = None
         for child in getattr(node, "named_children", []) or []:
             child_type = getattr(child, "type", "")
             if child_type in {"from", "to", "percentage"}:
-                selectors.append(self._slice(child.start_byte, child.end_byte).strip())
-            elif child_type == "block":
-                block_node = child
+                selectors.append(
+                    self._slice(child.start_byte, child.end_byte).strip()
+                )
 
         start_offset = node.start_byte
         end_offset = node.end_byte
@@ -577,7 +598,9 @@ class _CSSCollector:
         self._chunks.append(chunk)
 
     def _emit_comment_chunk(self, node: Any, parent_symbol_id: str) -> None:
-        text = self._normalize_comment(self._slice(node.start_byte, node.end_byte))
+        text = self._normalize_comment(
+            self._slice(node.start_byte, node.end_byte)
+        )
         if not text:
             return
         chunk = HandlerChunk(
@@ -604,7 +627,9 @@ class _CSSCollector:
         normalized = self._normalize_rule(text)
         if not normalized:
             return
-        message = "CSS handler encountered a syntax error; emitted fallback chunk."
+        message = (
+            "CSS handler encountered a syntax error; emitted fallback chunk."
+        )
         self._warnings.append(message)
         chunk = HandlerChunk(
             chunk_id=f"{self.handler.name}:error:{node.start_byte}:{node.end_byte}",
@@ -629,8 +654,13 @@ class _CSSCollector:
     # Selector helpers
     # ------------------------------------------------------------------
     def _selector_node(self, node: Any) -> Any | None:
-        for field in ("selector_group", "selectors", "selector_list", "prelude"):
-            candidate = node.child_by_field_name(field)
+        for field_name in (
+            "selector_group",
+            "selectors",
+            "selector_list",
+            "prelude",
+        ):
+            candidate = node.child_by_field_name(field_name)
             if candidate is not None:
                 return candidate
         for child in getattr(node, "named_children", []) or []:
@@ -649,15 +679,19 @@ class _CSSCollector:
         for idx, char in enumerate(characters):
             if char in {"(", "["}:
                 depth += 1
-            elif char in {")","]"}:
+            elif char in {")", "]"}:
                 depth = max(0, depth - 1)
             elif char == "," and depth == 0:
                 segment_text = raw[start_index:idx].strip()
                 if segment_text:
-                    seg_start = node.start_byte + len(raw[:start_index].encode("utf-8"))
+                    seg_start = node.start_byte + len(
+                        raw[:start_index].encode("utf-8")
+                    )
                     seg_end = node.start_byte + len(raw[:idx].encode("utf-8"))
                     segments.append(
-                        _SelectorSegment(text=segment_text, start=seg_start, end=seg_end)
+                        _SelectorSegment(
+                            text=segment_text, start=seg_start, end=seg_end
+                        )
                     )
                 start_index = idx + 1
         tail = raw[start_index:].strip()
@@ -695,7 +729,9 @@ class _CSSCollector:
 
     def _normalize_comment(self, text: str) -> str:
         normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-        return "\n".join(line.rstrip() for line in normalized.split("\n") if line.strip())
+        return "\n".join(
+            line.rstrip() for line in normalized.split("\n") if line.strip()
+        )
 
     def _char_index(self, byte_offset: int) -> int:
         return max(0, bisect_right(self.byte_offsets, byte_offset) - 1)

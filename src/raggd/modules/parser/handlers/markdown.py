@@ -82,7 +82,7 @@ class MarkdownHandler(ParserHandler):
 
         return context.cache.get(cache_key, _factory)
 
-    def parse(
+    def parse(  # noqa: C901 - markdown handler covers many cases
         self,
         *,
         path: Path,
@@ -93,7 +93,9 @@ class MarkdownHandler(ParserHandler):
         try:
             raw = path.read_bytes()
         except OSError as exc:  # pragma: no cover - filesystem failure edge
-            logger.error("Failed to read markdown file", path=str(path), error=str(exc))
+            logger.error(
+                "Failed to read markdown file", path=str(path), error=str(exc)
+            )
             file_meta = HandlerFile(
                 path=path,
                 language=self.name,
@@ -123,7 +125,8 @@ class MarkdownHandler(ParserHandler):
             return HandlerResult.empty(
                 file=file_meta,
                 errors=(
-                    "File is not valid UTF-8; configure a specialized handler or re-encode",
+                    "File is not valid UTF-8; configure a specialized handler "
+                    "or re-encode",
                 ),
             )
 
@@ -171,7 +174,11 @@ class MarkdownHandler(ParserHandler):
         if front_matter is not None:
             fm_end_char = body_start
             start_line = 1
-            end_line = self._line_for_offset(line_starts, fm_end_char - 1) if fm_end_char else 1
+            end_line = (
+                self._line_for_offset(line_starts, fm_end_char - 1)
+                if fm_end_char
+                else 1
+            )
             chunk = HandlerChunk(
                 chunk_id=f"{self.name}:front-matter",
                 text=front_matter,
@@ -232,8 +239,12 @@ class MarkdownHandler(ParserHandler):
             section_byte_start = byte_offsets[section.section_start]
             section_byte_end = byte_offsets[section.section_end]
 
-            heading_line = self._line_for_offset(line_starts, heading.heading_start)
-            section_end_line = self._line_for_offset(line_starts, section.section_end - 1)
+            heading_line = self._line_for_offset(
+                line_starts, heading.heading_start
+            )
+            section_end_line = self._line_for_offset(
+                line_starts, section.section_end - 1
+            )
 
             symbol_id = f"{self.name}:heading:{heading_byte_start}"
 
@@ -262,7 +273,9 @@ class MarkdownHandler(ParserHandler):
                 "heading_title": heading.title,
                 "heading_level": heading.level,
                 "heading_line": heading_line,
-                "start_line": self._line_for_offset(line_starts, section.section_start),
+                "start_line": self._line_for_offset(
+                    line_starts, section.section_start
+                ),
                 "end_line": section_end_line,
                 "char_start": section.section_start,
                 "char_end": section.section_end,
@@ -284,14 +297,20 @@ class MarkdownHandler(ParserHandler):
             part_index += 1
 
             for fence_index, fence in enumerate(
-                self._extract_fences(section_text, base_char=section.section_start)
+                self._extract_fences(
+                    section_text, base_char=section.section_start
+                )
             ):
                 if not fence.code.strip():
                     continue
                 code_start_byte = byte_offsets[fence.code_start]
                 code_end_byte = byte_offsets[fence.code_end]
-                code_start_line = self._line_for_offset(line_starts, fence.code_start)
-                code_end_line = self._line_for_offset(line_starts, fence.code_end - 1)
+                code_start_line = self._line_for_offset(
+                    line_starts, fence.code_start
+                )
+                code_end_line = self._line_for_offset(
+                    line_starts, fence.code_end - 1
+                )
                 delegate = fence.language or None
 
                 chunk_metadata = {
@@ -323,7 +342,8 @@ class MarkdownHandler(ParserHandler):
                     )
                 else:
                     chunk_id = (
-                        f"{self.name}:fence:{code_start_byte}:{code_end_byte}:{fence_index}"
+                        f"{self.name}:fence:{code_start_byte}:"
+                        f"{code_end_byte}:{fence_index}"
                     )
                     metadata = chunk_metadata
 
@@ -356,7 +376,6 @@ class MarkdownHandler(ParserHandler):
         end = text.find("\n")
         if end == -1:
             return None, 0
-        cursor = 0
         lines = text.splitlines(keepends=True)
         if not lines or not lines[0].startswith("---"):
             return None, 0
@@ -379,11 +398,15 @@ class MarkdownHandler(ParserHandler):
 
         sections: list[_Section] = []
         for index, heading in enumerate(headings):
-            next_start = headings[index + 1].heading_start if index + 1 < len(headings) else len(text)
+            next_start = (
+                headings[index + 1].heading_start
+                if index + 1 < len(headings)
+                else len(text)
+            )
             section_start = heading.heading_start
             intro_attached = False
             if index == 0 and body_start < heading.heading_start:
-                intro = text[body_start:heading.heading_start]
+                intro = text[body_start : heading.heading_start]
                 if intro.strip():
                     section_start = body_start
                     intro_attached = True
@@ -398,7 +421,9 @@ class MarkdownHandler(ParserHandler):
         return sections
 
     @staticmethod
-    def _extract_fences(section_text: str, *, base_char: int) -> Iterable[_FenceBlock]:
+    def _extract_fences(
+        section_text: str, *, base_char: int
+    ) -> Iterable[_FenceBlock]:
         for match in _FENCE_RE.finditer(section_text):
             info = match.group("info") or ""
             language = info.strip().split()[0].lower() if info.strip() else None

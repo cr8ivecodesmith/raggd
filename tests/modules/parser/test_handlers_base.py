@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from raggd.core.config import AppConfig, ParserHandlerSettings, ParserModuleSettings
+from raggd.core.config import (
+    AppConfig,
+    ParserHandlerSettings,
+    ParserModuleSettings,
+)
 from raggd.core.logging import get_logger
 from raggd.core.paths import WorkspacePaths
 from raggd.modules import HealthStatus
@@ -25,7 +29,9 @@ from raggd.modules.parser.tokenizer import TokenEncoder
 
 
 class _DummyEncoding:
-    def encode(self, text: str, *, allowed_special: set[str] | None = None) -> list[int]:
+    def encode(
+        self, text: str, *, allowed_special: set[str] | None = None
+    ) -> list[int]:
         return [0] * len(text)
 
 

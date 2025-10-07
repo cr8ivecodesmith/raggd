@@ -13,7 +13,9 @@ from raggd.modules.parser.tokenizer import TokenEncoder
 
 
 class _DummyEncoding:
-    def encode(self, text: str, *, allowed_special: set[str] | None = None) -> list[int]:
+    def encode(
+        self, text: str, *, allowed_special: set[str] | None = None
+    ) -> list[int]:
         return [0] * len(text)
 
 
@@ -73,7 +75,11 @@ Child section content.
 
     assert result.chunks[0].metadata.get("kind") == "front_matter"
 
-    section_chunks = [chunk for chunk in result.chunks if chunk.metadata.get("kind") == "section"]
+    section_chunks = [
+        chunk
+        for chunk in result.chunks
+        if chunk.metadata.get("kind") == "section"
+    ]
     assert len(section_chunks) == 2
 
     first_section = section_chunks[0]
@@ -105,17 +111,32 @@ Trailing text.
 
     result = handler.parse(path=path, context=context)
 
-    code_chunks = [chunk for chunk in result.chunks if chunk.metadata.get("kind") == "fenced_code"]
+    code_chunks = [
+        chunk
+        for chunk in result.chunks
+        if chunk.metadata.get("kind") == "fenced_code"
+    ]
     assert len(code_chunks) == 1
     code_chunk = code_chunks[0]
     assert code_chunk.delegate == "python"
     assert "print('hi')" in code_chunk.text
 
-    section_chunk = next(chunk for chunk in result.chunks if chunk.metadata.get("kind") == "section")
-    assert code_chunk.chunk_id.startswith("python:delegate:markdown:fenced_code:")
+    section_chunk = next(
+        chunk
+        for chunk in result.chunks
+        if chunk.metadata.get("kind") == "section"
+    )
+    assert code_chunk.chunk_id.startswith(
+        "python:delegate:markdown:fenced_code:"
+    )
     assert code_chunk.metadata["delegate_parent_handler"] == "markdown"
-    assert code_chunk.metadata["delegate_parent_symbol"] == result.symbols[0].symbol_id
-    assert code_chunk.metadata["delegate_parent_chunk"] == section_chunk.chunk_id
+    assert (
+        code_chunk.metadata["delegate_parent_symbol"]
+        == result.symbols[0].symbol_id
+    )
+    assert (
+        code_chunk.metadata["delegate_parent_chunk"] == section_chunk.chunk_id
+    )
 
     assert result.symbols
     assert code_chunk.parent_symbol_id == result.symbols[0].symbol_id

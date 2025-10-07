@@ -19,7 +19,9 @@ from raggd.modules.parser.tokenizer import TokenEncoder
 
 
 class _DummyEncoding:
-    def encode(self, text: str, *, allowed_special: set[str] | None = None) -> list[int]:
+    def encode(
+        self, text: str, *, allowed_special: set[str] | None = None
+    ) -> list[int]:
         return [0] * max(len(text), 1)
 
 
@@ -92,9 +94,15 @@ def test_javascript_handler_extracts_exports(tmp_path: Path) -> None:
     result = handler.parse(path=path, context=context)
 
     module_symbol = next(sym for sym in result.symbols if sym.kind == "module")
-    class_symbol = next(sym for sym in result.symbols if sym.name.endswith("Greeter"))
-    const_symbol = next(sym for sym in result.symbols if sym.metadata.get("kind") == "const")
-    reexports = [sym for sym in result.symbols if sym.metadata.get("kind") == "reexport"]
+    class_symbol = next(
+        sym for sym in result.symbols if sym.name.endswith("Greeter")
+    )
+    const_symbol = next(
+        sym for sym in result.symbols if sym.metadata.get("kind") == "const"
+    )
+    reexports = [
+        sym for sym in result.symbols if sym.metadata.get("kind") == "reexport"
+    ]
 
     assert module_symbol.metadata.get("module_name") == "module"
     assert class_symbol.metadata["exported"] is True
@@ -140,5 +148,8 @@ def test_typescript_handler_emits_jsx_delegate(tmp_path: Path) -> None:
     module_symbol = next(sym for sym in result.symbols if sym.kind == "module")
     assert first_chunk.chunk_id.startswith("html:delegate:typescript:jsx:")
     assert first_chunk.metadata["delegate_parent_handler"] == "typescript"
-    assert first_chunk.metadata["delegate_parent_symbol"] == module_symbol.symbol_id
+    assert (
+        first_chunk.metadata["delegate_parent_symbol"]
+        == module_symbol.symbol_id
+    )
     assert "delegate_parent_chunk" not in first_chunk.metadata

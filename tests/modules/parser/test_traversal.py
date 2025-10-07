@@ -16,7 +16,9 @@ def _write(path: Path, contents: str = "") -> None:
     path.write_text(contents, encoding="utf-8")
 
 
-def _collect(service: TraversalService, scope: TraversalScope | None = None) -> set[str]:
+def _collect(
+    service: TraversalService, scope: TraversalScope | None = None
+) -> set[str]:
     return {
         result.relative_path.as_posix()
         for result in service.iter_files(scope=scope)
@@ -116,4 +118,3 @@ def test_traversal_scope_limits_results(tmp_path: Path) -> None:
     file_scope = TraversalScope.from_iterable([root / "src" / "main.py"])
     files = _collect(service, scope=file_scope)
     assert files == {"src/main.py"}
-

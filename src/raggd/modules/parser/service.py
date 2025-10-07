@@ -102,7 +102,9 @@ class ParserService:
         db_service: DbLifecycleService | None = None,
         registry: HandlerRegistry | None = None,
         token_encoder: TokenEncoder | None = None,
-        token_encoder_factory: Callable[[str], TokenEncoder] = get_token_encoder,
+        token_encoder_factory: Callable[
+            [str], TokenEncoder
+        ] = get_token_encoder,
         encoder_name: str = DEFAULT_ENCODER,
         hash_algorithm: str = DEFAULT_HASH_ALGORITHM,
         workspace_ignore_patterns: Sequence[str] | None = None,
@@ -116,8 +118,9 @@ class ParserService:
             # Defensive fallback if configuration yielded a generic toggle.
             self._settings = ParserModuleSettings(**self._settings.model_dump())
 
-        self._manifest_settings = manifest_settings or manifest_settings_from_config(
-            config.model_dump(mode="python")
+        self._manifest_settings = (
+            manifest_settings
+            or manifest_settings_from_config(config.model_dump(mode="python"))
         )
         self._manifest = manifest_service or ManifestService(
             workspace=workspace,
@@ -164,7 +167,9 @@ class ParserService:
         """Return (and lazily load) the active token encoder."""
 
         if self._token_encoder is None:
-            self._token_encoder = self._token_encoder_factory(self._encoder_name)
+            self._token_encoder = self._token_encoder_factory(
+                self._encoder_name
+            )
         return self._token_encoder
 
     def plan_source(
@@ -199,7 +204,8 @@ class ParserService:
                 )
             except KeyError as exc:
                 errors.append(
-                    f"No handler available for {result.relative_path.as_posix()}: {exc}"
+                    "No handler available for "
+                    f"{result.relative_path.as_posix()}: {exc}"
                 )
                 metrics.files_failed += 1
                 continue
@@ -414,6 +420,4 @@ class ParserService:
             if availability.status is HealthStatus.OK:
                 continue
             detail = availability.summary or availability.status.value
-            sink.append(
-                f"Handler {availability.name} degraded: {detail}"
-            )
+            sink.append(f"Handler {availability.name} degraded: {detail}")

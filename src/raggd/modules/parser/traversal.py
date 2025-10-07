@@ -71,8 +71,12 @@ class TraversalService:
         self._behavior = gitignore_behavior
         self._workspace_spec = (
             PathSpec.from_lines("gitwildmatch", workspace_patterns)
-            if workspace_patterns and gitignore_behavior
-            in (ParserGitignoreBehavior.WORKSPACE, ParserGitignoreBehavior.COMBINED)
+            if workspace_patterns
+            and gitignore_behavior
+            in (
+                ParserGitignoreBehavior.WORKSPACE,
+                ParserGitignoreBehavior.COMBINED,
+            )
             else None
         )
         self._follow_symlinks = follow_symlinks
@@ -182,7 +186,7 @@ class TraversalService:
             if spec is not None:
                 yield spec
 
-    def _is_ignored(
+    def _is_ignored(  # noqa: C901 - gitignore resolution branches heavily
         self,
         path: Path,
         *,
