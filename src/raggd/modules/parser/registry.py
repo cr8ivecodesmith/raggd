@@ -502,6 +502,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
             display_name="CSS",
             extensions=("css", "scss", "less"),
             probe=import_dependency_probe("tree_sitter_languages"),
+            factory="raggd.modules.parser.handlers.css:CSSHandler",
         ),
     )
     return HandlerRegistry(descriptors=descriptors, settings=settings)

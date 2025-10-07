@@ -77,7 +77,7 @@
 - [x] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, grouped class attributes, and emit overflow slices with parent linkage + metadata.
 - [x] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, re-exports; honor configuration toggles for TS/TSX routing, split large classes into constructor/method slices, and route `.tsx`/`.jsx` segments into HTML delegation when enabled.
 - [x] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
-- [ ] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
+- [x] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
 - [ ] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
 
 ### Phase 5 — Persistence & recomposition support
@@ -118,6 +118,21 @@
 ### 2025-10-07 18:45 PST
 **Summary**
 Completed HTML handler for Phase 4 item 5 with tree-sitter-backed structural grouping and delegation.
+
+### 2025-10-07 20:25 PST
+**Summary**
+Completed CSS handler for Phase 4 by adding tree-sitter grouping, cascade-aware metadata, selector-based splitting, and comment coverage.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run pytest --no-cov tests/modules/parser/test_handler_css.py` *(skipped: optional tree_sitter_languages dependency absent in sandbox)*
+
+**Changes**
+- Added `CSSHandler` with rule/at-rule/keyframe traversal, selector splitting under token caps, and fallback handling for syntax errors.
+- Wired the handler into parser exports and registry plus introduced focused CSS unit coverage scaffold.
+
+**Notes**
+- Shared delegation utilities remain for the next Phase 4 substep.
+- Re-run the parser handler suites once `tree_sitter_languages` extras install so CSS/HTML/JS paths execute without skips.
 **Changes**
 - Added `HTMLHandler` with structural element chunking, inline script/style delegation, and normalized offset metadata.
 - Registered the handler factory/export in the parser registry for `.html`/`.htm` sources.
