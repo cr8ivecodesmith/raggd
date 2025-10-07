@@ -89,7 +89,7 @@
 - [x] Decompose Python handler `parse` into composable passes (dependency checks, module/class/function traversal, overflow handling) to retire the `noqa: C901`.
 
 ### Phase 5 — Persistence & recomposition support
-- [ ] Implement chunk write pipelines that persist primary and delegated slices, wiring handler outputs into repositories reused in Phase 6.
+- [x] Implement chunk write pipelines that persist primary and delegated slices, wiring handler outputs into repositories reused in Phase 6.
 - [ ] Build recomposition helpers (covers follow-up #2) so delegated child chunks reattach to parents for CLI and downstream consumers.
 - [ ] Add unchanged-detection logic with tombstone handling to reuse batches when emitted slices/states match prior runs.
 - [ ] Derive deterministic `chunk_key` values (batch id + handler namespace + path + offsets) and log overflow metadata for diagnostics.
@@ -125,6 +125,13 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 22:06 PST
+**Summary**
+Added the chunk slice repository/pipeline so parser handlers persist primary and delegated slices with hashing and metadata fidelity against SQLite.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser/test_persistence.py -q`
+
 ### 2025-10-07 19:47 PST
 **Summary**
 Refactored Markdown handler `parse` orchestration into helper passes to clear the C901 suppression while keeping chunking/symbol semantics intact.
