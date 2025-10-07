@@ -94,7 +94,7 @@
 - [x] Add unchanged-detection logic with tombstone handling to reuse batches when emitted slices/states match prior runs.
 - [x] Derive deterministic `chunk_key` values (batch id + handler namespace + path + offsets) and log overflow metadata for diagnostics.
 - [x] Stage file/symbol/chunk CRUD inside `DbLifecycleService`-coordinated transactions, persisting delegated child slices under their namespaces with parent references.
-- [ ] Formalize treating `chunk_slices` as the canonical artifact and enumerate the follow-up migration introducing a `chunk_assemblies` join table to anchor stable `chunk_id` values shared with vectors.
+- [x] Formalize treating `chunk_slices` as the canonical artifact and enumerate the follow-up migration introducing a `chunk_assemblies` join table to anchor stable `chunk_id` values shared with vectors.
 
 ### Phase 6 — CLI subcommand behaviors
 - Flesh out `parse`, `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
@@ -125,6 +125,15 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 05:55 PST
+**Summary**
+Formalized chunk slices as the canonical parser artifact via a domain dataclass/repository API and documented the future `chunk_assemblies` join that will back shared vector IDs.
+**Changes**
+- Added `ChunkSlice` artifact representation with repository fetch helpers, updated recomposition to operate on canonical slices, and expanded persistence tests to cover the new path.
+- Refreshed the database schema reference to spell out the upcoming `chunk_assemblies` migration so downstream modules can align vector ID usage.
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser/test_persistence.py tests/modules/parser/test_recomposition.py -q`
+
 ### 2025-10-08 04:35 PST
 **Summary**
 Wired `ParserService` to persist handler results through `parser_transaction`, capturing staging metrics and enforcing path alignment for planned entries.

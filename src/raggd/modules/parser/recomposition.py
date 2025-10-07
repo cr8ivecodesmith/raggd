@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
+from .artifacts import ChunkSlice
 from .persistence import ChunkSliceRepository
 
 __all__ = [
@@ -78,14 +79,16 @@ class ChunkRecomposer:
     ) -> tuple[RecomposedChunk, ...]:
         """Return recomposed chunks for ``file_id`` within ``batch_id``."""
 
-        rows = self._repository.select_for_file(
-            connection, batch_id=batch_id, file_id=file_id
+        slices = self._repository.fetch_for_file(
+            connection,
+            batch_id=batch_id,
+            file_id=file_id,
         )
-        return recompose_chunk_slices(dict(row) for row in rows)
+        return recompose_chunk_slices(slices)
 
 
 def recompose_chunk_slices(
-    rows: Iterable[Mapping[str, Any]],
+    rows: Iterable[Mapping[str, Any] | ChunkSlice],
 ) -> tuple[RecomposedChunk, ...]:
     """Recompose chunk slices emitted by the persistence pipeline."""
 
@@ -169,7 +172,37 @@ class _SliceRecord:
     part: ChunkSlicePart
 
 
-def _record_from_row(row: Mapping[str, Any]) -> _SliceRecord:
+def _record_from_row(row: Mapping[str, Any] | ChunkSlice) -> _SliceRecord:
+    if isinstance(row, ChunkSlice):
+        metadata = row.metadata
+        part = ChunkSlicePart(
+            part_index=row.part_index,
+            part_total=row.part_total,
+            token_count=row.token_count,
+            text=row.content_text,
+            start_line=row.start_line,
+            end_line=row.end_line,
+            start_byte=row.start_byte,
+            end_byte=row.end_byte,
+            overflow_is_truncated=row.overflow_is_truncated,
+            overflow_reason=row.overflow_reason,
+            metadata=_freeze_mapping(dict(metadata)),
+            content_hash=row.content_hash,
+            content_norm_hash=row.content_norm_hash,
+        )
+        return _SliceRecord(
+            batch_id=row.batch_id,
+            file_id=row.file_id,
+            chunk_id=row.chunk_id,
+            handler_name=row.handler_name,
+            handler_version=row.handler_version,
+            symbol_id=row.symbol_id,
+            parent_symbol_id=row.parent_symbol_id,
+            first_seen_batch=row.first_seen_batch,
+            last_seen_batch=row.last_seen_batch,
+            part=part,
+        )
+
     metadata = _parse_metadata(row.get("metadata_json"))
     part = ChunkSlicePart(
         part_index=int(row["part_index"]),

@@ -6,6 +6,7 @@ import sqlite3
 
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.db import DbLifecycleService
+from raggd.modules.parser.artifacts import ChunkSlice
 from raggd.modules.parser.handlers.base import HandlerChunk, HandlerFile, HandlerResult, HandlerSymbol
 from raggd.modules.parser.handlers.delegation import delegated_metadata
 from raggd.modules.parser.persistence import (
@@ -311,6 +312,21 @@ def test_chunk_write_pipeline_persists_delegate_slices(tmp_path: Path) -> None:
         metadata_json = python_row["metadata_json"]
         assert "delegate_parent_symbol" in metadata_json
         assert len(python_row["content_hash"]) == 64
+
+        canonical = repository.fetch_for_file(
+            connection,
+            batch_id="batch-1",
+            file_id=file_id,
+        )
+        assert len(canonical) == 2
+        assert all(isinstance(item, ChunkSlice) for item in canonical)
+        section_slice, delegate_slice = canonical
+        assert section_slice.metadata["kind"] == "section"
+        assert section_slice.overflow_is_truncated is False
+        assert section_slice.created_at <= section_slice.updated_at
+        assert delegate_slice.metadata["delegate_parent_chunk"] == primary_chunk.chunk_id
+        assert delegate_slice.parent_symbol_id == heading_symbol_id
+        assert delegate_slice.symbol_id == inline_symbol_id
 
 
 def test_chunk_write_pipeline_reuses_rows_when_unchanged(tmp_path: Path) -> None:
@@ -677,4 +693,3 @@ def test_parser_transaction_reuses_artifacts(tmp_path: Path) -> None:
         ).fetchone()
         assert file_row["batch_id"] == "batch-2"
         assert file_row["file_sha"] == "sha:file"
-

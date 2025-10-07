@@ -9,6 +9,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from .artifacts import ChunkSlice
 from .handlers.base import HandlerChunk, HandlerResult
 from .hashing import DEFAULT_HASH_ALGORITHM, hash_text
 from .sql import load_sql
@@ -146,6 +147,22 @@ class ChunkSliceRepository:
         )
         return cursor.fetchall()
 
+    def fetch_for_file(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        batch_id: str,
+        file_id: int,
+    ) -> tuple[ChunkSlice, ...]:
+        """Return canonical chunk slices for ``file_id`` within ``batch_id``."""
+
+        rows = self.select_for_file(
+            connection,
+            batch_id=batch_id,
+            file_id=file_id,
+        )
+        return tuple(ChunkSlice.from_row(dict(row)) for row in rows)
+
     def select_history_for_file(
         self,
         connection: sqlite3.Connection,
@@ -159,6 +176,17 @@ class ChunkSliceRepository:
             {"file_id": file_id},
         )
         return cursor.fetchall()
+
+    def fetch_history_for_file(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        file_id: int,
+    ) -> tuple[ChunkSlice, ...]:
+        """Return canonical chunk slice history for ``file_id``."""
+
+        rows = self.select_history_for_file(connection, file_id=file_id)
+        return tuple(ChunkSlice.from_row(dict(row)) for row in rows)
 
     def mark_last_seen(
         self,

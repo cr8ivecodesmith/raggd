@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .artifacts import ChunkSlice
 from .hashing import (
     DEFAULT_HASH_ALGORITHM,
     hash_file,
@@ -66,6 +67,7 @@ from .staging import (
 __all__ = [
     "DEFAULT_ENCODER",
     "DEFAULT_HASH_ALGORITHM",
+    "ChunkSlice",
     "HandlerChunk",
     "HandlerAvailability",
     "HandlerFile",

@@ -241,9 +241,10 @@ FROM a FULL OUTER JOIN b USING(symbol_path); -- emulate via UNION/LEFT JOINs in 
 
 # ID & FAISS strategy
 
-* `chunks.id` is the **canonical** integer ID → use it as FAISS vector ID (`add_with_ids`).
-* One FAISS file per `vdb` (e.g., `faiss/main-openai.index`), store its path in `vdbs.faiss_path`.
-* Re-embedding: `remove_ids([chunk_id])` then `add_with_ids([chunk_id])`.
+* Parser writes canonical content slices into `chunk_slices`; each slice retains a stable textual `chunk_id` derived from handler namespace + offsets.
+* Follow-up migration will introduce a `chunk_assemblies` join table that groups one or more slices into vector-ready `chunks` rows, keeping the assembly ID stable for shared vector/vdb consumers.
+* Until assemblies land, continue storing one FAISS file per `vdb` (e.g., `faiss/main-openai.index`) and plan to use the future assembly identifier as the FAISS vector ID.
+* Re-embedding remains `remove_ids([chunk_id])` then `add_with_ids([chunk_id])`; once assemblies exist use the shared assembly ID in place of legacy `chunks.id`.
 
 ---
 
