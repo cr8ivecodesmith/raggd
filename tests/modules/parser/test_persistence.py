@@ -6,13 +6,14 @@ import sqlite3
 
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.db import DbLifecycleService
-from raggd.modules.parser.handlers.base import HandlerChunk, HandlerFile, HandlerResult
+from raggd.modules.parser.handlers.base import HandlerChunk, HandlerFile, HandlerResult, HandlerSymbol
 from raggd.modules.parser.handlers.delegation import delegated_metadata
 from raggd.modules.parser.persistence import (
     ChunkSliceRepository,
     ChunkWritePipeline,
 )
 from raggd.modules.parser.recomposition import ChunkRecomposer
+from raggd.modules.parser import parser_transaction
 
 
 def _make_workspace(tmp_path: Path) -> WorkspacePaths:
@@ -35,6 +36,74 @@ def _make_workspace(tmp_path: Path) -> WorkspacePaths:
         archives_dir=archives_dir,
         sources_dir=sources_dir,
     )
+
+
+def _build_markdown_delegate_result() -> tuple[HandlerResult, dict[str, str]]:
+    handler_file = HandlerFile(
+        path=Path("docs/readme.md"),
+        language="markdown",
+        metadata={"size_bytes": 256},
+    )
+    heading_symbol = HandlerSymbol(
+        symbol_id="heading-symbol",
+        name="Heading",
+        kind="section",
+        start_offset=0,
+        end_offset=180,
+        metadata={"line": 1, "start_line": 1, "end_line": 5},
+    )
+    inline_symbol = HandlerSymbol(
+        symbol_id="inline-code-symbol",
+        name="Inline Code",
+        kind="code",
+        start_offset=180,
+        end_offset=240,
+        parent_id="heading-symbol",
+        metadata={"line": 6, "start_line": 6, "end_line": 8},
+    )
+
+    section_chunk = HandlerChunk(
+        chunk_id="markdown:section:0:180",
+        text="Section body\n",
+        token_count=8,
+        start_offset=0,
+        end_offset=180,
+        part_index=0,
+        parent_symbol_id="heading-symbol",
+        metadata={"kind": "section", "start_line": 1, "end_line": 5, "part_total": 1},
+    )
+    delegate_metadata = delegated_metadata(
+        delegate="python",
+        parent_handler="markdown",
+        parent_symbol_id="heading-symbol",
+        parent_chunk_id=section_chunk.chunk_id,
+        extra={
+            "kind": "fenced_code",
+            "start_line": 6,
+            "end_line": 8,
+            "char_start": 180,
+            "char_end": 240,
+        },
+    )
+    delegated_chunk = HandlerChunk(
+        chunk_id="python:delegate:markdown:fenced_code:180:240",
+        text="print('hi')\n",
+        token_count=5,
+        start_offset=180,
+        end_offset=240,
+        part_index=1,
+        parent_symbol_id="inline-code-symbol",
+        delegate="python",
+        metadata=delegate_metadata,
+    )
+
+    result = HandlerResult(
+        file=handler_file,
+        symbols=(heading_symbol, inline_symbol),
+        chunks=(section_chunk, delegated_chunk),
+    )
+    handler_versions = {"markdown": "1.0.0", "python": "2.0.0"}
+    return result, handler_versions
 
 
 class RecordingLogger:
@@ -490,3 +559,122 @@ def test_chunk_write_pipeline_logs_overflow_metadata(tmp_path: Path) -> None:
     assert payload["overflow_reason"] == "max_tokens"
     assert payload["overflow_is_truncated"] is True
     assert payload["handler"] == "text"
+
+
+def test_parser_transaction_stages_delegated_chunks(tmp_path: Path) -> None:
+    paths = _make_workspace(tmp_path)
+    db_service = DbLifecycleService(workspace=paths)
+    result, handler_versions = _build_markdown_delegate_result()
+
+    with parser_transaction(db_service, "alpha") as txn:
+        txn.ensure_batch(batch_id="batch-1")
+        outcome = txn.stage_file(
+            batch_id="batch-1",
+            repo_path=result.file.path,
+            language=result.file.language,
+            file_sha="sha:file",
+            handler_name="markdown",
+            handler_version="1.0.0",
+            handler_versions=handler_versions,
+            result=result,
+        )
+
+    assert outcome.symbols_written == 2
+    assert outcome.symbols_reused == 0
+    assert outcome.chunks_inserted == 2
+    assert outcome.chunks_reused == 0
+
+    db_path = db_service.ensure("alpha")
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        file_row = connection.execute(
+            "SELECT repo_path, file_sha, batch_id FROM files"
+        ).fetchone()
+        assert file_row["repo_path"] == "docs/readme.md"
+        assert file_row["file_sha"] == "sha:file"
+        assert file_row["batch_id"] == "batch-1"
+
+        symbols = connection.execute(
+            "SELECT id, symbol_path, last_seen_batch FROM symbols ORDER BY symbol_path"
+        ).fetchall()
+        assert [row["symbol_path"] for row in symbols] == [
+            "heading-symbol",
+            "inline-code-symbol",
+        ]
+        assert all(row["last_seen_batch"] == "batch-1" for row in symbols)
+        symbol_ids = {row["symbol_path"]: row["id"] for row in symbols}
+
+        chunk_rows = connection.execute(
+            "SELECT handler_name, symbol_id, parent_symbol_id, metadata_json FROM chunk_slices ORDER BY handler_name"
+        ).fetchall()
+        assert [row["handler_name"] for row in chunk_rows] == ["markdown", "python"]
+        assert chunk_rows[0]["symbol_id"] == symbol_ids["heading-symbol"]
+        assert chunk_rows[0]["parent_symbol_id"] is None
+        assert chunk_rows[1]["symbol_id"] == symbol_ids["inline-code-symbol"]
+        assert chunk_rows[1]["parent_symbol_id"] == symbol_ids["heading-symbol"]
+        assert "delegate_parent_symbol" in chunk_rows[1]["metadata_json"]
+
+
+def test_parser_transaction_reuses_artifacts(tmp_path: Path) -> None:
+    paths = _make_workspace(tmp_path)
+    db_service = DbLifecycleService(workspace=paths)
+    first_result, handler_versions = _build_markdown_delegate_result()
+
+    with parser_transaction(db_service, "alpha") as txn:
+        txn.ensure_batch(batch_id="batch-1")
+        first_outcome = txn.stage_file(
+            batch_id="batch-1",
+            repo_path=first_result.file.path,
+            language=first_result.file.language,
+            file_sha="sha:file",
+            handler_name="markdown",
+            handler_version="1.0.0",
+            handler_versions=handler_versions,
+            result=first_result,
+        )
+
+    assert first_outcome.symbols_written == 2
+    assert first_outcome.symbols_reused == 0
+    assert first_outcome.chunks_inserted == 2
+    assert first_outcome.chunks_reused == 0
+
+    second_result, _ = _build_markdown_delegate_result()
+    with parser_transaction(db_service, "alpha") as txn:
+        txn.ensure_batch(batch_id="batch-2")
+        second_outcome = txn.stage_file(
+            batch_id="batch-2",
+            repo_path=second_result.file.path,
+            language=second_result.file.language,
+            file_sha="sha:file",
+            handler_name="markdown",
+            handler_version="1.0.0",
+            handler_versions=handler_versions,
+            result=second_result,
+        )
+
+    assert second_outcome.symbols_written == 0
+    assert second_outcome.symbols_reused == 2
+    assert second_outcome.chunks_inserted == 0
+    assert second_outcome.chunks_reused == 2
+
+    db_path = db_service.ensure("alpha")
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        symbol_rows = connection.execute(
+            "SELECT first_seen_batch, last_seen_batch FROM symbols"
+        ).fetchall()
+        assert {row["first_seen_batch"] for row in symbol_rows} == {"batch-1"}
+        assert {row["last_seen_batch"] for row in symbol_rows} == {"batch-2"}
+
+        chunk_rows = connection.execute(
+            "SELECT first_seen_batch, last_seen_batch FROM chunk_slices"
+        ).fetchall()
+        assert {row["first_seen_batch"] for row in chunk_rows} == {"batch-1"}
+        assert {row["last_seen_batch"] for row in chunk_rows} == {"batch-2"}
+
+        file_row = connection.execute(
+            "SELECT batch_id, file_sha FROM files"
+        ).fetchone()
+        assert file_row["batch_id"] == "batch-2"
+        assert file_row["file_sha"] == "sha:file"
+

@@ -20,6 +20,7 @@ from raggd.modules.manifest.helpers import manifest_settings_from_config
 from raggd.modules.manifest.migrator import MODULES_VERSION
 from raggd.modules.manifest.service import ManifestSnapshot
 
+from .handlers.base import HandlerResult
 from .hashing import DEFAULT_HASH_ALGORITHM, hash_file
 from .models import ParserManifestState, ParserRunMetrics, ParserRunRecord
 from .registry import (
@@ -28,6 +29,7 @@ from .registry import (
     ParserHandlerDescriptor,
     build_default_registry,
 )
+from .staging import FileStageOutcome, parser_transaction
 from .tokenizer import DEFAULT_ENCODER, TokenEncoder, get_token_encoder
 from .traversal import TraversalScope, TraversalService
 
@@ -272,6 +274,120 @@ class ParserService:
             fallbacks=metrics.fallbacks,
         )
         return plan
+
+    def stage_batch(
+        self,
+        *,
+        source: str,
+        batch_id: str,
+        plan: ParserBatchPlan,
+        results: Sequence[tuple[ParserPlanEntry, HandlerResult]],
+        batch_ref: str | None = None,
+        batch_generated_at: datetime | None = None,
+        batch_notes: str | None = None,
+    ) -> tuple[list[tuple[ParserPlanEntry, FileStageOutcome]], ParserRunMetrics]:
+        """Stage ``results`` for ``plan`` into the source database."""
+
+        if self._db is None:
+            raise ParserError(
+                "ParserService requires a DbLifecycleService to stage batches."
+            )
+
+        if not results:
+            return ([], plan.metrics.copy())
+
+        planned_entries = {entry: entry for entry in plan.entries}
+        handler_versions = dict(plan.handler_versions)
+
+        outcomes: list[tuple[ParserPlanEntry, FileStageOutcome]] = []
+        metrics = plan.metrics.copy()
+
+        with parser_transaction(
+            self._db,
+            source,
+            hash_algorithm=self._hash_algorithm,
+            now=self._now,
+        ) as transaction:
+            transaction.ensure_batch(
+                batch_id=batch_id,
+                ref=batch_ref,
+                generated_at=batch_generated_at,
+                notes=batch_notes,
+            )
+
+            seen_entries: set[ParserPlanEntry] = set()
+
+            for entry, result in results:
+                if entry not in planned_entries:
+                    raise ParserError(
+                        "Received handler result for entry not present in the plan: "
+                        f"{entry.relative_path.as_posix()}"
+                    )
+                if entry in seen_entries:
+                    raise ParserError(
+                        "Duplicate handler result provided for "
+                        f"{entry.relative_path.as_posix()}"
+                    )
+                seen_entries.add(entry)
+
+                raw_result_path = Path(result.file.path)
+                if raw_result_path.is_absolute():
+                    try:
+                        repo_path = raw_result_path.relative_to(plan.root)
+                    except ValueError as exc:
+                        raise ParserError(
+                            "Handler result path is outside the planned root: "
+                            f"{raw_result_path} (root {plan.root})"
+                        ) from exc
+                else:
+                    repo_path = raw_result_path
+
+                if repo_path != entry.relative_path:
+                    raise ParserError(
+                        "Handler result path mismatch for "
+                        f"{entry.relative_path.as_posix()} (got {repo_path})"
+                    )
+
+                language = result.file.language or entry.handler.name
+
+                handler_versions.setdefault(
+                    entry.handler.name, entry.handler.version
+                )
+
+                outcome = transaction.stage_file(
+                    batch_id=batch_id,
+                    repo_path=repo_path,
+                    language=language,
+                    file_sha=entry.file_hash,
+                    handler_name=entry.handler.name,
+                    handler_version=entry.handler.version,
+                    handler_versions=handler_versions,
+                    result=result,
+                    absolute_path=entry.absolute_path,
+                )
+
+                outcomes.append((entry, outcome))
+
+                metrics.chunks_emitted += outcome.chunks_inserted
+                metrics.chunks_reused += outcome.chunks_reused
+                if (
+                    outcome.symbols_written == 0
+                    and outcome.chunks_inserted == 0
+                ):
+                    metrics.files_reused += 1
+
+                self._logger.debug(
+                    "parser-stage-file",
+                    source=source,
+                    repo_path=entry.relative_path.as_posix(),
+                    handler=entry.handler.name,
+                    symbols_written=outcome.symbols_written,
+                    symbols_reused=outcome.symbols_reused,
+                    chunks_inserted=outcome.chunks_inserted,
+                    chunks_reused=outcome.chunks_reused,
+                )
+
+        return outcomes, metrics
 
     def build_run_record(
         self,

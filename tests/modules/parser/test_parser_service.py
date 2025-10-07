@@ -4,16 +4,25 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import sqlite3
 
 import pytest
 
 from raggd.core.config import AppConfig, ParserModuleSettings, WorkspaceSettings
 from raggd.core.paths import WorkspacePaths
+from raggd.modules.db import DbLifecycleService
 from raggd.modules import HealthStatus
 from raggd.modules.parser import (
     ParserBatchPlan,
     ParserModuleDisabledError,
+    ParserPlanEntry,
     ParserService,
+)
+from raggd.modules.parser.handlers.base import (
+    HandlerChunk,
+    HandlerFile,
+    HandlerResult,
+    HandlerSymbol,
 )
 from raggd.modules.parser.models import ParserRunMetrics
 from raggd.modules.parser.registry import (
@@ -92,6 +101,45 @@ def _make_registry(
         ),
     )
     return HandlerRegistry(descriptors=descriptors, settings=settings)
+
+
+def _build_handler_result(
+    entry: ParserPlanEntry,
+    *,
+    text: str,
+    token_count: int,
+) -> HandlerResult:
+    handler_file = HandlerFile(
+        path=entry.relative_path,
+        language=entry.handler.name,
+        metadata={"size_bytes": len(text)},
+    )
+
+    symbol = HandlerSymbol(
+        symbol_id="module:artifact",
+        name="artifact",
+        kind="module",
+        start_offset=0,
+        end_offset=len(text),
+        metadata={"start_line": 1, "end_line": 1},
+    )
+
+    chunk = HandlerChunk(
+        chunk_id=f"{entry.handler.name}:artifact:0:{len(text)}",
+        text=text,
+        token_count=token_count,
+        start_offset=0,
+        end_offset=len(text),
+        part_index=0,
+        parent_symbol_id=symbol.symbol_id,
+        metadata={"start_line": 1, "end_line": 1, "part_total": 1},
+    )
+
+    return HandlerResult(
+        file=handler_file,
+        symbols=(symbol,),
+        chunks=(chunk,),
+    )
 
 
 def test_plan_source_collects_entries(tmp_path: Path) -> None:
@@ -220,3 +268,136 @@ def test_record_run_updates_manifest_and_health(tmp_path: Path) -> None:
     assert report.summary == "completed"
     assert report.last_refresh_at == run.completed_at
     assert tuple(report.actions) == state.last_run_notes
+
+
+def test_stage_batch_persists_results(tmp_path: Path) -> None:
+    paths = _make_workspace(tmp_path)
+    config = _make_config(paths, "alpha")
+    settings = config.parser
+    registry = _make_registry(settings)
+    db_service = DbLifecycleService(workspace=paths)
+    service = ParserService(
+        workspace=paths,
+        config=config,
+        settings=settings,
+        registry=registry,
+        db_service=db_service,
+    )
+
+    root = paths.source_dir("alpha")
+    file_path = root / "sample.py"
+    content = "print('hello')\n"
+    file_path.write_text(content, encoding="utf-8")
+
+    plan = service.plan_source(source="alpha")
+    assert len(plan.entries) == 1
+    entry = plan.entries[0]
+
+    result = _build_handler_result(entry, text=content, token_count=3)
+
+    outcomes, metrics = service.stage_batch(
+        source="alpha",
+        batch_id="batch-1",
+        plan=plan,
+        results=((entry, result),),
+        batch_ref="ref-1",
+    )
+
+    assert len(outcomes) == 1
+    staged_entry, outcome = outcomes[0]
+    assert staged_entry == entry
+    assert outcome.symbols_written == 1
+    assert outcome.symbols_reused == 0
+    assert outcome.chunks_inserted == 1
+    assert outcome.chunks_reused == 0
+
+    assert metrics.chunks_emitted == 1
+    assert metrics.chunks_reused == 0
+    assert metrics.files_reused == 0
+
+    db_path = db_service.ensure("alpha")
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        file_row = connection.execute(
+            "SELECT repo_path, batch_id FROM files"
+        ).fetchone()
+        assert file_row["repo_path"] == entry.relative_path.as_posix()
+        assert file_row["batch_id"] == "batch-1"
+
+        chunk_row = connection.execute(
+            (
+                "SELECT handler_name, chunk_id, first_seen_batch, last_seen_batch "
+                "FROM chunk_slices"
+            )
+        ).fetchone()
+        assert chunk_row["handler_name"] == entry.handler.name
+        assert chunk_row["chunk_id"] == result.chunks[0].chunk_id
+        assert chunk_row["first_seen_batch"] == "batch-1"
+        assert chunk_row["last_seen_batch"] == "batch-1"
+
+
+def test_stage_batch_marks_reused_files(tmp_path: Path) -> None:
+    paths = _make_workspace(tmp_path)
+    config = _make_config(paths, "alpha")
+    settings = config.parser
+    registry = _make_registry(settings)
+    db_service = DbLifecycleService(workspace=paths)
+    service = ParserService(
+        workspace=paths,
+        config=config,
+        settings=settings,
+        registry=registry,
+        db_service=db_service,
+    )
+
+    root = paths.source_dir("alpha")
+    file_path = root / "sample.py"
+    content = "print('hello again')\n"
+    file_path.write_text(content, encoding="utf-8")
+
+    first_plan = service.plan_source(source="alpha", scope=(file_path,))
+    first_entry = first_plan.entries[0]
+    first_result = _build_handler_result(
+        first_entry,
+        text=content,
+        token_count=4,
+    )
+
+    service.stage_batch(
+        source="alpha",
+        batch_id="batch-1",
+        plan=first_plan,
+        results=((first_entry, first_result),),
+    )
+
+    second_plan = service.plan_source(source="alpha", scope=(file_path,))
+    second_entry = second_plan.entries[0]
+    second_result = _build_handler_result(
+        second_entry,
+        text=content,
+        token_count=4,
+    )
+
+    outcomes, metrics = service.stage_batch(
+        source="alpha",
+        batch_id="batch-2",
+        plan=second_plan,
+        results=((second_entry, second_result),),
+    )
+
+    assert metrics.files_reused == 1
+    assert metrics.chunks_emitted == 0
+    assert metrics.chunks_reused == len(second_result.chunks)
+
+    _, outcome = outcomes[0]
+    assert outcome.chunks_inserted == 0
+    assert outcome.chunks_reused == len(second_result.chunks)
+
+    db_path = db_service.ensure("alpha")
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        chunk_rows = connection.execute(
+            "SELECT first_seen_batch, last_seen_batch FROM chunk_slices"
+        ).fetchall()
+        assert {row["first_seen_batch"] for row in chunk_rows} == {"batch-1"}
+        assert {row["last_seen_batch"] for row in chunk_rows} == {"batch-2"}

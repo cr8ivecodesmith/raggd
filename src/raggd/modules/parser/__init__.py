@@ -57,6 +57,12 @@ from .traversal import (
     TraversalService,
 )
 
+
+from .staging import (
+    FileStageOutcome,
+    ParserPersistenceTransaction,
+    parser_transaction,
+)
 __all__ = [
     "DEFAULT_ENCODER",
     "DEFAULT_HASH_ALGORITHM",
@@ -93,6 +99,9 @@ __all__ = [
     "build_default_registry",
     "get_token_encoder",
     "recompose_chunk_slices",
+    "ParserPersistenceTransaction",
+    "FileStageOutcome",
+    "parser_transaction",
     "hash_file",
     "hash_stream",
     "hash_text",

@@ -93,7 +93,7 @@
 - [x] Build recomposition helpers (covers follow-up #2) so delegated child chunks reattach to parents for CLI and downstream consumers.
 - [x] Add unchanged-detection logic with tombstone handling to reuse batches when emitted slices/states match prior runs.
 - [x] Derive deterministic `chunk_key` values (batch id + handler namespace + path + offsets) and log overflow metadata for diagnostics.
-- [ ] Stage file/symbol/chunk CRUD inside `DbLifecycleService`-coordinated transactions, persisting delegated child slices under their namespaces with parent references.
+- [x] Stage file/symbol/chunk CRUD inside `DbLifecycleService`-coordinated transactions, persisting delegated child slices under their namespaces with parent references.
 - [ ] Formalize treating `chunk_slices` as the canonical artifact and enumerate the follow-up migration introducing a `chunk_assemblies` join table to anchor stable `chunk_id` values shared with vectors.
 
 ### Phase 6 — CLI subcommand behaviors
@@ -125,6 +125,16 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 04:35 PST
+**Summary**
+Wired `ParserService` to persist handler results through `parser_transaction`, capturing staging metrics and enforcing path alignment for planned entries.
+**Changes**
+- Added `ParserService.stage_batch` to wrap transactional staging, update reuse metrics, and emit structured staging logs.
+- Expanded parser service tests with handler result fixtures validating staged inserts and reuse outcomes, scoping traversal to target files to avoid workspace artifacts.
+- Marked the Phase 5 staging checklist item complete in preparation for formalizing chunk slice artifacts.
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser/test_parser_service.py tests/modules/parser/test_persistence.py -q`
+
 ### 2025-10-08 03:45 PST
 **Summary**
 Derived per-chunk keys from batch id, handler namespace, file path, and offsets so overflow diagnostics include stable identifiers, and wired persistence logging to emit structured overflow metadata.
