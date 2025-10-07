@@ -75,7 +75,7 @@
 - [x] Text handler: implement double-newline paragraph splits with indentation fallback, emit stable byte/line offsets, and collapse to a single chunk when heuristics fail.
 - [x] Markdown handler: combine a fast heading splitter with tree-sitter verification, attach intro text forward, delegate fenced code blocks (e.g., ```python```), retain front-matter + inline metadata, and stamp chunk offsets for recomposition.
 - [x] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, grouped class attributes, and emit overflow slices with parent linkage + metadata.
-- [ ] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, re-exports; honor configuration toggles for TS/TSX routing, split large classes into constructor/method slices, and route `.tsx`/`.jsx` segments into HTML delegation when enabled.
+- [x] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, re-exports; honor configuration toggles for TS/TSX routing, split large classes into constructor/method slices, and route `.tsx`/`.jsx` segments into HTML delegation when enabled.
 - [ ] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
 - [ ] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
 - [ ] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
@@ -118,6 +118,13 @@
 ### 2025-10-07 15:30 PST
 **Summary**
 WIP: Python handler landed for Phase 4 item 4.
+
+### 2025-10-07 02:26 PST
+**Summary**
+Completed JavaScript/TypeScript handler for Phase 4 substep with tree-sitter exports, class slicing, and JSX delegation.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run pytest --no-cov tests/modules/parser/test_handler_javascript.py` *(skipped: `tree_sitter_languages` optional dependency absent in sandbox)*
 **Changes**
 - Implemented the libcst-backed Python handler with docstring/metadata capture, module docstring chunking, and token-cap splitting plus depot fallback when dependencies are absent.
 - Registered the handler factory/export and added `tests/modules/parser/test_handler_python.py` covering dependency errors, symbol extraction, and overflow splitting heuristics.

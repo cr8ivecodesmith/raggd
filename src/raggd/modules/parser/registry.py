@@ -478,6 +478,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
             extensions=("js", "cjs", "mjs", "jsx"),
             shebangs=("node",),
             probe=import_dependency_probe("tree_sitter_languages"),
+            factory="raggd.modules.parser.handlers.javascript:JavaScriptHandler",
         ),
         ParserHandlerDescriptor(
             name="typescript",
@@ -485,6 +486,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
             display_name="TypeScript",
             extensions=("ts", "tsx", "cts", "mts"),
             probe=import_dependency_probe("tree_sitter_languages"),
+            factory="raggd.modules.parser.handlers.javascript:TypeScriptHandler",
         ),
         ParserHandlerDescriptor(
             name="html",

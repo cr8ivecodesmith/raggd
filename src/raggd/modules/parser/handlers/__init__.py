@@ -14,6 +14,7 @@ from .base import (
     ParseContext,
     ParserHandler,
 )
+from .javascript import JavaScriptHandler, TypeScriptHandler
 from .python import PythonHandler
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
@@ -32,6 +33,8 @@ __all__ = [
     "ParserHandlerFactory",
     "load_factory",
     "PythonHandler",
+    "JavaScriptHandler",
+    "TypeScriptHandler",
 ]
 
 
