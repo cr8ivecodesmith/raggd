@@ -285,7 +285,10 @@ class ParserService:
         batch_ref: str | None = None,
         batch_generated_at: datetime | None = None,
         batch_notes: str | None = None,
-    ) -> tuple[list[tuple[ParserPlanEntry, FileStageOutcome]], ParserRunMetrics]:
+    ) -> tuple[
+        list[tuple[ParserPlanEntry, FileStageOutcome]],
+        ParserRunMetrics,
+    ]:
         """Stage ``results`` for ``plan`` into the source database."""
 
         if self._db is None:
@@ -320,7 +323,7 @@ class ParserService:
             for entry, result in results:
                 if entry not in planned_entries:
                     raise ParserError(
-                        "Received handler result for entry not present in the plan: "
+                        "Result entry missing from plan: "
                         f"{entry.relative_path.as_posix()}"
                     )
                 if entry in seen_entries:

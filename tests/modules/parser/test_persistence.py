@@ -7,7 +7,12 @@ import sqlite3
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.db import DbLifecycleService
 from raggd.modules.parser.artifacts import ChunkSlice
-from raggd.modules.parser.handlers.base import HandlerChunk, HandlerFile, HandlerResult, HandlerSymbol
+from raggd.modules.parser.handlers.base import (
+    HandlerChunk,
+    HandlerFile,
+    HandlerResult,
+    HandlerSymbol,
+)
 from raggd.modules.parser.handlers.delegation import delegated_metadata
 from raggd.modules.parser.persistence import (
     ChunkSliceRepository,
@@ -71,7 +76,12 @@ def _build_markdown_delegate_result() -> tuple[HandlerResult, dict[str, str]]:
         end_offset=180,
         part_index=0,
         parent_symbol_id="heading-symbol",
-        metadata={"kind": "section", "start_line": 1, "end_line": 5, "part_total": 1},
+        metadata={
+            "kind": "section",
+            "start_line": 1,
+            "end_line": 5,
+            "part_total": 1,
+        },
     )
     delegate_metadata = delegated_metadata(
         delegate="python",
@@ -114,7 +124,9 @@ class RecordingLogger:
     def info(self, event: str, **kw: object) -> None:
         self.records.append((event, kw))
 
-    def bind(self, **kw: object) -> "RecordingLogger":  # pragma: no cover - parity with structlog
+    def bind(
+        self, **kw: object
+    ) -> "RecordingLogger":  # pragma: no cover - structlog parity
         return self
 
 
@@ -158,11 +170,14 @@ def test_chunk_write_pipeline_persists_delegate_slices(tmp_path: Path) -> None:
 
         connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (\n"
+                "    file_id, kind, symbol_path, start_line, end_line,\n"
+                "    symbol_sha, symbol_norm_sha, args_json, returns_json,\n"
+                "    imports_json, deps_out_json, docstring, summary, tokens,\n"
+                "    first_seen_batch, last_seen_batch\n"
+                ") VALUES (\n"
+                "    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?\n"
+                ")"
             ),
             (
                 file_id,
@@ -190,11 +205,14 @@ def test_chunk_write_pipeline_persists_delegate_slices(tmp_path: Path) -> None:
 
         connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (\n"
+                "    file_id, kind, symbol_path, start_line, end_line,\n"
+                "    symbol_sha, symbol_norm_sha, args_json, returns_json,\n"
+                "    imports_json, deps_out_json, docstring, summary, tokens,\n"
+                "    first_seen_batch, last_seen_batch\n"
+                ") VALUES (\n"
+                "    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?\n"
+                ")"
             ),
             (
                 file_id,
@@ -324,12 +342,17 @@ def test_chunk_write_pipeline_persists_delegate_slices(tmp_path: Path) -> None:
         assert section_slice.metadata["kind"] == "section"
         assert section_slice.overflow_is_truncated is False
         assert section_slice.created_at <= section_slice.updated_at
-        assert delegate_slice.metadata["delegate_parent_chunk"] == primary_chunk.chunk_id
+        assert (
+            delegate_slice.metadata["delegate_parent_chunk"]
+            == primary_chunk.chunk_id
+        )
         assert delegate_slice.parent_symbol_id == heading_symbol_id
         assert delegate_slice.symbol_id == inline_symbol_id
 
 
-def test_chunk_write_pipeline_reuses_rows_when_unchanged(tmp_path: Path) -> None:
+def test_chunk_write_pipeline_reuses_rows_when_unchanged(
+    tmp_path: Path,
+) -> None:
     paths = _make_workspace(tmp_path)
     db_service = DbLifecycleService(workspace=paths)
     db_path = db_service.ensure("alpha")
@@ -370,11 +393,14 @@ def test_chunk_write_pipeline_reuses_rows_when_unchanged(tmp_path: Path) -> None
 
         connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (\n"
+                "    file_id, kind, symbol_path, start_line, end_line,\n"
+                "    symbol_sha, symbol_norm_sha, args_json, returns_json,\n"
+                "    imports_json, deps_out_json, docstring, summary, tokens,\n"
+                "    first_seen_batch, last_seen_batch\n"
+                ") VALUES (\n"
+                "    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?\n"
+                ")"
             ),
             (
                 file_id,
@@ -441,7 +467,10 @@ def test_chunk_write_pipeline_reuses_rows_when_unchanged(tmp_path: Path) -> None
         assert len(inserted) == 1
 
         stored = connection.execute(
-            "SELECT batch_id, first_seen_batch, last_seen_batch FROM chunk_slices"
+            (
+                "SELECT batch_id, first_seen_batch, last_seen_batch\n"
+                "FROM chunk_slices"
+            )
         ).fetchone()
         assert stored["batch_id"] == "batch-1"
         assert stored["first_seen_batch"] == "batch-1"
@@ -468,7 +497,10 @@ def test_chunk_write_pipeline_reuses_rows_when_unchanged(tmp_path: Path) -> None
         assert reused == ()
 
         stored_after = connection.execute(
-            "SELECT batch_id, first_seen_batch, last_seen_batch FROM chunk_slices"
+            (
+                "SELECT batch_id, first_seen_batch, last_seen_batch\n"
+                "FROM chunk_slices"
+            )
         ).fetchone()
         assert stored_after["batch_id"] == "batch-1"
         assert stored_after["first_seen_batch"] == "batch-1"
@@ -569,9 +601,7 @@ def test_chunk_write_pipeline_logs_overflow_metadata(tmp_path: Path) -> None:
     assert logger.records
     event, payload = logger.records[0]
     assert event == "parser-chunk-overflow"
-    assert (
-        payload["chunk_key"] == "batch-1:text:docs/log.txt:0:90:0"
-    )
+    assert payload["chunk_key"] == "batch-1:text:docs/log.txt:0:90:0"
     assert payload["overflow_reason"] == "max_tokens"
     assert payload["overflow_is_truncated"] is True
     assert payload["handler"] == "text"
@@ -604,14 +634,18 @@ def test_parser_transaction_stages_delegated_chunks(tmp_path: Path) -> None:
     with sqlite3.connect(db_path) as connection:
         connection.row_factory = sqlite3.Row
         file_row = connection.execute(
-            "SELECT repo_path, file_sha, batch_id FROM files"
+            ("SELECT repo_path, file_sha, batch_id\nFROM files")
         ).fetchone()
         assert file_row["repo_path"] == "docs/readme.md"
         assert file_row["file_sha"] == "sha:file"
         assert file_row["batch_id"] == "batch-1"
 
         symbols = connection.execute(
-            "SELECT id, symbol_path, last_seen_batch FROM symbols ORDER BY symbol_path"
+            (
+                "SELECT id, symbol_path, last_seen_batch\n"
+                "FROM symbols\n"
+                "ORDER BY symbol_path"
+            )
         ).fetchall()
         assert [row["symbol_path"] for row in symbols] == [
             "heading-symbol",
@@ -621,9 +655,17 @@ def test_parser_transaction_stages_delegated_chunks(tmp_path: Path) -> None:
         symbol_ids = {row["symbol_path"]: row["id"] for row in symbols}
 
         chunk_rows = connection.execute(
-            "SELECT handler_name, symbol_id, parent_symbol_id, metadata_json FROM chunk_slices ORDER BY handler_name"
+            (
+                "SELECT handler_name, symbol_id, parent_symbol_id,\n"
+                "       metadata_json\n"
+                "FROM chunk_slices\n"
+                "ORDER BY handler_name"
+            )
         ).fetchall()
-        assert [row["handler_name"] for row in chunk_rows] == ["markdown", "python"]
+        assert [row["handler_name"] for row in chunk_rows] == [
+            "markdown",
+            "python",
+        ]
         assert chunk_rows[0]["symbol_id"] == symbol_ids["heading-symbol"]
         assert chunk_rows[0]["parent_symbol_id"] is None
         assert chunk_rows[1]["symbol_id"] == symbol_ids["inline-code-symbol"]

@@ -326,7 +326,8 @@ def test_stage_batch_persists_results(tmp_path: Path) -> None:
 
         chunk_row = connection.execute(
             (
-                "SELECT handler_name, chunk_id, first_seen_batch, last_seen_batch "
+                "SELECT handler_name, chunk_id,\n"
+                "       first_seen_batch, last_seen_batch\n"
                 "FROM chunk_slices"
             )
         ).fetchone()

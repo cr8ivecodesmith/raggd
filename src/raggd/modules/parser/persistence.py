@@ -125,7 +125,7 @@ class ChunkSliceRepository:
         batch_id: str,
         chunk_id: str,
     ) -> Sequence[sqlite3.Row]:
-        """Return slices for ``chunk_id`` within ``batch_id`` ordered by part."""
+        """Return ``chunk_id`` slices for ``batch_id`` ordered by part."""
 
         cursor = connection.execute(
             self._select_sql, {"batch_id": batch_id, "chunk_id": chunk_id}
@@ -139,7 +139,7 @@ class ChunkSliceRepository:
         batch_id: str,
         file_id: int,
     ) -> Sequence[sqlite3.Row]:
-        """Return slices for ``file_id`` within ``batch_id`` ordered by chunk and part."""
+        """Return ``file_id`` slices in ``batch_id`` ordered by chunk/part."""
 
         cursor = connection.execute(
             self._select_by_file_sql,
@@ -169,7 +169,7 @@ class ChunkSliceRepository:
         *,
         file_id: int,
     ) -> Sequence[sqlite3.Row]:
-        """Return all slices for ``file_id`` ordered by chunk, last seen, and part."""
+        """Return history slices for ``file_id`` ordered by chunk and part."""
 
         cursor = connection.execute(
             self._select_history_by_file_sql,
@@ -312,7 +312,9 @@ def _latest_rows_by_chunk(
         for entry in entries:
             part_index = int(entry["part_index"])
             current = parts.get(part_index)
-            if current is None or str(entry["updated_at"]) > str(current["updated_at"]):
+            if current is None or (
+                str(entry["updated_at"]) > str(current["updated_at"])
+            ):
                 parts[part_index] = entry
         latest[chunk_id] = [parts[index] for index in sorted(parts)]
     return latest
@@ -329,7 +331,9 @@ def _first_seen_for_chunk(
     return str(batch) if batch is not None else default
 
 
-def _row_signature_from_mapping(row: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
+def _row_signature_from_mapping(
+    row: Mapping[str, Any],
+) -> tuple[tuple[str, Any], ...]:
     signature: list[tuple[str, Any]] = []
     for key in sorted(_SIGNATURE_KEYS):
         value = row.get(key)
@@ -339,7 +343,9 @@ def _row_signature_from_mapping(row: Mapping[str, Any]) -> tuple[tuple[str, Any]
     return tuple(signature)
 
 
-def _row_signature_from_dataclass(row: ChunkSliceRow) -> tuple[tuple[str, Any], ...]:
+def _row_signature_from_dataclass(
+    row: ChunkSliceRow,
+) -> tuple[tuple[str, Any], ...]:
     params = row.to_params()
     return _row_signature_from_mapping(params)
 
@@ -545,8 +551,7 @@ class ChunkWritePipeline:
             overflow_reason = str(raw_reason)
 
         overflow_flag = bool(
-            metadata.get("overflow")
-            or metadata.get("overflow_is_truncated")
+            metadata.get("overflow") or metadata.get("overflow_is_truncated")
         )
 
         chunk_key = self._derive_chunk_key(
@@ -651,6 +656,4 @@ class ChunkWritePipeline:
         end_offset: int,
         part_index: int,
     ) -> str:
-        return (
-            f"{batch_id}:{handler}:{file_path}:{start_offset}:{end_offset}:{part_index}"
-        )
+        return f"{batch_id}:{handler}:{file_path}:{start_offset}:{end_offset}:{part_index}"

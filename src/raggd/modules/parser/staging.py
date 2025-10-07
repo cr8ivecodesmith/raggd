@@ -67,7 +67,9 @@ def _normalize_text(value: str) -> str:
     return value.replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
-def _chunk_groups(chunks: Sequence[HandlerChunk]) -> Mapping[str, list[HandlerChunk]]:
+def _chunk_groups(
+    chunks: Sequence[HandlerChunk],
+) -> Mapping[str, list[HandlerChunk]]:
     grouped: dict[str, list[HandlerChunk]] = {}
     for chunk in chunks:
         symbol_key = chunk.parent_symbol_id
@@ -99,16 +101,27 @@ class _FileRepository:
 
     def __init__(self) -> None:
         self._select_sql = (
-            "SELECT id, batch_id, repo_path, lang, file_sha, mtime_ns, size_bytes "
-            "FROM files WHERE repo_path = :repo_path"
+            "SELECT id, batch_id, repo_path, lang, file_sha,\n"
+            "       mtime_ns, size_bytes\n"
+            "FROM files\n"
+            "WHERE repo_path = :repo_path"
         )
         self._insert_sql = (
-            "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, size_bytes) "
-            "VALUES (:batch_id, :repo_path, :lang, :file_sha, :mtime_ns, :size_bytes)"
+            "INSERT INTO files (\n"
+            "    batch_id, repo_path, lang, file_sha, mtime_ns, size_bytes\n"
+            ") VALUES (\n"
+            "    :batch_id, :repo_path, :lang, :file_sha,\n"
+            "    :mtime_ns, :size_bytes\n"
+            ")"
         )
         self._update_sql = (
-            "UPDATE files SET batch_id = :batch_id, lang = :lang, file_sha = :file_sha, "
-            "mtime_ns = :mtime_ns, size_bytes = :size_bytes WHERE id = :id"
+            "UPDATE files\n"
+            "SET batch_id = :batch_id,\n"
+            "    lang = :lang,\n"
+            "    file_sha = :file_sha,\n"
+            "    mtime_ns = :mtime_ns,\n"
+            "    size_bytes = :size_bytes\n"
+            "WHERE id = :id"
         )
 
     def upsert(
@@ -147,25 +160,42 @@ class _SymbolRepository:
     def __init__(self, *, hash_algorithm: str = DEFAULT_HASH_ALGORITHM) -> None:
         self._hash_algorithm = hash_algorithm
         self._select_sql = (
-            "SELECT id, symbol_path, kind, start_line, end_line, symbol_sha, "
-            "symbol_norm_sha, docstring, tokens, first_seen_batch, last_seen_batch "
-            "FROM symbols WHERE file_id = :file_id"
+            "SELECT id, symbol_path, kind, start_line, end_line, symbol_sha,\n"
+            "       symbol_norm_sha, docstring, tokens, first_seen_batch,\n"
+            "       last_seen_batch\n"
+            "FROM symbols\n"
+            "WHERE file_id = :file_id"
         )
         self._insert_sql = (
-            "INSERT INTO symbols (file_id, kind, symbol_path, start_line, end_line, "
-            "symbol_sha, symbol_norm_sha, args_json, returns_json, imports_json, "
-            "deps_out_json, docstring, summary, tokens, first_seen_batch, last_seen_batch) "
-            "VALUES (:file_id, :kind, :symbol_path, :start_line, :end_line, :symbol_sha, "
-            ":symbol_norm_sha, :args_json, :returns_json, :imports_json, :deps_out_json, "
-            ":docstring, :summary, :tokens, :first_seen_batch, :last_seen_batch)"
+            "INSERT INTO symbols (\n"
+            "    file_id, kind, symbol_path, start_line, end_line,\n"
+            "    symbol_sha, symbol_norm_sha, args_json, returns_json,\n"
+            "    imports_json, deps_out_json, docstring, summary, tokens,\n"
+            "    first_seen_batch, last_seen_batch\n"
+            ") VALUES (\n"
+            "    :file_id, :kind, :symbol_path, :start_line, :end_line,\n"
+            "    :symbol_sha, :symbol_norm_sha, :args_json,\n"
+            "    :returns_json, :imports_json, :deps_out_json,\n"
+            "    :docstring, :summary, :tokens,\n"
+            "    :first_seen_batch, :last_seen_batch\n"
+            ")"
         )
         self._update_sql = (
-            "UPDATE symbols SET kind = :kind, start_line = :start_line, end_line = :end_line, "
-            "symbol_sha = :symbol_sha, symbol_norm_sha = :symbol_norm_sha, docstring = :docstring, "
-            "tokens = :tokens, last_seen_batch = :last_seen_batch WHERE id = :id"
+            "UPDATE symbols\n"
+            "SET kind = :kind,\n"
+            "    start_line = :start_line,\n"
+            "    end_line = :end_line,\n"
+            "    symbol_sha = :symbol_sha,\n"
+            "    symbol_norm_sha = :symbol_norm_sha,\n"
+            "    docstring = :docstring,\n"
+            "    tokens = :tokens,\n"
+            "    last_seen_batch = :last_seen_batch\n"
+            "WHERE id = :id"
         )
         self._touch_sql = (
-            "UPDATE symbols SET last_seen_batch = :last_seen_batch WHERE id = :id"
+            "UPDATE symbols\n"
+            "SET last_seen_batch = :last_seen_batch\n"
+            "WHERE id = :id"
         )
 
     def persist(
@@ -294,7 +324,9 @@ class _SymbolRepository:
             start = _coerce_int(metadata.get("start_line"))
             end = _coerce_int(metadata.get("end_line"))
             if start is not None:
-                start_line = start if start_line is None else min(start_line, start)
+                start_line = (
+                    start if start_line is None else min(start_line, start)
+                )
             if end is not None:
                 end_line = end if end_line is None else max(end_line, end)
         meta = symbol.metadata or {}

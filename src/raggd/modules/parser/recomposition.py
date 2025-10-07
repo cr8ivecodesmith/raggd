@@ -137,7 +137,8 @@ def recompose_chunk_slices(
             continue
         if parent_id not in chunk_map:
             raise ValueError(
-                f"Delegate chunk {chunk.chunk_id!r} references missing parent {parent_id!r}"
+                "Delegate chunk "
+                f"{chunk.chunk_id!r} references missing parent {parent_id!r}"
             )
         children_map[parent_id].append(chunk)
 
@@ -149,10 +150,15 @@ def recompose_chunk_slices(
         sorted_children = tuple(
             sorted(children_map[parent_id], key=_chunk_sort_key)
         )
-        chunk_map[parent_id] = replace(parent, delegate_children=sorted_children)
+        chunk_map[parent_id] = replace(
+            parent,
+            delegate_children=sorted_children,
+        )
 
     top_level = [
-        chunk for chunk in chunk_map.values() if chunk.delegate_parent_chunk_id is None
+        chunk
+        for chunk in chunk_map.values()
+        if chunk.delegate_parent_chunk_id is None
     ]
     top_level.sort(key=_chunk_sort_key)
     return tuple(top_level)
@@ -257,7 +263,9 @@ def _parse_metadata(raw: Any) -> dict[str, Any]:
     return dict(raw)
 
 
-def _freeze_mapping(data: Mapping[str, Any] | dict[str, Any]) -> Mapping[str, Any]:
+def _freeze_mapping(
+    data: Mapping[str, Any] | dict[str, Any],
+) -> Mapping[str, Any]:
     if not data:
         return MappingProxyType({})
     return MappingProxyType(dict(data))

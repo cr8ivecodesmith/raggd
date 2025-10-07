@@ -82,11 +82,14 @@ def test_recompose_attaches_delegated_children(tmp_path: Path) -> None:
 
         connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (\n"
+                "    file_id, kind, symbol_path, start_line, end_line,\n"
+                "    symbol_sha, symbol_norm_sha, args_json, returns_json,\n"
+                "    imports_json, deps_out_json, docstring, summary, tokens,\n"
+                "    first_seen_batch, last_seen_batch\n"
+                ") VALUES (\n"
+                "    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?\n"
+                ")"
             ),
             (
                 file_id,
@@ -114,11 +117,14 @@ def test_recompose_attaches_delegated_children(tmp_path: Path) -> None:
 
         connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (\n"
+                "    file_id, kind, symbol_path, start_line, end_line,\n"
+                "    symbol_sha, symbol_norm_sha, args_json, returns_json,\n"
+                "    imports_json, deps_out_json, docstring, summary, tokens,\n"
+                "    first_seen_batch, last_seen_batch\n"
+                ") VALUES (\n"
+                "    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?\n"
+                ")"
             ),
             (
                 file_id,

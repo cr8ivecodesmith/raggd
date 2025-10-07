@@ -56,7 +56,8 @@ def _parse_metadata(value: Any) -> Mapping[str, Any]:
             return MappingProxyType({})
         try:
             payload = json.loads(stripped)
-        except json.JSONDecodeError as exc:  # pragma: no cover - defensive guard
+        except json.JSONDecodeError as exc:  # pragma: no cover
+            # defensive guard
             raise ValueError(f"Invalid chunk metadata JSON: {value!r}") from exc
         if isinstance(payload, Mapping):
             return MappingProxyType(dict(payload))
@@ -76,7 +77,9 @@ def _parse_datetime(value: Any, *, field: str) -> datetime:
             raise ValueError(
                 f"Chunk slice {field} must be ISO-8601, got {value!r}"
             ) from exc
-    raise TypeError(f"Chunk slice {field} must be str or datetime, got {type(value)}")
+    raise TypeError(
+        f"Chunk slice {field} must be str or datetime; got {type(value)}"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +140,9 @@ class ChunkSlice:
                 else str(row["content_norm_hash"])
             ),
             content_text=str(row["content_text"]),
-            overflow_is_truncated=_coerce_bool(row.get("overflow_is_truncated")),
+            overflow_is_truncated=_coerce_bool(
+                row.get("overflow_is_truncated")
+            ),
             overflow_reason=(
                 None
                 if row.get("overflow_reason") is None
@@ -151,7 +156,7 @@ class ChunkSlice:
         )
 
     def to_mapping(self) -> Mapping[str, Any]:
-        """Return a lightweight mapping compatible with recomposition helpers."""
+        """Return a mapping compatible with recomposition helpers."""
 
         payload = dict(self.metadata)
         metadata_json = None

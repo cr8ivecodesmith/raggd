@@ -125,6 +125,15 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 06:25 PST
+**Summary**
+Cleaned up Ruff regressions from the staging/canonical-slice work without adding new suppressions.
+**Changes**
+- Wrapped long docstrings, SQL literals, and assertions across parser persistence/staging modules and related tests to honor the 80-column limit.
+- Shortened parser service error messaging and reflowed helper signatures to keep complexity handling intact without resorting to `noqa` hints.
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`
+
 ### 2025-10-08 05:55 PST
 **Summary**
 Formalized chunk slices as the canonical parser artifact via a domain dataclass/repository API and documented the future `chunk_assemblies` join that will back shared vector IDs.
