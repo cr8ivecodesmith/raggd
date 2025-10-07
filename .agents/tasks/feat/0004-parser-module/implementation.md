@@ -76,7 +76,7 @@
 - [x] Markdown handler: combine a fast heading splitter with tree-sitter verification, attach intro text forward, delegate fenced code blocks (e.g., ```python```), retain front-matter + inline metadata, and stamp chunk offsets for recomposition.
 - [x] Python handler: use `libcst` to capture modules/classes/functions, decorators, docstrings, grouped class attributes, and emit overflow slices with parent linkage + metadata.
 - [x] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, re-exports; honor configuration toggles for TS/TSX routing, split large classes into constructor/method slices, and route `.tsx`/`.jsx` segments into HTML delegation when enabled.
-- [ ] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
+- [x] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
 - [ ] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
 - [ ] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
 
@@ -115,6 +115,17 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 18:45 PST
+**Summary**
+Completed HTML handler for Phase 4 item 5 with tree-sitter-backed structural grouping and delegation.
+**Changes**
+- Added `HTMLHandler` with structural element chunking, inline script/style delegation, and normalized offset metadata.
+- Registered the handler factory/export in the parser registry for `.html`/`.htm` sources.
+- Introduced `tests/modules/parser/test_handler_html.py` covering structural chunks and delegated inline blocks.
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser/test_handler_html.py` *(skipped: `tree_sitter_languages` optional dependency absent in sandbox)*.
+**Notes**
+- CSS handler and shared delegation utilities remain open for Phase 4 completion.
 ### 2025-10-07 15:30 PST
 **Summary**
 WIP: Python handler landed for Phase 4 item 4.

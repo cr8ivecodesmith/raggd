@@ -494,6 +494,7 @@ def build_default_registry(settings: ParserModuleSettings) -> HandlerRegistry:
             display_name="HTML",
             extensions=("html", "htm"),
             probe=import_dependency_probe("tree_sitter_languages"),
+            factory="raggd.modules.parser.handlers.html:HTMLHandler",
         ),
         ParserHandlerDescriptor(
             name="css",

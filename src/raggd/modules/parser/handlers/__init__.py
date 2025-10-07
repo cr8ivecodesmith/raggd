@@ -14,6 +14,7 @@ from .base import (
     ParseContext,
     ParserHandler,
 )
+from .html import HTMLHandler
 from .javascript import JavaScriptHandler, TypeScriptHandler
 from .python import PythonHandler
 
@@ -33,6 +34,7 @@ __all__ = [
     "ParserHandlerFactory",
     "load_factory",
     "PythonHandler",
+    "HTMLHandler",
     "JavaScriptHandler",
     "TypeScriptHandler",
 ]
