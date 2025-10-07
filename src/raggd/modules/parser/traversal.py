@@ -186,37 +186,77 @@ class TraversalService:
             if spec is not None:
                 yield spec
 
-    def _is_ignored(  # noqa: C901 - gitignore resolution branches heavily
+    def _is_ignored(
         self,
         path: Path,
         *,
         stack: Sequence[PathSpec] | None = None,
         is_dir: bool | None = None,
     ) -> bool:
+        absolute = self._absolute_path(path)
+        if absolute is None:
+            return False
+
+        relative = self._relative_to_root(absolute)
+        if relative is None:
+            return True
+
+        resolved_is_dir = self._resolve_is_dir_flag(absolute, is_dir)
+        candidate = self._candidate_for_ignore(relative, resolved_is_dir)
+
+        if self._matches_workspace(candidate):
+            return True
+
+        specs = self._resolve_gitignore_specs(absolute.parent, stack=stack)
+        return self._matches_gitignore(candidate, specs)
+
+    def _absolute_path(self, path: Path) -> Path | None:
         if not path.is_absolute():
             path = path.resolve()
-        if not path.exists() and not path.is_symlink():
-            return False
+        if path.exists() or path.is_symlink():
+            return path
+        return None
+
+    def _relative_to_root(self, path: Path) -> Path | None:
         try:
-            relative = path.relative_to(self._root)
+            return path.relative_to(self._root)
         except ValueError:
-            return True
+            return None
+
+    def _resolve_is_dir_flag(
+        self,
+        path: Path,
+        provided: bool | None,
+    ) -> bool:
+        if provided is not None:
+            return provided
+        try:
+            return path.is_dir()
+        except OSError:
+            return False
+
+    @staticmethod
+    def _candidate_for_ignore(relative: Path, is_dir: bool) -> str:
         candidate = relative.as_posix()
-        if is_dir is None:
-            try:
-                is_dir = path.is_dir()
-            except OSError:
-                is_dir = False
-        if is_dir:
-            candidate = f"{candidate}/"
+        return f"{candidate}/" if is_dir else candidate
 
-        if self._workspace_spec is not None:
-            if self._workspace_spec.match_file(candidate):
-                return True
+    def _matches_workspace(self, candidate: str) -> bool:
+        if self._workspace_spec is None:
+            return False
+        return self._workspace_spec.match_file(candidate)
 
-        specs = stack or tuple(
-            self._ancestors_specs(path.parent, include_self=True)
-        )
+    def _resolve_gitignore_specs(
+        self,
+        parent: Path,
+        *,
+        stack: Sequence[PathSpec] | None,
+    ) -> Sequence[PathSpec]:
+        if stack is not None:
+            return stack
+        return tuple(self._ancestors_specs(parent, include_self=True))
+
+    @staticmethod
+    def _matches_gitignore(candidate: str, specs: Sequence[PathSpec]) -> bool:
         for spec in specs:
             if spec.match_file(candidate):
                 return True

@@ -81,7 +81,7 @@
 - [x] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
 - [x] Reduce `register_checkhealth_command` complexity below C901 by extracting Typer wiring helpers in `src/raggd/cli/checkhealth.py`.
 - [x] Reduce nested `checkhealth_command` complexity below C901 with focused CLI flow helpers and validation utilities.
-- [ ] Break down `_is_ignored` traversal logic in `src/raggd/modules/parser/traversal.py` so gitignore resolution passes Ruff C901 without `noqa`.
+- [x] Break down `_is_ignored` traversal logic in `src/raggd/modules/parser/traversal.py` so gitignore resolution passes Ruff C901 without `noqa`.
 - [ ] Simplify HTML `_attributes` extraction to keep branching under the C901 threshold while preserving metadata fidelity.
 - [ ] Refactor JavaScript `_handle_export` to delegate per-export form handling and eliminate the existing C901 suppression.
 - [ ] Split JavaScript `_handle_class` into targeted helpers (heritage, members, slices) so the main visitor remains under the C901 cap.
@@ -123,6 +123,14 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 22:40 PST
+**Summary**
+Refactored traversal ignore logic by extracting path normalization, workspace matching, and gitignore spec helpers so `_is_ignored` no longer requires a C901 suppression.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run ruff check src/raggd/modules/parser/traversal.py`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run pytest --no-cov tests/modules/parser/test_traversal.py -q`
+
 ### 2025-10-07 21:05 PST
 **Summary**
 Refactored `register_checkhealth_command` by extracting workspace/config setup, hook evaluation, and persistence helpers so the Typer wiring meets the new Phase 4 complexity target without `noqa: C901` suppressions.
