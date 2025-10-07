@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 import sqlite3
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from .handlers.base import HandlerChunk, HandlerResult
 from .hashing import DEFAULT_HASH_ALGORITHM, hash_text
 from .sql import load_sql
+from raggd.core.logging import Logger, get_logger
 
 __all__ = [
     "ChunkSliceRow",
@@ -336,10 +338,15 @@ class ChunkWritePipeline:
         repository: ChunkSliceRepository,
         hash_algorithm: str = DEFAULT_HASH_ALGORITHM,
         now: Callable[[], datetime] | None = None,
+        logger: Logger | None = None,
     ) -> None:
         self._repository = repository
         self._hash_algorithm = hash_algorithm
         self._now = now or _default_now
+        self._logger = logger or get_logger(
+            __name__,
+            component="parser-persistence",
+        )
 
     def persist_chunks(
         self,
@@ -376,6 +383,8 @@ class ChunkWritePipeline:
         inserted_rows: list[ChunkSliceRow] = []
         reused_chunk_ids: list[str] = []
 
+        file_path = self._normalize_path(result.file.path)
+
         for chunk_id, parts in grouped_chunks.items():
             existing_history = history_by_chunk.get(chunk_id, ())
             first_seen_for_chunk = _first_seen_for_chunk(
@@ -394,6 +403,7 @@ class ChunkWritePipeline:
                 first_seen_batch=first_seen_for_chunk,
                 last_seen_batch=configured_last_seen,
                 timestamp=timestamp,
+                file_path=file_path,
             )
 
             latest_rows = latest_by_chunk.get(chunk_id)
@@ -444,6 +454,7 @@ class ChunkWritePipeline:
         first_seen_batch: str,
         last_seen_batch: str,
         timestamp: datetime,
+        file_path: str,
     ) -> list[ChunkSliceRow]:
         rows: list[ChunkSliceRow] = []
         for chunk in parts:
@@ -464,6 +475,7 @@ class ChunkWritePipeline:
                 first_seen_batch=first_seen_batch,
                 last_seen_batch=last_seen_batch,
                 timestamp=timestamp,
+                file_path=file_path,
             )
             rows.append(row)
         return rows
@@ -480,6 +492,7 @@ class ChunkWritePipeline:
         first_seen_batch: str,
         last_seen_batch: str,
         timestamp: datetime,
+        file_path: str,
     ) -> ChunkSliceRow:
         token_count = chunk.token_count
         if token_count is None:
@@ -508,6 +521,15 @@ class ChunkWritePipeline:
             or metadata.get("overflow_is_truncated")
         )
 
+        chunk_key = self._derive_chunk_key(
+            batch_id=batch_id,
+            handler=chunk_handler,
+            file_path=file_path,
+            start_offset=chunk.start_offset,
+            end_offset=chunk.end_offset,
+            part_index=chunk.part_index,
+        )
+
         metadata_json = _metadata_json(metadata)
 
         content_hash = hash_text(
@@ -524,7 +546,7 @@ class ChunkWritePipeline:
             extra=(chunk.chunk_id, chunk_handler),
         )
 
-        return ChunkSliceRow(
+        row = ChunkSliceRow(
             batch_id=batch_id,
             file_id=file_id,
             symbol_id=symbol_id,
@@ -551,6 +573,23 @@ class ChunkWritePipeline:
             last_seen_batch=last_seen_batch,
         )
 
+        if overflow_flag or overflow_reason:
+            self._logger.info(
+                "parser-chunk-overflow",
+                chunk_key=chunk_key,
+                handler=chunk_handler,
+                file_path=file_path,
+                start_offset=chunk.start_offset,
+                end_offset=chunk.end_offset,
+                part_index=chunk.part_index,
+                part_total=part_total,
+                token_count=token_count,
+                overflow_is_truncated=overflow_flag,
+                overflow_reason=overflow_reason,
+            )
+
+        return row
+
     @staticmethod
     def _resolve_handler_version(
         chunk_handler: str,
@@ -566,4 +605,24 @@ class ChunkWritePipeline:
             return handler_version
         raise KeyError(
             f"Missing handler version for delegate {chunk_handler!r}"
+        )
+
+    @staticmethod
+    def _normalize_path(path: Path | str) -> str:
+        if isinstance(path, Path):
+            return path.as_posix()
+        return str(path).replace("\\", "/")
+
+    @staticmethod
+    def _derive_chunk_key(
+        *,
+        batch_id: str,
+        handler: str,
+        file_path: str,
+        start_offset: int,
+        end_offset: int,
+        part_index: int,
+    ) -> str:
+        return (
+            f"{batch_id}:{handler}:{file_path}:{start_offset}:{end_offset}:{part_index}"
         )

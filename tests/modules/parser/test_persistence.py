@@ -37,6 +37,17 @@ def _make_workspace(tmp_path: Path) -> WorkspacePaths:
     )
 
 
+class RecordingLogger:
+    def __init__(self) -> None:
+        self.records: list[tuple[str, dict[str, object]]] = []
+
+    def info(self, event: str, **kw: object) -> None:
+        self.records.append((event, kw))
+
+    def bind(self, **kw: object) -> "RecordingLogger":  # pragma: no cover - parity with structlog
+        return self
+
+
 def test_chunk_write_pipeline_persists_delegate_slices(tmp_path: Path) -> None:
     paths = _make_workspace(tmp_path)
     db_service = DbLifecycleService(workspace=paths)
@@ -392,3 +403,90 @@ def test_chunk_write_pipeline_reuses_rows_when_unchanged(tmp_path: Path) -> None
             file_id=file_id,
         )
         assert tombstoned == ()
+
+
+def test_chunk_write_pipeline_logs_overflow_metadata(tmp_path: Path) -> None:
+    paths = _make_workspace(tmp_path)
+    db_service = DbLifecycleService(workspace=paths)
+    db_path = db_service.ensure("alpha")
+
+    repository = ChunkSliceRepository()
+    logger = RecordingLogger()
+    pipeline = ChunkWritePipeline(repository=repository, logger=logger)
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute(
+            (
+                "INSERT INTO batches (id, ref, generated_at, notes) "
+                "VALUES (?, ?, ?, ?)"
+            ),
+            ("batch-1", None, now, None),
+        )
+        connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                "batch-1",
+                "docs/log.txt",
+                "text",
+                "sha:file",
+                0,
+                90,
+            ),
+        )
+        file_id = connection.execute(
+            "SELECT id FROM files WHERE repo_path = ?",
+            ("docs/log.txt",),
+        ).fetchone()[0]
+
+        handler_file = HandlerFile(
+            path=Path("docs/log.txt"),
+            language="text",
+        )
+
+        overflow_chunk = HandlerChunk(
+            chunk_id="text:chunk:0:90:0",
+            text="a" * 90,
+            token_count=30,
+            start_offset=0,
+            end_offset=90,
+            part_index=0,
+            metadata={
+                "overflow": True,
+                "overflow_reason": "max_tokens",
+                "part_total": 2,
+                "start_line": 1,
+                "end_line": 10,
+            },
+        )
+
+        result = HandlerResult(
+            file=handler_file,
+            chunks=(overflow_chunk,),
+        )
+
+        pipeline.persist_chunks(
+            connection=connection,
+            batch_id="batch-1",
+            file_id=file_id,
+            handler_name="text",
+            handler_version="1.0.0",
+            result=result,
+            handler_versions={"text": "1.0.0"},
+            symbol_ids={},
+        )
+
+    assert logger.records
+    event, payload = logger.records[0]
+    assert event == "parser-chunk-overflow"
+    assert (
+        payload["chunk_key"] == "batch-1:text:docs/log.txt:0:90:0"
+    )
+    assert payload["overflow_reason"] == "max_tokens"
+    assert payload["overflow_is_truncated"] is True
+    assert payload["handler"] == "text"
