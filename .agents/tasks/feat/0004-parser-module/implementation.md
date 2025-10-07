@@ -85,7 +85,7 @@
 - [x] Simplify HTML `_attributes` extraction to keep branching under the C901 threshold while preserving metadata fidelity.
 - [x] Refactor JavaScript `_handle_export` to delegate per-export form handling and eliminate the existing C901 suppression.
 - [x] Split JavaScript `_handle_class` into targeted helpers (heritage, members, slices) so the main visitor remains under the C901 cap.
-- [ ] Restructure Markdown `parse` orchestration to reuse shared utilities and bring its complexity within C901 guidance.
+- [x] Restructure Markdown `parse` orchestration to reuse shared utilities and bring its complexity within C901 guidance.
 - [ ] Decompose Python handler `parse` into composable passes (dependency checks, module/class/function traversal, overflow handling) to retire the `noqa: C901`.
 
 ### Phase 5 — Persistence & recomposition support
@@ -123,6 +123,14 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 19:47 PST
+**Summary**
+Refactored Markdown handler `parse` orchestration into helper passes to clear the C901 suppression while keeping chunking/symbol semantics intact.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run ruff check src/raggd/modules/parser/handlers/markdown.py`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run pytest --no-cov tests/modules/parser/test_handler_markdown.py -q`
+
 ### 2025-10-08 00:25 PST
 **Summary**
 Split JavaScript class handling into helper routines for metadata, member partitioning, and field chunk emission so `_handle_class` no longer requires a C901 suppression.

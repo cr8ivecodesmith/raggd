@@ -82,7 +82,7 @@ class MarkdownHandler(ParserHandler):
 
         return context.cache.get(cache_key, _factory)
 
-    def parse(  # noqa: C901 - markdown handler covers many cases
+    def parse(
         self,
         *,
         path: Path,
@@ -90,8 +90,60 @@ class MarkdownHandler(ParserHandler):
     ) -> HandlerResult:
         logger = context.scoped_logger(self.name)
 
+        raw_bytes, failure = self._read_source(path=path, logger=logger)
+        if failure is not None:
+            return failure
+
+        checksum = hashlib.sha256(raw_bytes).hexdigest()
+        text, failure = self._decode_text(
+            raw=raw_bytes,
+            path=path,
+            checksum=checksum,
+            logger=logger,
+        )
+        if failure is not None:
+            return failure
+
+        file_meta = self._build_file_metadata(
+            path=path,
+            checksum=checksum,
+            raw=raw_bytes,
+            text=text,
+        )
+
+        if not text:
+            return HandlerResult(file=file_meta)
+
+        front_matter, body_start, file_meta = self._apply_front_matter(
+            file_meta=file_meta,
+            text=text,
+        )
+
+        byte_offsets = self._byte_offsets(text)
+        line_starts = self._line_starts(text)
+        warnings = self._collect_warnings(text)
+        sections = self._build_sections(text, body_start=body_start)
+
+        return self._build_result(
+            file_meta=file_meta,
+            text=text,
+            sections=sections,
+            front_matter=front_matter,
+            body_start=body_start,
+            context=context,
+            byte_offsets=byte_offsets,
+            line_starts=line_starts,
+            warnings=warnings,
+        )
+
+    def _read_source(
+        self,
+        *,
+        path: Path,
+        logger,
+    ) -> tuple[bytes | None, HandlerResult | None]:
         try:
-            raw = path.read_bytes()
+            return path.read_bytes(), None
         except OSError as exc:  # pragma: no cover - filesystem failure edge
             logger.error(
                 "Failed to read markdown file", path=str(path), error=str(exc)
@@ -101,15 +153,21 @@ class MarkdownHandler(ParserHandler):
                 language=self.name,
                 encoding="utf-8",
             )
-            return HandlerResult.empty(
+            return None, HandlerResult.empty(
                 file=file_meta,
                 errors=(f"Failed to read file: {exc}",),
             )
 
-        checksum = hashlib.sha256(raw).hexdigest()
-
+    def _decode_text(
+        self,
+        *,
+        raw: bytes,
+        path: Path,
+        checksum: str,
+        logger,
+    ) -> tuple[str | None, HandlerResult | None]:
         try:
-            text = raw.decode("utf-8")
+            return raw.decode("utf-8"), None
         except UnicodeDecodeError as exc:
             logger.warning(
                 "UTF-8 decode error, skipping markdown handler",
@@ -122,7 +180,7 @@ class MarkdownHandler(ParserHandler):
                 encoding="utf-8",
                 checksum=checksum,
             )
-            return HandlerResult.empty(
+            return None, HandlerResult.empty(
                 file=file_meta,
                 errors=(
                     "File is not valid UTF-8; configure a specialized handler "
@@ -130,7 +188,15 @@ class MarkdownHandler(ParserHandler):
                 ),
             )
 
-        file_meta = HandlerFile(
+    def _build_file_metadata(
+        self,
+        *,
+        path: Path,
+        checksum: str,
+        raw: bytes,
+        text: str,
+    ) -> HandlerFile:
+        return HandlerFile(
             path=path,
             language=self.name,
             encoding="utf-8",
@@ -141,86 +207,75 @@ class MarkdownHandler(ParserHandler):
             },
         )
 
-        if not text:
-            return HandlerResult(file=file_meta)
-
+    def _apply_front_matter(
+        self,
+        *,
+        file_meta: HandlerFile,
+        text: str,
+    ) -> tuple[str | None, int, HandlerFile]:
         front_matter, body_start = self._extract_front_matter(text)
-        if front_matter is not None:
-            meta = dict(file_meta.metadata)
-            meta["front_matter"] = front_matter
-            file_meta = HandlerFile(
-                path=file_meta.path,
-                language=file_meta.language,
-                encoding=file_meta.encoding,
-                checksum=file_meta.checksum,
-                metadata=meta,
-            )
+        if front_matter is None:
+            return None, body_start, file_meta
 
-        byte_offsets = self._byte_offsets(text)
-        line_starts = self._line_starts(text)
+        metadata = dict(file_meta.metadata)
+        metadata["front_matter"] = front_matter
+        updated_file = HandlerFile(
+            path=file_meta.path,
+            language=file_meta.language,
+            encoding=file_meta.encoding,
+            checksum=file_meta.checksum,
+            metadata=metadata,
+        )
+        return front_matter, body_start, updated_file
 
-        warnings: list[str] = []
-        if self._parser is not None:
-            parse_ok, parse_warning = self._verify_with_tree_sitter(text)
-            if not parse_ok and parse_warning:
-                warnings.append(parse_warning)
+    def _collect_warnings(self, text: str) -> list[str]:
+        if self._parser is None:
+            return []
+        parse_ok, parse_warning = self._verify_with_tree_sitter(text)
+        if not parse_ok and parse_warning:
+            return [parse_warning]
+        return []
 
-        sections = self._build_sections(text, body_start=body_start)
-
+    def _build_result(
+        self,
+        *,
+        file_meta: HandlerFile,
+        text: str,
+        sections: list[_Section],
+        front_matter: str | None,
+        body_start: int,
+        context: ParseContext,
+        byte_offsets: Sequence[int],
+        line_starts: Sequence[int],
+        warnings: list[str],
+    ) -> HandlerResult:
         chunks: list[HandlerChunk] = []
         symbols: list[HandlerSymbol] = []
         part_index = 0
 
         if front_matter is not None:
-            fm_end_char = body_start
-            start_line = 1
-            end_line = (
-                self._line_for_offset(line_starts, fm_end_char - 1)
-                if fm_end_char
-                else 1
-            )
-            chunk = HandlerChunk(
-                chunk_id=f"{self.name}:front-matter",
-                text=front_matter,
-                token_count=context.token_encoder.count(front_matter),
-                start_offset=0,
-                end_offset=byte_offsets[fm_end_char],
+            front_chunk = self._build_front_matter_chunk(
+                front_matter=front_matter,
+                body_start=body_start,
+                context=context,
+                byte_offsets=byte_offsets,
+                line_starts=line_starts,
                 part_index=part_index,
-                metadata={
-                    "kind": "front_matter",
-                    "start_line": start_line,
-                    "end_line": end_line,
-                    "char_start": 0,
-                    "char_end": fm_end_char,
-                },
             )
-            chunks.append(chunk)
+            chunks.append(front_chunk)
             part_index += 1
 
         if not sections:
-            body = text[body_start:]
-            if body:
-                start_byte = byte_offsets[body_start]
-                end_byte = byte_offsets[len(text)]
-                start_line = self._line_for_offset(line_starts, body_start)
-                end_line = self._line_for_offset(line_starts, len(text) - 1)
-                chunk = HandlerChunk(
-                    chunk_id=f"{self.name}:body:{start_byte}:{end_byte}",
-                    text=body,
-                    token_count=context.token_encoder.count(body),
-                    start_offset=start_byte,
-                    end_offset=end_byte,
-                    part_index=part_index,
-                    metadata={
-                        "kind": "body",
-                        "strategy": "fallback",
-                        "start_line": start_line,
-                        "end_line": end_line,
-                        "char_start": body_start,
-                        "char_end": len(text),
-                    },
-                )
-                chunks.append(chunk)
+            fallback_chunk = self._build_body_fallback_chunk(
+                text=text,
+                body_start=body_start,
+                context=context,
+                byte_offsets=byte_offsets,
+                line_starts=line_starts,
+                part_index=part_index,
+            )
+            if fallback_chunk is not None:
+                chunks.append(fallback_chunk)
             return HandlerResult(
                 file=file_meta,
                 symbols=(),
@@ -228,8 +283,106 @@ class MarkdownHandler(ParserHandler):
                 warnings=tuple(warnings),
             )
 
+        section_chunks, section_symbols, part_index = self._emit_sections(
+            sections=sections,
+            text=text,
+            context=context,
+            byte_offsets=byte_offsets,
+            line_starts=line_starts,
+            part_index=part_index,
+        )
+        chunks.extend(section_chunks)
+        symbols.extend(section_symbols)
+
+        return HandlerResult(
+            file=file_meta,
+            symbols=tuple(symbols),
+            chunks=tuple(chunks),
+            warnings=tuple(warnings),
+        )
+
+    def _build_front_matter_chunk(
+        self,
+        *,
+        front_matter: str,
+        body_start: int,
+        context: ParseContext,
+        byte_offsets: Sequence[int],
+        line_starts: Sequence[int],
+        part_index: int,
+    ) -> HandlerChunk:
+        fm_end_char = body_start
+        end_line = (
+            self._line_for_offset(line_starts, fm_end_char - 1)
+            if fm_end_char
+            else 1
+        )
+        return HandlerChunk(
+            chunk_id=f"{self.name}:front-matter",
+            text=front_matter,
+            token_count=context.token_encoder.count(front_matter),
+            start_offset=0,
+            end_offset=byte_offsets[fm_end_char],
+            part_index=part_index,
+            metadata={
+                "kind": "front_matter",
+                "start_line": 1,
+                "end_line": end_line,
+                "char_start": 0,
+                "char_end": fm_end_char,
+            },
+        )
+
+    def _build_body_fallback_chunk(
+        self,
+        *,
+        text: str,
+        body_start: int,
+        context: ParseContext,
+        byte_offsets: Sequence[int],
+        line_starts: Sequence[int],
+        part_index: int,
+    ) -> HandlerChunk | None:
+        body = text[body_start:]
+        if not body:
+            return None
+
+        start_byte = byte_offsets[body_start]
+        end_byte = byte_offsets[len(text)]
+        start_line = self._line_for_offset(line_starts, body_start)
+        end_line = self._line_for_offset(line_starts, len(text) - 1)
+        return HandlerChunk(
+            chunk_id=f"{self.name}:body:{start_byte}:{end_byte}",
+            text=body,
+            token_count=context.token_encoder.count(body),
+            start_offset=start_byte,
+            end_offset=end_byte,
+            part_index=part_index,
+            metadata={
+                "kind": "body",
+                "strategy": "fallback",
+                "start_line": start_line,
+                "end_line": end_line,
+                "char_start": body_start,
+                "char_end": len(text),
+            },
+        )
+
+    def _emit_sections(
+        self,
+        *,
+        sections: list[_Section],
+        text: str,
+        context: ParseContext,
+        byte_offsets: Sequence[int],
+        line_starts: Sequence[int],
+        part_index: int,
+    ) -> tuple[list[HandlerChunk], list[HandlerSymbol], int]:
+        chunks: list[HandlerChunk] = []
+        symbols: list[HandlerSymbol] = []
         symbol_stack: list[tuple[int, str]] = []
-        for index, section in enumerate(sections):
+
+        for section in sections:
             heading = section.heading
             section_text = text[section.section_start : section.section_end]
             token_count = context.token_encoder.count(section_text)
@@ -296,78 +449,98 @@ class MarkdownHandler(ParserHandler):
             chunks.append(section_chunk)
             part_index += 1
 
-            for fence_index, fence in enumerate(
-                self._extract_fences(
-                    section_text, base_char=section.section_start
-                )
-            ):
-                if not fence.code.strip():
-                    continue
-                code_start_byte = byte_offsets[fence.code_start]
-                code_end_byte = byte_offsets[fence.code_end]
-                code_start_line = self._line_for_offset(
-                    line_starts, fence.code_start
-                )
-                code_end_line = self._line_for_offset(
-                    line_starts, fence.code_end - 1
-                )
-                delegate = fence.language or None
+            fence_chunks, part_index = self._emit_fence_chunks(
+                section=section,
+                section_chunk=section_chunk,
+                section_text=section_text,
+                context=context,
+                byte_offsets=byte_offsets,
+                line_starts=line_starts,
+                part_index=part_index,
+                symbol_id=symbol_id,
+            )
+            chunks.extend(fence_chunks)
 
-                chunk_metadata = {
-                    "kind": "fenced_code",
-                    "language": delegate,
-                    "heading_symbol": symbol_id,
-                    "start_line": code_start_line,
-                    "end_line": code_end_line,
-                    "char_start": fence.code_start,
-                    "char_end": fence.code_end,
-                    "fence_info": fence.info,
-                }
+        return chunks, symbols, part_index
 
-                if delegate:
-                    chunk_id = delegated_chunk_id(
-                        delegate=delegate,
-                        parent_handler=self.name,
-                        component="fenced_code",
-                        start_offset=code_start_byte,
-                        end_offset=code_end_byte,
-                        marker=fence_index,
-                    )
-                    metadata = delegated_metadata(
-                        delegate=delegate,
-                        parent_handler=self.name,
-                        parent_symbol_id=symbol_id,
-                        parent_chunk_id=section_chunk.chunk_id,
-                        extra=chunk_metadata,
-                    )
-                else:
-                    chunk_id = (
-                        f"{self.name}:fence:{code_start_byte}:"
-                        f"{code_end_byte}:{fence_index}"
-                    )
-                    metadata = chunk_metadata
+    def _emit_fence_chunks(
+        self,
+        *,
+        section: _Section,
+        section_chunk: HandlerChunk,
+        section_text: str,
+        context: ParseContext,
+        byte_offsets: Sequence[int],
+        line_starts: Sequence[int],
+        part_index: int,
+        symbol_id: str,
+    ) -> tuple[list[HandlerChunk], int]:
+        fence_chunks: list[HandlerChunk] = []
+        for fence_index, fence in enumerate(
+            self._extract_fences(section_text, base_char=section.section_start)
+        ):
+            if not fence.code.strip():
+                continue
 
-                chunks.append(
-                    HandlerChunk(
-                        chunk_id=chunk_id,
-                        text=fence.code,
-                        token_count=context.token_encoder.count(fence.code),
-                        start_offset=code_start_byte,
-                        end_offset=code_end_byte,
-                        part_index=part_index,
-                        parent_symbol_id=symbol_id,
-                        delegate=delegate,
-                        metadata=metadata,
-                    )
+            code_start_byte = byte_offsets[fence.code_start]
+            code_end_byte = byte_offsets[fence.code_end]
+            code_start_line = self._line_for_offset(
+                line_starts,
+                fence.code_start,
+            )
+            code_end_line = self._line_for_offset(
+                line_starts,
+                fence.code_end - 1,
+            )
+            delegate = fence.language or None
+
+            chunk_metadata = {
+                "kind": "fenced_code",
+                "language": delegate,
+                "heading_symbol": symbol_id,
+                "start_line": code_start_line,
+                "end_line": code_end_line,
+                "char_start": fence.code_start,
+                "char_end": fence.code_end,
+                "fence_info": fence.info,
+            }
+
+            if delegate:
+                chunk_id = delegated_chunk_id(
+                    delegate=delegate,
+                    parent_handler=self.name,
+                    component="fenced_code",
+                    start_offset=code_start_byte,
+                    end_offset=code_end_byte,
+                    marker=fence_index,
                 )
-                part_index += 1
+                metadata = delegated_metadata(
+                    delegate=delegate,
+                    parent_handler=self.name,
+                    parent_symbol_id=symbol_id,
+                    parent_chunk_id=section_chunk.chunk_id,
+                    extra=chunk_metadata,
+                )
+            else:
+                chunk_id = f"{self.name}:fence:{code_start_byte}:{code_end_byte}:{fence_index}"
+                metadata = chunk_metadata
 
-        return HandlerResult(
-            file=file_meta,
-            symbols=tuple(symbols),
-            chunks=tuple(chunks),
-            warnings=tuple(warnings),
-        )
+            fence_chunks.append(
+                HandlerChunk(
+                    chunk_id=chunk_id,
+                    text=fence.code,
+                    token_count=context.token_encoder.count(fence.code),
+                    start_offset=code_start_byte,
+                    end_offset=code_end_byte,
+                    part_index=part_index,
+                    parent_symbol_id=symbol_id,
+                    delegate=delegate,
+                    metadata=metadata,
+                )
+            )
+            part_index += 1
+
+        return fence_chunks, part_index
 
     @staticmethod
     def _extract_front_matter(text: str) -> tuple[str | None, int]:
