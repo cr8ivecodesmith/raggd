@@ -89,10 +89,12 @@
 - [x] Decompose Python handler `parse` into composable passes (dependency checks, module/class/function traversal, overflow handling) to retire the `noqa: C901`.
 
 ### Phase 5 — Persistence & recomposition support
-- Implement chunk write pipelines, delegation linkage, recomposition helpers (covering follow-up #2), and unchanged-detection logic with tombstone handling.
-- Derive deterministic `chunk_key` values (batch id + handler namespace + path + offsets) and ensure overflow metadata is logged and stored for diagnostics.
-- Stage file/symbol/chunk CRUD in transactions, leveraging `DbLifecycleService` locks per batch before committing, while persisting delegated child chunks under their handler namespaces with parent references for recomposition utilities.
-- Treat `chunk_slices` as the canonical parser artifact. Plan a follow-up migration that introduces a `chunk_assemblies` (name TBD) join table mapping stable `chunk_id` values to one-or-many slice rows, then have the existing `chunks` table reference assemblies instead of storing duplicate text. Edges/vectors can migrate to the same assembly key, keeping VDB materialization decoupled from slice storage.
+- [ ] Implement chunk write pipelines that persist primary and delegated slices, wiring handler outputs into repositories reused in Phase 6.
+- [ ] Build recomposition helpers (covers follow-up #2) so delegated child chunks reattach to parents for CLI and downstream consumers.
+- [ ] Add unchanged-detection logic with tombstone handling to reuse batches when emitted slices/states match prior runs.
+- [ ] Derive deterministic `chunk_key` values (batch id + handler namespace + path + offsets) and log overflow metadata for diagnostics.
+- [ ] Stage file/symbol/chunk CRUD inside `DbLifecycleService`-coordinated transactions, persisting delegated child slices under their namespaces with parent references.
+- [ ] Formalize treating `chunk_slices` as the canonical artifact and enumerate the follow-up migration introducing a `chunk_assemblies` join table to anchor stable `chunk_id` values shared with vectors.
 
 ### Phase 6 — CLI subcommand behaviors
 - Flesh out `parse`, `info`, `batches`, `remove`, ensuring batch validation, warnings about vector indexes, and concurrency controls respecting follow-up #3.
