@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import sqlite3
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from .handlers.base import HandlerResult
+from .handlers.base import HandlerChunk, HandlerResult
 from .hashing import DEFAULT_HASH_ALGORITHM, hash_text
 from .sql import load_sql
 
@@ -87,6 +87,12 @@ class ChunkSliceRepository:
         self._delete_sql = load_sql("chunk_slices_delete_by_batch.sql")
         self._select_sql = load_sql("chunk_slices_select_by_chunk.sql")
         self._select_by_file_sql = load_sql("chunk_slices_select_by_file.sql")
+        self._select_history_by_file_sql = load_sql(
+            "chunk_slices_select_history_by_file.sql"
+        )
+        self._update_last_seen_sql = load_sql(
+            "chunk_slices_update_last_seen.sql"
+        )
 
     def upsert_many(
         self,
@@ -138,6 +144,44 @@ class ChunkSliceRepository:
         )
         return cursor.fetchall()
 
+    def select_history_for_file(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        file_id: int,
+    ) -> Sequence[sqlite3.Row]:
+        """Return all slices for ``file_id`` ordered by chunk, last seen, and part."""
+
+        cursor = connection.execute(
+            self._select_history_by_file_sql,
+            {"file_id": file_id},
+        )
+        return cursor.fetchall()
+
+    def mark_last_seen(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        file_id: int,
+        chunk_ids: Iterable[str],
+        batch_id: str,
+        updated_at: datetime,
+    ) -> None:
+        """Update ``last_seen_batch`` for ``chunk_ids`` within ``file_id``."""
+
+        parameters = [
+            {
+                "file_id": file_id,
+                "chunk_id": chunk_id,
+                "last_seen_batch": batch_id,
+                "updated_at": updated_at.isoformat(),
+            }
+            for chunk_id in chunk_ids
+        ]
+        if not parameters:
+            return
+        connection.executemany(self._update_last_seen_sql, parameters)
+
 
 def _default_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -180,6 +224,109 @@ def _metadata_json(metadata: Mapping[str, Any] | None) -> str | None:
         ) from exc
 
 
+_SIGNATURE_KEYS = {
+    "file_id",
+    "chunk_id",
+    "handler_name",
+    "handler_version",
+    "symbol_id",
+    "parent_symbol_id",
+    "part_index",
+    "part_total",
+    "start_line",
+    "end_line",
+    "start_byte",
+    "end_byte",
+    "token_count",
+    "content_hash",
+    "content_norm_hash",
+    "content_text",
+    "overflow_is_truncated",
+    "overflow_reason",
+    "metadata_json",
+}
+
+
+def _group_chunks(
+    chunks: Sequence[HandlerChunk],
+) -> dict[str, list[HandlerChunk]]:
+    grouped: dict[str, list[HandlerChunk]] = {}
+    for chunk in chunks:
+        grouped.setdefault(chunk.chunk_id, []).append(chunk)
+    for parts in grouped.values():
+        parts.sort(key=lambda item: item.part_index)
+    return grouped
+
+
+def _group_history_by_chunk(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for raw in rows:
+        data = dict(raw)
+        data["chunk_id"] = str(data["chunk_id"])
+        data["part_index"] = int(data["part_index"])
+        data["part_total"] = int(data["part_total"])
+        data["token_count"] = int(data["token_count"])
+        data["overflow_is_truncated"] = int(data["overflow_is_truncated"])
+        grouped.setdefault(data["chunk_id"], []).append(data)
+    return grouped
+
+
+def _latest_rows_by_chunk(
+    rows_by_chunk: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    latest: dict[str, dict[int, Mapping[str, Any]]] = {}
+    for chunk_id, entries in rows_by_chunk.items():
+        parts: dict[int, Mapping[str, Any]] = {}
+        for entry in entries:
+            part_index = int(entry["part_index"])
+            current = parts.get(part_index)
+            if current is None or str(entry["updated_at"]) > str(current["updated_at"]):
+                parts[part_index] = entry
+        latest[chunk_id] = [parts[index] for index in sorted(parts)]
+    return latest
+
+
+def _first_seen_for_chunk(
+    rows: Sequence[Mapping[str, Any]],
+    default: str,
+) -> str:
+    if not rows:
+        return default
+    earliest = min(rows, key=lambda item: str(item["created_at"]))
+    batch = earliest.get("first_seen_batch")
+    return str(batch) if batch is not None else default
+
+
+def _row_signature_from_mapping(row: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
+    signature: list[tuple[str, Any]] = []
+    for key in sorted(_SIGNATURE_KEYS):
+        value = row.get(key)
+        if key == "overflow_is_truncated" and value is not None:
+            value = int(value)
+        signature.append((key, value))
+    return tuple(signature)
+
+
+def _row_signature_from_dataclass(row: ChunkSliceRow) -> tuple[tuple[str, Any], ...]:
+    params = row.to_params()
+    return _row_signature_from_mapping(params)
+
+
+def _rows_equivalent(
+    existing_rows: Sequence[Mapping[str, Any]],
+    new_rows: Sequence[ChunkSliceRow],
+) -> bool:
+    if len(existing_rows) != len(new_rows):
+        return False
+    existing_signatures = [
+        _row_signature_from_mapping(row) for row in existing_rows
+    ]
+    new_signatures = [_row_signature_from_dataclass(row) for row in new_rows]
+    return existing_signatures == new_signatures
+
+
 class ChunkWritePipeline:
     """Transform handler output into persisted ``chunk_slices`` rows."""
 
@@ -214,94 +361,61 @@ class ChunkWritePipeline:
             return ()
 
         timestamp = self._now()
-        first_seen = first_seen_batch or batch_id
-        last_seen = last_seen_batch or batch_id
+        configured_first_seen = first_seen_batch or batch_id
+        configured_last_seen = last_seen_batch or batch_id
 
-        rows: list[ChunkSliceRow] = []
-        for chunk in result.chunks:
-            chunk_handler = chunk.delegate or handler_name
-            chunk_version = handler_versions.get(chunk_handler)
-            if chunk_version is None:
-                if chunk_handler == handler_name:
-                    chunk_version = handler_version
-                else:
-                    raise KeyError(
-                        f"Missing handler version for delegate {chunk_handler!r}"
-                    )
+        history_rows = self._repository.select_history_for_file(
+            connection,
+            file_id=file_id,
+        )
+        history_by_chunk = _group_history_by_chunk(history_rows)
+        latest_by_chunk = _latest_rows_by_chunk(history_by_chunk)
 
-            token_count = chunk.token_count
-            if token_count is None:
-                raise ValueError(
-                    f"Chunk {chunk.chunk_id!r} emitted without token count."
-                )
+        grouped_chunks = _group_chunks(result.chunks)
 
-            metadata = dict(chunk.metadata or {})
-            symbol_id = self._lookup_symbol(chunk.parent_symbol_id, symbol_ids)
-            parent_symbol_id = self._lookup_symbol(
-                metadata.get("delegate_parent_symbol"), symbol_ids
+        inserted_rows: list[ChunkSliceRow] = []
+        reused_chunk_ids: list[str] = []
+
+        for chunk_id, parts in grouped_chunks.items():
+            existing_history = history_by_chunk.get(chunk_id, ())
+            first_seen_for_chunk = _first_seen_for_chunk(
+                existing_history,
+                configured_first_seen,
             )
 
-            part_total = _coerce_int(metadata.get("part_total")) or 1
-            start_line = _coerce_int(metadata.get("start_line"))
-            end_line = _coerce_int(metadata.get("end_line"))
-
-            overflow_reason = None
-            raw_reason = metadata.get("overflow_reason")
-            if raw_reason is not None:
-                overflow_reason = str(raw_reason)
-
-            overflow_flag = bool(
-                metadata.get("overflow")
-                or metadata.get("overflow_is_truncated")
-            )
-
-            metadata_json = _metadata_json(metadata)
-
-            content_hash = hash_text(
-                chunk.text,
-                handler_version=chunk_version,
-                algorithm=self._hash_algorithm,
-                extra=(chunk.chunk_id, chunk_handler),
-            )
-            normalized_text = _normalize_text(chunk.text)
-            content_norm_hash = hash_text(
-                normalized_text,
-                handler_version=chunk_version,
-                algorithm=self._hash_algorithm,
-                extra=(chunk.chunk_id, chunk_handler),
-            )
-
-            row = ChunkSliceRow(
+            chunk_rows = self._build_chunk_rows(
+                parts=parts,
                 batch_id=batch_id,
                 file_id=file_id,
-                symbol_id=symbol_id,
-                parent_symbol_id=parent_symbol_id,
-                chunk_id=chunk.chunk_id,
-                handler_name=chunk_handler,
-                handler_version=chunk_version,
-                part_index=chunk.part_index,
-                part_total=part_total,
-                start_line=start_line,
-                end_line=end_line,
-                start_byte=chunk.start_offset,
-                end_byte=chunk.end_offset,
-                token_count=token_count,
-                content_hash=content_hash,
-                content_norm_hash=content_norm_hash,
-                content_text=chunk.text,
-                overflow_is_truncated=overflow_flag,
-                overflow_reason=overflow_reason,
-                metadata_json=metadata_json,
-                created_at=timestamp,
-                updated_at=timestamp,
-                first_seen_batch=first_seen,
-                last_seen_batch=last_seen,
+                handler_name=handler_name,
+                handler_version=handler_version,
+                handler_versions=handler_versions,
+                symbol_ids=symbol_ids,
+                first_seen_batch=first_seen_for_chunk,
+                last_seen_batch=configured_last_seen,
+                timestamp=timestamp,
             )
-            rows.append(row)
 
-        if rows:
-            self._repository.upsert_many(connection, rows)
-        return tuple(rows)
+            latest_rows = latest_by_chunk.get(chunk_id)
+            if latest_rows and _rows_equivalent(latest_rows, chunk_rows):
+                reused_chunk_ids.append(chunk_id)
+                continue
+
+            inserted_rows.extend(chunk_rows)
+
+        if inserted_rows:
+            self._repository.upsert_many(connection, inserted_rows)
+
+        if reused_chunk_ids:
+            self._repository.mark_last_seen(
+                connection,
+                file_id=file_id,
+                chunk_ids=reused_chunk_ids,
+                batch_id=configured_last_seen,
+                updated_at=timestamp,
+            )
+
+        return tuple(inserted_rows)
 
     @staticmethod
     def _lookup_symbol(
@@ -316,3 +430,140 @@ class ChunkWritePipeline:
             raise KeyError(
                 f"Symbol mapping missing for key {symbol_key!r}"
             ) from exc
+
+    def _build_chunk_rows(
+        self,
+        *,
+        parts: Sequence[HandlerChunk],
+        batch_id: str,
+        file_id: int,
+        handler_name: str,
+        handler_version: str,
+        handler_versions: Mapping[str, str],
+        symbol_ids: Mapping[str, int],
+        first_seen_batch: str,
+        last_seen_batch: str,
+        timestamp: datetime,
+    ) -> list[ChunkSliceRow]:
+        rows: list[ChunkSliceRow] = []
+        for chunk in parts:
+            chunk_handler = chunk.delegate or handler_name
+            chunk_version = self._resolve_handler_version(
+                chunk_handler,
+                handler_name=handler_name,
+                handler_version=handler_version,
+                handler_versions=handler_versions,
+            )
+            row = self._build_chunk_row(
+                chunk=chunk,
+                batch_id=batch_id,
+                file_id=file_id,
+                chunk_handler=chunk_handler,
+                chunk_version=chunk_version,
+                symbol_ids=symbol_ids,
+                first_seen_batch=first_seen_batch,
+                last_seen_batch=last_seen_batch,
+                timestamp=timestamp,
+            )
+            rows.append(row)
+        return rows
+
+    def _build_chunk_row(
+        self,
+        *,
+        chunk: HandlerChunk,
+        batch_id: str,
+        file_id: int,
+        chunk_handler: str,
+        chunk_version: str,
+        symbol_ids: Mapping[str, int],
+        first_seen_batch: str,
+        last_seen_batch: str,
+        timestamp: datetime,
+    ) -> ChunkSliceRow:
+        token_count = chunk.token_count
+        if token_count is None:
+            raise ValueError(
+                f"Chunk {chunk.chunk_id!r} emitted without token count."
+            )
+
+        metadata = dict(chunk.metadata or {})
+        symbol_id = self._lookup_symbol(chunk.parent_symbol_id, symbol_ids)
+        parent_symbol_id = self._lookup_symbol(
+            metadata.get("delegate_parent_symbol"),
+            symbol_ids,
+        )
+
+        part_total = _coerce_int(metadata.get("part_total")) or 1
+        start_line = _coerce_int(metadata.get("start_line"))
+        end_line = _coerce_int(metadata.get("end_line"))
+
+        overflow_reason = None
+        raw_reason = metadata.get("overflow_reason")
+        if raw_reason is not None:
+            overflow_reason = str(raw_reason)
+
+        overflow_flag = bool(
+            metadata.get("overflow")
+            or metadata.get("overflow_is_truncated")
+        )
+
+        metadata_json = _metadata_json(metadata)
+
+        content_hash = hash_text(
+            chunk.text,
+            handler_version=chunk_version,
+            algorithm=self._hash_algorithm,
+            extra=(chunk.chunk_id, chunk_handler),
+        )
+        normalized_text = _normalize_text(chunk.text)
+        content_norm_hash = hash_text(
+            normalized_text,
+            handler_version=chunk_version,
+            algorithm=self._hash_algorithm,
+            extra=(chunk.chunk_id, chunk_handler),
+        )
+
+        return ChunkSliceRow(
+            batch_id=batch_id,
+            file_id=file_id,
+            symbol_id=symbol_id,
+            parent_symbol_id=parent_symbol_id,
+            chunk_id=chunk.chunk_id,
+            handler_name=chunk_handler,
+            handler_version=chunk_version,
+            part_index=chunk.part_index,
+            part_total=part_total,
+            start_line=start_line,
+            end_line=end_line,
+            start_byte=chunk.start_offset,
+            end_byte=chunk.end_offset,
+            token_count=token_count,
+            content_hash=content_hash,
+            content_norm_hash=content_norm_hash,
+            content_text=chunk.text,
+            overflow_is_truncated=overflow_flag,
+            overflow_reason=overflow_reason,
+            metadata_json=metadata_json,
+            created_at=timestamp,
+            updated_at=timestamp,
+            first_seen_batch=first_seen_batch,
+            last_seen_batch=last_seen_batch,
+        )
+
+    @staticmethod
+    def _resolve_handler_version(
+        chunk_handler: str,
+        *,
+        handler_name: str,
+        handler_version: str,
+        handler_versions: Mapping[str, str],
+    ) -> str:
+        version = handler_versions.get(chunk_handler)
+        if version is not None:
+            return version
+        if chunk_handler == handler_name:
+            return handler_version
+        raise KeyError(
+            f"Missing handler version for delegate {chunk_handler!r}"
+        )

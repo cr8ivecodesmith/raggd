@@ -26,6 +26,6 @@ SELECT
     first_seen_batch,
     last_seen_batch
 FROM chunk_slices
-WHERE batch_id = :batch_id
+WHERE last_seen_batch = :batch_id
   AND chunk_id = :chunk_id
 ORDER BY part_index ASC;

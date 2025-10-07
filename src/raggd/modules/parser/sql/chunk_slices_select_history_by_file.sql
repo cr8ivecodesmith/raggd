@@ -1,4 +1,4 @@
--- Retrieve chunk slices for a given file ordered for recomposition.
+-- Retrieve all chunk slices for a file regardless of last-seen batch.
 SELECT
     id,
     batch_id,
@@ -26,6 +26,5 @@ SELECT
     first_seen_batch,
     last_seen_batch
 FROM chunk_slices
-WHERE last_seen_batch = :batch_id
-  AND file_id = :file_id
-ORDER BY chunk_id ASC, part_index ASC;
+WHERE file_id = :file_id
+ORDER BY chunk_id ASC, last_seen_batch DESC, part_index ASC;

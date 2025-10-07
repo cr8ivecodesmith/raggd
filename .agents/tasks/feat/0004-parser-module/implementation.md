@@ -91,7 +91,7 @@
 ### Phase 5 — Persistence & recomposition support
 - [x] Implement chunk write pipelines that persist primary and delegated slices, wiring handler outputs into repositories reused in Phase 6.
 - [x] Build recomposition helpers (covers follow-up #2) so delegated child chunks reattach to parents for CLI and downstream consumers.
-- [ ] Add unchanged-detection logic with tombstone handling to reuse batches when emitted slices/states match prior runs.
+- [x] Add unchanged-detection logic with tombstone handling to reuse batches when emitted slices/states match prior runs.
 - [ ] Derive deterministic `chunk_key` values (batch id + handler namespace + path + offsets) and log overflow metadata for diagnostics.
 - [ ] Stage file/symbol/chunk CRUD inside `DbLifecycleService`-coordinated transactions, persisting delegated child slices under their namespaces with parent references.
 - [ ] Formalize treating `chunk_slices` as the canonical artifact and enumerate the follow-up migration introducing a `chunk_assemblies` join table to anchor stable `chunk_id` values shared with vectors.
@@ -125,6 +125,13 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 02:30 PST
+**Summary**
+Enabled chunk slice reuse by comparing emitted parts against historical rows, updating `last_seen_batch` in-place, and switching repository queries to filter on last-seen batches so tombstoned slices drop out without rewrites.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/parser/test_persistence.py tests/modules/parser/test_recomposition.py -q`
+
 ### 2025-10-08 01:45 PST
 **Summary**
 Wired chunk slice recomposition helpers that group rows per file, reattach delegated children to parents, and expose the recomposer facade for upcoming CLI work.
