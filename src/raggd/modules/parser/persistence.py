@@ -86,6 +86,7 @@ class ChunkSliceRepository:
         self._upsert_sql = load_sql("chunk_slices_upsert.sql")
         self._delete_sql = load_sql("chunk_slices_delete_by_batch.sql")
         self._select_sql = load_sql("chunk_slices_select_by_chunk.sql")
+        self._select_by_file_sql = load_sql("chunk_slices_select_by_file.sql")
 
     def upsert_many(
         self,
@@ -119,6 +120,21 @@ class ChunkSliceRepository:
 
         cursor = connection.execute(
             self._select_sql, {"batch_id": batch_id, "chunk_id": chunk_id}
+        )
+        return cursor.fetchall()
+
+    def select_for_file(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        batch_id: str,
+        file_id: int,
+    ) -> Sequence[sqlite3.Row]:
+        """Return slices for ``file_id`` within ``batch_id`` ordered by chunk and part."""
+
+        cursor = connection.execute(
+            self._select_by_file_sql,
+            {"batch_id": batch_id, "file_id": file_id},
         )
         return cursor.fetchall()
 

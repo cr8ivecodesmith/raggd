@@ -45,6 +45,12 @@ from .tokenizer import (
     TokenEncoderError,
     get_token_encoder,
 )
+from .recomposition import (
+    ChunkRecomposer,
+    ChunkSlicePart,
+    RecomposedChunk,
+    recompose_chunk_slices,
+)
 from .traversal import (
     TraversalResult,
     TraversalScope,
@@ -68,6 +74,9 @@ __all__ = [
     "ParserHandler",
     "ParserHandlerFactory",
     "HandlerFactoryError",
+    "ChunkRecomposer",
+    "ChunkSlicePart",
+    "RecomposedChunk",
     "ParserManifestState",
     "ParserRunMetrics",
     "ParserRunRecord",
@@ -83,6 +92,7 @@ __all__ = [
     "TraversalService",
     "build_default_registry",
     "get_token_encoder",
+    "recompose_chunk_slices",
     "hash_file",
     "hash_stream",
     "hash_text",
