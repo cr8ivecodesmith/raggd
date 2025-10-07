@@ -366,6 +366,14 @@ class _CollectorResult:
     warnings: tuple[str, ...]
 
 
+@dataclass(slots=True)
+class _ClassMembers:
+    """Partitioned class body nodes."""
+
+    methods: list[Any]
+    fields: list[Any]
+
+
 class _JavaScriptCollector:
     """Collect symbols and chunks from a parsed JavaScript tree."""
 
@@ -638,7 +646,7 @@ class _JavaScriptCollector:
         else:
             self._emit_text_chunk(node, parent=self._module_symbol_id)
 
-    def _handle_class(  # noqa: C901 - class traversal spans multiple constructs
+    def _handle_class(
         self,
         node: Any,
         *,
@@ -646,16 +654,12 @@ class _JavaScriptCollector:
         is_default: bool,
     ) -> None:
         name = self._extract_identifier(node) or "anonymous"
-        metadata = {
-            "kind": "class",
-            "exported": exported,
-            "default_export": is_default,
-        }
         header = self._slice(node.start_byte, node.end_byte)
-        if "extends" in header:
-            extends = header.split("extends", 1)[1].split("{", 1)[0].strip()
-            if extends:
-                metadata["extends"] = extends
+        metadata = self._class_metadata(
+            header_text=header,
+            exported=exported,
+            is_default=is_default,
+        )
         docstring = self._leading_comment(node)
         symbol = self._emit_symbol(
             name=name,
@@ -666,57 +670,114 @@ class _JavaScriptCollector:
             metadata=metadata,
             docstring=docstring,
         )
-        body = self._first_child_of_type(node, "class_body")
+        body = self._class_body(node)
         if body is None:
             self._emit_text_chunk(node, parent=symbol.symbol_id)
             return
 
-        method_nodes: list[Any] = []
-        field_nodes: list[Any] = []
+        members = self._collect_class_members(body)
+        self._emit_class_methods(
+            members.methods,
+            parent_symbol=symbol.symbol_id,
+        )
+        self._emit_class_fields(
+            name=name,
+            fields=members.fields,
+            parent_symbol=symbol.symbol_id,
+        )
+
+    def _class_metadata(
+        self,
+        *,
+        header_text: str,
+        exported: bool,
+        is_default: bool,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "kind": "class",
+            "exported": exported,
+            "default_export": is_default,
+        }
+        extends = self._class_extends_clause(header_text)
+        if extends:
+            metadata["extends"] = extends
+        return metadata
+
+    def _class_extends_clause(self, header_text: str) -> str | None:
+        if "extends" not in header_text:
+            return None
+        candidate = header_text.split("extends", 1)[1].split("{", 1)[0].strip()
+        return candidate or None
+
+    def _class_body(self, node: Any) -> Any | None:
+        return self._first_child_of_type(node, "class_body")
+
+    def _collect_class_members(self, body: Any) -> _ClassMembers:
+        methods: list[Any] = []
+        fields: list[Any] = []
         for child in body.named_children:
             if child.type == "method_definition":
-                method_nodes.append(child)
-            else:
-                if child.type != "comment":
-                    field_nodes.append(child)
+                methods.append(child)
+            elif child.type != "comment":
+                fields.append(child)
+        return _ClassMembers(methods=methods, fields=fields)
 
-        for method in method_nodes:
-            self._emit_method_chunk(method, parent_symbol=symbol.symbol_id)
+    def _emit_class_methods(
+        self, methods: Iterable[Any], *, parent_symbol: str
+    ) -> None:
+        for method in methods:
+            self._emit_method_chunk(method, parent_symbol=parent_symbol)
 
-        if field_nodes:
-            start = field_nodes[0].start_byte
-            end = field_nodes[-1].end_byte
-            text = self._slice(start, end)
-            segments = self._split_for_token_cap(text)
-            for index, segment in enumerate(segments):
-                char_start = self._char_index(start)
-                char_end = self._char_index(end)
-                chunk = HandlerChunk(
-                    chunk_id=f"{self._handler.name}:class-field:{start}:{end}:{index}",
-                    text=segment,
-                    token_count=self._context.token_encoder.count(segment),
-                    start_offset=start,
-                    end_offset=end,
-                    part_index=self._next_part_index(),
-                    parent_symbol_id=symbol.symbol_id,
-                    metadata={
-                        "kind": "class_fields",
-                        "class": name,
-                        "overflow": len(segments) > 1,
-                        "start_line": ts_point_row(field_nodes[0].start_point)
-                        + 1,
-                        "end_line": ts_point_row(field_nodes[-1].end_point) + 1,
-                        "char_start": char_start,
-                        "char_end": char_end,
-                    },
-                )
-                self.chunks.append(chunk)
-            if len(segments) > 1:
-                self.warnings.append(
-                    "Class "
-                    f"{name!r} fields split into {len(segments)} parts due to "
-                    "token cap",
-                )
+    def _emit_class_fields(
+        self,
+        *,
+        name: str,
+        fields: Sequence[Any],
+        parent_symbol: str,
+    ) -> None:
+        if not fields:
+            return
+
+        start = fields[0].start_byte
+        end = fields[-1].end_byte
+        text = self._slice(start, end)
+        segments = self._split_for_token_cap(text)
+        overflow = len(segments) > 1
+        char_start = self._char_index(start)
+        char_end = self._char_index(end)
+        start_line = ts_point_row(fields[0].start_point) + 1
+        end_line = ts_point_row(fields[-1].end_point) + 1
+
+        for index, segment in enumerate(segments):
+            chunk = HandlerChunk(
+                chunk_id=(
+                    f"{self._handler.name}:class-field:{start}:{end}:{index}"
+                ),
+                text=segment,
+                token_count=self._context.token_encoder.count(segment),
+                start_offset=start,
+                end_offset=end,
+                part_index=self._next_part_index(),
+                parent_symbol_id=parent_symbol,
+                metadata={
+                    "kind": "class_fields",
+                    "class": name,
+                    "overflow": overflow,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "char_start": char_start,
+                    "char_end": char_end,
+                },
+            )
+            self.chunks.append(chunk)
+
+        if overflow:
+            warning = (
+                "Class "
+                f"{name!r} fields split into {len(segments)} parts "
+                "due to token cap"
+            )
+            self.warnings.append(warning)
 
     def _emit_method_chunk(self, node: Any, *, parent_symbol: str) -> None:
         name = self._extract_identifier(node) or "anonymous"
