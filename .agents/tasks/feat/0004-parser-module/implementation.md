@@ -79,6 +79,14 @@
 - [x] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
 - [x] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
 - [x] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
+- [ ] Reduce `register_checkhealth_command` complexity below C901 by extracting Typer wiring helpers in `src/raggd/cli/checkhealth.py`.
+- [ ] Reduce nested `checkhealth_command` complexity below C901 with focused CLI flow helpers and validation utilities.
+- [ ] Break down `_is_ignored` traversal logic in `src/raggd/modules/parser/traversal.py` so gitignore resolution passes Ruff C901 without `noqa`.
+- [ ] Simplify HTML `_attributes` extraction to keep branching under the C901 threshold while preserving metadata fidelity.
+- [ ] Refactor JavaScript `_handle_export` to delegate per-export form handling and eliminate the existing C901 suppression.
+- [ ] Split JavaScript `_handle_class` into targeted helpers (heritage, members, slices) so the main visitor remains under the C901 cap.
+- [ ] Restructure Markdown `parse` orchestration to reuse shared utilities and bring its complexity within C901 guidance.
+- [ ] Decompose Python handler `parse` into composable passes (dependency checks, module/class/function traversal, overflow handling) to retire the `noqa: C901`.
 
 ### Phase 5 — Persistence & recomposition support
 - Implement chunk write pipelines, delegation linkage, recomposition helpers (covering follow-up #2), and unchanged-detection logic with tombstone handling.
