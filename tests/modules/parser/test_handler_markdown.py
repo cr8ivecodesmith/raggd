@@ -111,6 +111,12 @@ Trailing text.
     assert code_chunk.delegate == "python"
     assert "print('hi')" in code_chunk.text
 
+    section_chunk = next(chunk for chunk in result.chunks if chunk.metadata.get("kind") == "section")
+    assert code_chunk.chunk_id.startswith("python:delegate:markdown:fenced_code:")
+    assert code_chunk.metadata["delegate_parent_handler"] == "markdown"
+    assert code_chunk.metadata["delegate_parent_symbol"] == result.symbols[0].symbol_id
+    assert code_chunk.metadata["delegate_parent_chunk"] == section_chunk.chunk_id
+
     assert result.symbols
     assert code_chunk.parent_symbol_id == result.symbols[0].symbol_id
 
@@ -128,4 +134,3 @@ def test_markdown_no_headings_falls_back(tmp_path: Path) -> None:
     assert chunk.metadata.get("strategy") == "fallback"
     assert chunk.metadata.get("kind") == "body"
     assert not result.symbols
-

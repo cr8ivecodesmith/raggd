@@ -16,6 +16,7 @@ from .base import (
     ParseContext,
     ParserHandler,
 )
+from .delegation import delegated_chunk_id, delegated_metadata
 
 __all__ = ["JavaScriptHandler", "TypeScriptHandler"]
 
@@ -855,16 +856,27 @@ class _JavaScriptCollector:
                 continue
             seen.add(key)
             text = self._slice(node.start_byte, node.end_byte)
-            metadata = {
-                "kind": "jsx",
-                "delegate": "html",
-                "start_line": node.start_point.row + 1,
-                "end_line": node.end_point.row + 1,
-                "char_start": self._char_index(node.start_byte),
-                "char_end": self._char_index(node.end_byte),
-            }
+            chunk_id = delegated_chunk_id(
+                delegate="html",
+                parent_handler=self._handler.name,
+                component="jsx",
+                start_offset=node.start_byte,
+                end_offset=node.end_byte,
+            )
+            metadata = delegated_metadata(
+                delegate="html",
+                parent_handler=self._handler.name,
+                parent_symbol_id=self._module_symbol_id,
+                extra={
+                    "kind": "jsx",
+                    "start_line": node.start_point.row + 1,
+                    "end_line": node.end_point.row + 1,
+                    "char_start": self._char_index(node.start_byte),
+                    "char_end": self._char_index(node.end_byte),
+                },
+            )
             chunk = HandlerChunk(
-                chunk_id=f"{self._handler.name}:jsx:{node.start_byte}:{node.end_byte}",
+                chunk_id=chunk_id,
                 text=text,
                 token_count=self._context.token_encoder.count(text),
                 start_offset=node.start_byte,

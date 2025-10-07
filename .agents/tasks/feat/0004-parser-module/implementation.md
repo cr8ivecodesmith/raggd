@@ -78,7 +78,7 @@
 - [x] JavaScript/TypeScript handler: use tree-sitter to detect modules, exports, classes, re-exports; honor configuration toggles for TS/TSX routing, split large classes into constructor/method slices, and route `.tsx`/`.jsx` segments into HTML delegation when enabled.
 - [x] HTML handler: leverage tree-sitter for structural grouping, delegate `<script>` blocks to JS and `<style>` blocks to CSS, normalize whitespace while preserving offsets, and emit metadata linking child delegates.
 - [x] CSS handler: apply tree-sitter grouping, maintain cascade context/whitespace rules, split large rule blocks by selector group, and ensure delegated metadata stays symmetric with HTML/JS.
-- [ ] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
+- [x] Shared delegation utilities: confirm delegated child chunks persist under handler namespaces with parent references ready for recomposition helpers in Phase 5.
 
 ### Phase 5 — Persistence & recomposition support
 - Implement chunk write pipelines, delegation linkage, recomposition helpers (covering follow-up #2), and unchanged-detection logic with tombstone handling.
@@ -115,6 +115,21 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-07 14:53 PST
+**Summary**
+Implemented shared delegation utilities so delegated chunks adopt child handler namespaces while preserving parent linkage for recomposition.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=.tmp/test-workspace uv run pytest --no-cov tests/modules/parser/test_handler_markdown.py tests/modules/parser/test_handler_html.py tests/modules/parser/test_handler_javascript.py` *(HTML/JS suites skipped: optional tree_sitter_languages dependency unavailable in sandbox)*
+
+**Changes**
+- Added a delegation helper module producing normalized chunk identifiers and metadata for delegated handlers.
+- Updated Markdown, HTML, and JavaScript/TypeScript handlers to emit delegated chunks under child namespaces with parent handler references.
+- Extended handler unit tests to assert delegation metadata and shared chunk identifiers.
+
+**Notes**
+- Re-run the handler suites once the `parser` dependency extras install so tree-sitter powered delegations execute instead of skipping.
+
 ### 2025-10-07 18:45 PST
 **Summary**
 Completed HTML handler for Phase 4 item 5 with tree-sitter-backed structural grouping and delegation.

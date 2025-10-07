@@ -16,6 +16,7 @@ from .base import (
     ParseContext,
     ParserHandler,
 )
+from .delegation import delegated_chunk_id, delegated_metadata
 
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
@@ -269,18 +270,17 @@ class MarkdownHandler(ParserHandler):
             if section.intro_attached:
                 chunk_metadata["intro_attached"] = True
 
-            chunks.append(
-                HandlerChunk(
-                    chunk_id=f"{self.name}:section:{section_byte_start}:{section_byte_end}",
-                    text=section_text,
-                    token_count=token_count,
-                    start_offset=section_byte_start,
-                    end_offset=section_byte_end,
-                    part_index=part_index,
-                    parent_symbol_id=symbol_id,
-                    metadata=chunk_metadata,
-                )
+            section_chunk = HandlerChunk(
+                chunk_id=f"{self.name}:section:{section_byte_start}:{section_byte_end}",
+                text=section_text,
+                token_count=token_count,
+                start_offset=section_byte_start,
+                end_offset=section_byte_end,
+                part_index=part_index,
+                parent_symbol_id=symbol_id,
+                metadata=chunk_metadata,
             )
+            chunks.append(section_chunk)
             part_index += 1
 
             for fence_index, fence in enumerate(
@@ -294,10 +294,42 @@ class MarkdownHandler(ParserHandler):
                 code_end_line = self._line_for_offset(line_starts, fence.code_end - 1)
                 delegate = fence.language or None
 
+                chunk_metadata = {
+                    "kind": "fenced_code",
+                    "language": delegate,
+                    "heading_symbol": symbol_id,
+                    "start_line": code_start_line,
+                    "end_line": code_end_line,
+                    "char_start": fence.code_start,
+                    "char_end": fence.code_end,
+                    "fence_info": fence.info,
+                }
+
+                if delegate:
+                    chunk_id = delegated_chunk_id(
+                        delegate=delegate,
+                        parent_handler=self.name,
+                        component="fenced_code",
+                        start_offset=code_start_byte,
+                        end_offset=code_end_byte,
+                        marker=fence_index,
+                    )
+                    metadata = delegated_metadata(
+                        delegate=delegate,
+                        parent_handler=self.name,
+                        parent_symbol_id=symbol_id,
+                        parent_chunk_id=section_chunk.chunk_id,
+                        extra=chunk_metadata,
+                    )
+                else:
+                    chunk_id = (
+                        f"{self.name}:fence:{code_start_byte}:{code_end_byte}:{fence_index}"
+                    )
+                    metadata = chunk_metadata
+
                 chunks.append(
                     HandlerChunk(
-                        chunk_id=
-                        f"{self.name}:fence:{code_start_byte}:{code_end_byte}:{fence_index}",
+                        chunk_id=chunk_id,
                         text=fence.code,
                         token_count=context.token_encoder.count(fence.code),
                         start_offset=code_start_byte,
@@ -305,16 +337,7 @@ class MarkdownHandler(ParserHandler):
                         part_index=part_index,
                         parent_symbol_id=symbol_id,
                         delegate=delegate,
-                        metadata={
-                            "kind": "fenced_code",
-                            "language": delegate,
-                            "heading_symbol": symbol_id,
-                            "start_line": code_start_line,
-                            "end_line": code_end_line,
-                            "char_start": fence.code_start,
-                            "char_end": fence.code_end,
-                            "fence_info": fence.info,
-                        },
+                        metadata=metadata,
                     )
                 )
                 part_index += 1

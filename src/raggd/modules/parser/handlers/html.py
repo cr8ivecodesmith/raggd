@@ -16,6 +16,7 @@ from .base import (
     ParseContext,
     ParserHandler,
 )
+from .delegation import delegated_chunk_id, delegated_metadata
 
 __all__ = ["HTMLHandler"]
 
@@ -365,7 +366,7 @@ class _HTMLCollector:
         node: Any,
         tag_name: str,
         parent_symbol_id: str,
-    ) -> None:
+    ) -> HandlerChunk:
         raw = self._slice(node.start_byte, node.end_byte)
         text = self._normalize_markup(raw)
         if not text:
@@ -392,6 +393,7 @@ class _HTMLCollector:
             metadata=metadata,
         )
         self._chunks.append(chunk)
+        return chunk
 
     def _emit_loose_content(self, node: Any, parent_symbol_id: str) -> None:
         text = self._slice(node.start_byte, node.end_byte)
@@ -424,7 +426,7 @@ class _HTMLCollector:
         tag_name = self._tag_name(node) or ("script" if node.type == "script_element" else "style")
         kind = "script" if node.type == "script_element" else "style"
         symbol = self._emit_special_symbol(node, tag_name, kind, parent_symbol_id)
-        self._emit_element_chunk(node, tag_name, symbol.symbol_id)
+        shell_chunk = self._emit_element_chunk(node, tag_name, symbol.symbol_id)
         raw_node = self._raw_text_node(node)
         if raw_node is None:
             return
@@ -459,16 +461,28 @@ class _HTMLCollector:
             )
             self._chunks.append(chunk)
             return
-        metadata = {
-            "kind": kind,
-            "delegate": delegate,
-            "start_line": raw_node.start_point.row + 1,
-            "end_line": raw_node.end_point.row + 1,
-            "char_start": self._char_index(raw_node.start_byte),
-            "char_end": self._char_index(raw_node.end_byte),
-        }
+        chunk_id = delegated_chunk_id(
+            delegate=delegate,
+            parent_handler=self.handler.name,
+            component=f"inline_{kind}",
+            start_offset=raw_node.start_byte,
+            end_offset=raw_node.end_byte,
+        )
+        metadata = delegated_metadata(
+            delegate=delegate,
+            parent_handler=self.handler.name,
+            parent_symbol_id=symbol.symbol_id,
+            parent_chunk_id=shell_chunk.chunk_id,
+            extra={
+                "kind": kind,
+                "start_line": raw_node.start_point.row + 1,
+                "end_line": raw_node.end_point.row + 1,
+                "char_start": self._char_index(raw_node.start_byte),
+                "char_end": self._char_index(raw_node.end_byte),
+            },
+        )
         chunk = HandlerChunk(
-            chunk_id=f"{self.handler.name}:{kind}:inline:{raw_node.start_byte}:{raw_node.end_byte}",
+            chunk_id=chunk_id,
             text=normalized,
             token_count=self.context.token_encoder.count(normalized),
             start_offset=raw_node.start_byte,

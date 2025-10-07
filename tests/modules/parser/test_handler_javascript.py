@@ -135,4 +135,10 @@ def test_typescript_handler_emits_jsx_delegate(tmp_path: Path) -> None:
 
     jsx_chunks = [chunk for chunk in result.chunks if chunk.delegate == "html"]
     assert jsx_chunks, "TSX files should emit delegated HTML chunks"
-    assert "<section>" in jsx_chunks[0].text
+    first_chunk = jsx_chunks[0]
+    assert "<section>" in first_chunk.text
+    module_symbol = next(sym for sym in result.symbols if sym.kind == "module")
+    assert first_chunk.chunk_id.startswith("html:delegate:typescript:jsx:")
+    assert first_chunk.metadata["delegate_parent_handler"] == "typescript"
+    assert first_chunk.metadata["delegate_parent_symbol"] == module_symbol.symbol_id
+    assert "delegate_parent_chunk" not in first_chunk.metadata

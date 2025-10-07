@@ -98,9 +98,27 @@ def test_html_handler_emits_structural_chunks_and_delegates(tmp_path: Path) -> N
     script_chunk = next(chunk for chunk in result.chunks if chunk.delegate == "javascript")
     assert "console.log" in script_chunk.text
     assert script_chunk.parent_symbol_id == script_symbol.symbol_id
+    script_shell = next(
+        chunk
+        for chunk in result.chunks
+        if chunk.chunk_id.startswith("html:script:") and chunk.parent_symbol_id == script_symbol.symbol_id
+    )
+    assert script_chunk.chunk_id.startswith("javascript:delegate:html:inline_script:")
+    assert script_chunk.metadata["delegate_parent_handler"] == "html"
+    assert script_chunk.metadata["delegate_parent_symbol"] == script_symbol.symbol_id
+    assert script_chunk.metadata["delegate_parent_chunk"] == script_shell.chunk_id
 
     style_chunk = next(chunk for chunk in result.chunks if chunk.delegate == "css")
     assert "body" in style_chunk.text
     assert style_chunk.parent_symbol_id == style_symbol.symbol_id
+    style_shell = next(
+        chunk
+        for chunk in result.chunks
+        if chunk.chunk_id.startswith("html:style:") and chunk.parent_symbol_id == style_symbol.symbol_id
+    )
+    assert style_chunk.chunk_id.startswith("css:delegate:html:inline_style:")
+    assert style_chunk.metadata["delegate_parent_handler"] == "html"
+    assert style_chunk.metadata["delegate_parent_symbol"] == style_symbol.symbol_id
+    assert style_chunk.metadata["delegate_parent_chunk"] == style_shell.chunk_id
 
     assert not result.warnings
