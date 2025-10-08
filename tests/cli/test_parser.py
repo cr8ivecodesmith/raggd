@@ -112,37 +112,44 @@ def _setup_remove_workspace(
     with sqlite3.connect(db_path) as connection:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute(
-            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (
+                "INSERT INTO batches (id, ref, generated_at, notes) "
+                "VALUES (?, ?, ?, ?)"
+            ),
             (batch_a, "ref-a", first_generated.isoformat(), "initial sync"),
         )
         connection.execute(
-            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (
+                "INSERT INTO batches (id, ref, generated_at, notes) "
+                "VALUES (?, ?, ?, ?)"
+            ),
             (batch_b, "ref-b", second_generated.isoformat(), "follow-up sync"),
         )
 
         file_a = connection.execute(
             (
-                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
-                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
             ),
             (batch_a, "src/legacy.py", "python", "sha-legacy", 111, 128),
         ).lastrowid
 
         file_reused = connection.execute(
             (
-                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
-                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
             ),
             (batch_b, "src/reused.py", "python", "sha-reused", 222, 256),
         ).lastrowid
 
         symbol_legacy = connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (file_id, kind, symbol_path, "
+                "start_line, end_line, symbol_sha, symbol_norm_sha, "
+                "args_json, returns_json, imports_json, deps_out_json, "
+                "docstring, summary, tokens, first_seen_batch, "
+                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?)"
             ),
             (
                 file_a,
@@ -166,11 +173,12 @@ def _setup_remove_workspace(
 
         symbol_reused = connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (file_id, kind, symbol_path, "
+                "start_line, end_line, symbol_sha, symbol_norm_sha, "
+                "args_json, returns_json, imports_json, deps_out_json, "
+                "docstring, summary, tokens, first_seen_batch, "
+                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?)"
             ),
             (
                 file_reused,
@@ -200,7 +208,9 @@ def _setup_remove_workspace(
                 "end_byte, token_count, content_hash, content_norm_hash, "
                 "content_text, overflow_is_truncated, overflow_reason, "
                 "metadata_json, created_at, updated_at, first_seen_batch, "
-                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "last_seen_batch) VALUES ("
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?, ?, ?)"
             ),
             (
                 batch_a,
@@ -238,7 +248,9 @@ def _setup_remove_workspace(
                 "end_byte, token_count, content_hash, content_norm_hash, "
                 "content_text, overflow_is_truncated, overflow_reason, "
                 "metadata_json, created_at, updated_at, first_seen_batch, "
-                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "last_seen_batch) VALUES ("
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?, ?, ?)"
             ),
             (
                 batch_a,
@@ -281,7 +293,11 @@ def _setup_remove_workspace(
         entries=(),
         warnings=(),
         errors=(),
-        metrics=ParserRunMetrics(files_parsed=2, files_discovered=2, chunks_emitted=2),
+        metrics=ParserRunMetrics(
+            files_parsed=2,
+            files_discovered=2,
+            chunks_emitted=2,
+        ),
     )
     run = parser_service.build_run_record(
         plan=plan,
@@ -314,6 +330,7 @@ def _setup_remove_workspace(
         first_generated,
         second_generated,
     )
+
 
 def test_parser_parse_no_sources_configured(tmp_path: Path) -> None:
     runner = CliRunner()
@@ -995,45 +1012,52 @@ def test_parser_batches_lists_recent_batches(tmp_path: Path) -> None:
     with sqlite3.connect(db_path) as connection:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute(
-            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (
+                "INSERT INTO batches (id, ref, generated_at, notes) "
+                "VALUES (?, ?, ?, ?)"
+            ),
             (batch_a, "ref-a", first_generated.isoformat(), "initial sync"),
         )
         connection.execute(
-            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (
+                "INSERT INTO batches (id, ref, generated_at, notes) "
+                "VALUES (?, ?, ?, ?)"
+            ),
             (batch_b, "ref-b", second_generated.isoformat(), "follow-up sync"),
         )
 
         file_a = connection.execute(
             (
-                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
-                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
             ),
             (batch_a, "src/alpha.py", "python", "sha-alpha", 111, 100),
         ).lastrowid
 
         file_b1 = connection.execute(
             (
-                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
-                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
             ),
             (batch_b, "src/beta.py", "python", "sha-beta", 222, 200),
         ).lastrowid
 
         file_b2 = connection.execute(
             (
-                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
-                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
             ),
             (batch_b, "src/gamma.py", "markdown", "sha-gamma", 333, 300),
         ).lastrowid
 
         symbol_a = connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (file_id, kind, symbol_path, "
+                "start_line, end_line, symbol_sha, symbol_norm_sha, "
+                "args_json, returns_json, imports_json, deps_out_json, "
+                "docstring, summary, tokens, first_seen_batch, "
+                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?)"
             ),
             (
                 file_a,
@@ -1057,11 +1081,12 @@ def test_parser_batches_lists_recent_batches(tmp_path: Path) -> None:
 
         symbol_b1 = connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (file_id, kind, symbol_path, "
+                "start_line, end_line, symbol_sha, symbol_norm_sha, "
+                "args_json, returns_json, imports_json, deps_out_json, "
+                "docstring, summary, tokens, first_seen_batch, "
+                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?)"
             ),
             (
                 file_b1,
@@ -1085,11 +1110,12 @@ def test_parser_batches_lists_recent_batches(tmp_path: Path) -> None:
 
         symbol_b2 = connection.execute(
             (
-                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
-                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
-                "imports_json, deps_out_json, docstring, summary, tokens, "
-                "first_seen_batch, last_seen_batch) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO symbols (file_id, kind, symbol_path, "
+                "start_line, end_line, symbol_sha, symbol_norm_sha, "
+                "args_json, returns_json, imports_json, deps_out_json, "
+                "docstring, summary, tokens, first_seen_batch, "
+                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?)"
             ),
             (
                 file_b2,
@@ -1119,7 +1145,9 @@ def test_parser_batches_lists_recent_batches(tmp_path: Path) -> None:
                 "end_byte, token_count, content_hash, content_norm_hash, "
                 "content_text, overflow_is_truncated, overflow_reason, "
                 "metadata_json, created_at, updated_at, first_seen_batch, "
-                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "last_seen_batch) VALUES ("
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?, ?, ?)"
             ),
             (
                 batch_a,
@@ -1159,12 +1187,16 @@ def test_parser_batches_lists_recent_batches(tmp_path: Path) -> None:
             connection.execute(
                 (
                     "INSERT INTO chunk_slices (batch_id, file_id, symbol_id, "
-                    "parent_symbol_id, chunk_id, handler_name, handler_version, "
-                    "part_index, part_total, start_line, end_line, start_byte, "
-                    "end_byte, token_count, content_hash, content_norm_hash, "
-                    "content_text, overflow_is_truncated, overflow_reason, "
-                    "metadata_json, created_at, updated_at, first_seen_batch, "
-                    "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "parent_symbol_id, chunk_id, handler_name, "
+                    "handler_version, part_index, part_total, start_line, "
+                    "end_line, start_byte, end_byte, token_count, "
+                    "content_hash, content_norm_hash, content_text, "
+                    "overflow_is_truncated, overflow_reason, metadata_json, "
+                    "created_at, updated_at, first_seen_batch, "
+                    "last_seen_batch) "
+                    "VALUES ("
+                    "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
                     batch_b,
@@ -1207,7 +1239,11 @@ def test_parser_batches_lists_recent_batches(tmp_path: Path) -> None:
         entries=(),
         warnings=(),
         errors=(),
-        metrics=ParserRunMetrics(files_discovered=2, files_parsed=2, chunks_emitted=3),
+        metrics=ParserRunMetrics(
+            files_discovered=2,
+            files_parsed=2,
+            chunks_emitted=3,
+        ),
     )
     run = parser_service.build_run_record(
         plan=plan,
@@ -1311,10 +1347,16 @@ def test_parser_remove_blocks_when_vectors_present(tmp_path: Path) -> None:
         ).fetchone()[0]
         connection.execute(
             (
-                "INSERT INTO vdbs (name, batch_id, embedding_model_id, faiss_path, created_at) "
-                "VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO vdbs (name, batch_id, embedding_model_id, "
+                "faiss_path, created_at) VALUES (?, ?, ?, ?, ?)"
             ),
-            ("demo-index", batch_a, model_id, "index.faiss", first_generated.isoformat()),
+            (
+                "demo-index",
+                batch_a,
+                model_id,
+                "index.faiss",
+                first_generated.isoformat(),
+            ),
         )
 
     result = runner.invoke(
@@ -1439,8 +1481,8 @@ def test_parser_remove_force_clears_manifest(tmp_path: Path) -> None:
 
         chunk_row = connection.execute(
             (
-                "SELECT batch_id, first_seen_batch, last_seen_batch FROM chunk_slices "
-                "WHERE chunk_id = ?"
+                "SELECT batch_id, first_seen_batch, last_seen_batch "
+                "FROM chunk_slices WHERE chunk_id = ?"
             ),
             ("chunk-reused",),
         ).fetchone()
@@ -1451,7 +1493,6 @@ def test_parser_remove_force_clears_manifest(tmp_path: Path) -> None:
     assert state.last_run_status == HealthStatus.DEGRADED.value
     assert any("Removed parser batch" in note for note in state.last_run_notes)
     assert any("raggd parser parse" in note for note in state.last_run_notes)
-
 
 
 def test_parser_workspace_missing_config(tmp_path: Path) -> None:

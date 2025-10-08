@@ -1561,16 +1561,14 @@ def _display_batches_for_source(
 
         timestamp = _format_generated_at(summary.generated_at)
         batch_ref = summary.ref or _shorten_batch_id(summary.batch_id)
-        latest_suffix = (
-            " · latest" if summary.batch_id == (state.last_batch_id or "") else ""
+        batch_short = _shorten_batch_id(summary.batch_id)
+        last_batch_id = state.last_batch_id or ""
+        latest_suffix = " · latest" if summary.batch_id == last_batch_id else ""
+        status_line = (
+            f"  - {timestamp} · batch {batch_short} "
+            f"(ref={batch_ref}) · status={status.value}{latest_suffix}"
         )
-        typer.secho(
-            (
-                f"  - {timestamp} · batch {_shorten_batch_id(summary.batch_id)} "
-                f"(ref={batch_ref}) · status={status.value}{latest_suffix}"
-            ),
-            fg=status_color,
-        )
+        typer.secho(status_line, fg=status_color)
         typer.echo(
             "    files: {files}  symbols: {symbols}  chunks: {chunks}".format(
                 files=summary.file_count,
@@ -1690,7 +1688,7 @@ class ParserRemoveError(RuntimeError):
     """Raised when parser batch removal cannot proceed."""
 
 
-class ParserRemoveBlocked(ParserRemoveError):
+class ParserRemoveBlockedError(ParserRemoveError):
     """Raised when removal is blocked by dependency checks."""
 
 
@@ -1721,7 +1719,7 @@ def _handle_remove_command(
             source=source,
             batch_id=batch_id,
         )
-    except ParserRemoveBlocked as exc:
+    except ParserRemoveBlockedError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         context.logger.warning(
             "parser-remove-blocked",
@@ -1761,7 +1759,10 @@ def _handle_remove_command(
         )
     )
     typer.echo(
-        "  chunks: reassigned=%d  deleted=%d  first_seen_resets=%d  last_seen_resets=%d"
+        (
+            "  chunks: reassigned=%d  deleted=%d  first_seen_resets=%d "
+            "last_seen_resets=%d"
+        )
         % (
             stats.chunks_reassigned,
             stats.chunks_deleted,
@@ -1851,7 +1852,7 @@ def _perform_batch_removal(
             {"batch": batch_id},
         ).fetchone()[0]
         if vector_count:
-            raise ParserRemoveBlocked(
+            raise ParserRemoveBlockedError(
                 (
                     f"Batch {batch_id} is referenced by {vector_count} vector "
                     "index(es); run `raggd vdb reset` or detach them before "
@@ -1906,9 +1907,7 @@ def _perform_batch_removal(
                 ),
                 {"batch": batch_id},
             )
-            stats.chunk_last_seen_reset = max(
-                last_seen_resets.rowcount or 0, 0
-            )
+            stats.chunk_last_seen_reset = max(last_seen_resets.rowcount or 0, 0)
 
             symbol_reassign = connection.execute(
                 (
@@ -1919,9 +1918,7 @@ def _perform_batch_removal(
                 ),
                 {"batch": batch_id},
             )
-            stats.symbols_reassigned = max(
-                symbol_reassign.rowcount or 0, 0
-            )
+            stats.symbols_reassigned = max(symbol_reassign.rowcount or 0, 0)
 
             symbol_last_seen_reset = connection.execute(
                 (
@@ -1967,9 +1964,7 @@ def _perform_batch_removal(
                 ),
                 {"batch": batch_id},
             )
-            stats.files_reassigned = max(
-                files_reassigned.rowcount or 0, 0
-            )
+            stats.files_reassigned = max(files_reassigned.rowcount or 0, 0)
 
             files_deleted = connection.execute(
                 "DELETE FROM files WHERE batch_id = :batch",
@@ -2037,12 +2032,9 @@ def _sync_manifest_after_removal(
     short_removed = _shorten_batch_id(removed_batch)
     next_note = None
     if next_batch is not None:
-        next_note = (
-            "Next available batch is %s (generated_at: %s)"
-            % (
-                _shorten_batch_id(next_batch.batch_id),
-                _format_generated_at(next_batch.generated_at),
-            )
+        next_note = "Next available batch is %s (generated_at: %s)" % (
+            _shorten_batch_id(next_batch.batch_id),
+            _format_generated_at(next_batch.generated_at),
         )
 
     def _mutate(snapshot: ManifestSnapshot) -> None:

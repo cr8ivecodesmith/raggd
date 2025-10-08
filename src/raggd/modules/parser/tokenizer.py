@@ -1,4 +1,4 @@
-"""Token counting helpers with graceful fallback when :mod:`tiktoken` is absent."""
+"""Token counting helpers when :mod:`tiktoken` is available or absent."""
 
 from __future__ import annotations
 

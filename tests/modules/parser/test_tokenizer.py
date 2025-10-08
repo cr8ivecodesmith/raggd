@@ -25,9 +25,16 @@ def test_get_token_encoder_unknown_name_raises() -> None:
         get_token_encoder("not-a-real-encoder")
 
 
-def test_get_token_encoder_fallback_when_tiktoken_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_token_encoder_fallback_when_tiktoken_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(tokenizer, "tiktoken", None, raising=False)
-    monkeypatch.setattr(tokenizer, "_FALLBACK_NOTICE_EMITTED", False, raising=False)
+    monkeypatch.setattr(
+        tokenizer,
+        "_FALLBACK_NOTICE_EMITTED",
+        False,
+        raising=False,
+    )
     tokenizer._load_encoding.cache_clear()
 
     encoder = get_token_encoder(DEFAULT_ENCODER)
