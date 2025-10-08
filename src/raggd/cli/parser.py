@@ -6,23 +6,33 @@ import concurrent.futures
 import os
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass
+from datetime import datetime, timezone
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Iterator, List, Sequence
+import uuid
 
 import typer
 
-from raggd.core.config import AppConfig, ParserModuleSettings
+from raggd.core.config import (
+    AppConfig,
+    ParserModuleSettings,
+    ParserHandlerSettings,
+)
 from raggd.core.logging import Logger, configure_logging, get_logger
 from raggd.core.paths import WorkspacePaths, resolve_workspace
 from raggd.modules.db import DbLifecycleService, db_settings_from_mapping
 from raggd.modules.db.uuid7 import generate_uuid7, short_uuid7
-from raggd.modules.manifest import ManifestService, manifest_settings_from_config
+from raggd.modules.manifest import (
+    ManifestService,
+    manifest_settings_from_config,
+)
 from raggd.modules.manifest.locks import (
     FileLock,
     ManifestLockError,
     ManifestLockTimeoutError,
 )
+from raggd.modules import HealthStatus
 from raggd.modules.parser import (
     FileStageOutcome,
     HandlerResult,
@@ -46,7 +56,7 @@ class ParserSessionError(RuntimeError):
     """Base error raised when acquiring a parser session fails."""
 
 
-class ParserSessionTimeout(ParserSessionError):
+class ParserSessionTimeoutError(ParserSessionError):
     """Raised when acquiring a parser session lock times out."""
 
 
@@ -96,7 +106,7 @@ class ParserSessionGuard:
                 yield
         except ManifestLockTimeoutError as exc:
             log.error("parser-session-timeout", error=str(exc))
-            raise ParserSessionTimeout(str(exc)) from exc
+            raise ParserSessionTimeoutError(str(exc)) from exc
         except ManifestLockError as exc:
             log.error("parser-session-lock-error", error=str(exc))
             raise ParserSessionError(str(exc)) from exc
@@ -152,6 +162,22 @@ class _ParseOutcome:
     @property
     def has_failures(self) -> bool:
         return bool(self.errors or self.failed_files or self.aborted)
+
+
+@dataclass(slots=True)
+class _PlanProcessingState:
+    """Mutable aggregation while executing a parser plan."""
+
+    run_metrics: ParserRunMetrics
+    cli_warnings: list[str] = field(default_factory=list)
+    run_warnings: list[str] = field(default_factory=list)
+    cli_errors: list[str] = field(default_factory=list)
+    run_errors: list[str] = field(default_factory=list)
+    failed_files: list[str] = field(default_factory=list)
+    results: list[tuple[ParserPlanEntry, HandlerResult]] = field(
+        default_factory=list
+    )
+    aborted: bool = False
 
 
 _parser_app = typer.Typer(
@@ -336,6 +362,217 @@ def _build_handler_context(
     )
 
 
+@dataclass(slots=True)
+class _PlanExecutor:
+    """Drive parser plan execution while capturing diagnostics."""
+
+    plan: ParserBatchPlan
+    target: _ParseTarget
+    parser_service: ParserService
+    cli_context: ParserCLIContext
+    logger: Logger
+    fail_fast: bool
+    stop_event: threading.Event | None = None
+    handlers: dict[str, Any] = field(default_factory=dict)
+
+    def run(self) -> _PlanProcessingState:
+        state = _PlanProcessingState(
+            run_metrics=self.plan.metrics.copy(),
+            cli_warnings=list(self.plan.warnings),
+            run_warnings=[],
+            cli_errors=list(self.plan.errors),
+            run_errors=[],
+        )
+        self._add_missing_scope_messages(state)
+        if not self.plan.entries:
+            self.logger.info("parser-plan-empty", source=self.target.name)
+            self._adjust_metrics_for_failures(state)
+            return state
+
+        handler_context = self._create_handler_context(state)
+        if handler_context is None:
+            self._adjust_metrics_for_failures(state)
+            return state
+
+        for entry in self.plan.entries:
+            if self._should_skip_entry(entry, state):
+                break
+            handler = self._resolve_handler(entry, handler_context, state)
+            if handler is None:
+                continue
+            result = self._run_handler(entry, handler_context, handler, state)
+            if result is None:
+                continue
+            self._record_result(entry, result, state)
+
+        self._adjust_metrics_for_failures(state)
+        return state
+
+    def _add_missing_scope_messages(self, state: _PlanProcessingState) -> None:
+        for missing in self.target.missing_scope:
+            message = f"Scope path missing: {missing}"
+            state.cli_warnings.append(message)
+            state.run_warnings.append(message)
+
+    def _create_handler_context(
+        self, state: _PlanProcessingState
+    ) -> ParseContext | None:
+        try:
+            return _build_handler_context(
+                parser_service=self.parser_service,
+                cli_context=self.cli_context,
+                source=self.target,
+            )
+        except TokenEncoderError as exc:
+            message = (
+                "Failed to load token encoder for parser handlers: "
+                f"{exc}. Install the parser extras or adjust configuration."
+            )
+            self.logger.error("parser-token-encoder-error", error=str(exc))
+            state.cli_errors.append(message)
+            state.run_errors.append(message)
+            return None
+
+    def _should_skip_entry(
+        self, entry: ParserPlanEntry, state: _PlanProcessingState
+    ) -> bool:
+        if self.stop_event and self.stop_event.is_set():
+            state.aborted = True
+            self.logger.info(
+                "parser-handler-skipped",
+                path=entry.relative_path.as_posix(),
+                reason="stop-signal",
+            )
+            return True
+        return False
+
+    def _resolve_handler(
+        self,
+        entry: ParserPlanEntry,
+        handler_context: ParseContext,
+        state: _PlanProcessingState,
+    ) -> Any | None:
+        handler_name = entry.handler.name
+        handler = self.handlers.get(handler_name)
+        if handler is not None:
+            return handler
+
+        handler_logger = handler_context.scoped_logger(handler_name)
+        try:
+            handler = self.parser_service.registry.create_handler(
+                handler_name,
+                context=handler_context,
+            )
+        except Exception as exc:
+            message = (
+                f"Failed to initialize handler {handler_name!r} for "
+                f"{entry.relative_path.as_posix()}: {exc}"
+            )
+            handler_logger.error(
+                "parser-handler-init-error",
+                path=entry.relative_path.as_posix(),
+                error=str(exc),
+            )
+            self._record_failure(
+                state,
+                message,
+                failed_path=entry.relative_path.as_posix(),
+                fatal=self.fail_fast,
+            )
+            return None
+
+        self.handlers[handler_name] = handler
+        return handler
+
+    def _run_handler(
+        self,
+        entry: ParserPlanEntry,
+        handler_context: ParseContext,
+        handler: Any,
+        state: _PlanProcessingState,
+    ) -> HandlerResult | None:
+        try:
+            return handler.parse(
+                path=entry.absolute_path,
+                context=handler_context,
+            )
+        except Exception as exc:  # pragma: no cover - handler failure path
+            message = (
+                f"Handler {entry.handler.name!r} failed for "
+                f"{entry.relative_path.as_posix()}: {exc}"
+            )
+            handler_logger = handler_context.scoped_logger(entry.handler.name)
+            handler_logger.error(
+                "parser-handler-error",
+                path=entry.relative_path.as_posix(),
+                error=str(exc),
+            )
+            self._record_failure(
+                state,
+                message,
+                failed_path=entry.relative_path.as_posix(),
+                fatal=self.fail_fast,
+            )
+            return None
+
+    def _record_result(
+        self,
+        entry: ParserPlanEntry,
+        result: HandlerResult,
+        state: _PlanProcessingState,
+    ) -> None:
+        if result.errors:
+            path = entry.relative_path.as_posix()
+            for message in result.errors:
+                formatted = f"{path}: {message}"
+                self._record_failure(
+                    state,
+                    formatted,
+                    failed_path=path,
+                    fatal=self.fail_fast,
+                )
+            return
+
+        if result.warnings:
+            path = entry.relative_path.as_posix()
+            for warning in result.warnings:
+                formatted = f"{path}: {warning}"
+                state.cli_warnings.append(formatted)
+                state.run_warnings.append(formatted)
+
+        state.results.append((entry, result))
+
+    def _record_failure(
+        self,
+        state: _PlanProcessingState,
+        message: str,
+        *,
+        failed_path: str | None = None,
+        fatal: bool = False,
+    ) -> None:
+        state.cli_errors.append(message)
+        state.run_errors.append(message)
+        if failed_path:
+            state.failed_files.append(failed_path)
+        if fatal:
+            state.aborted = True
+            if self.stop_event:
+                self.stop_event.set()
+
+    def _adjust_metrics_for_failures(self, state: _PlanProcessingState) -> None:
+        if not state.failed_files:
+            return
+        failed = len(set(state.failed_files))
+        state.run_metrics.files_failed = max(
+            state.run_metrics.files_failed + failed,
+            failed,
+        )
+        state.run_metrics.files_parsed = max(
+            0,
+            state.run_metrics.files_parsed - failed,
+        )
+
+
 def _unique_messages(messages: Iterable[str]) -> tuple[str, ...]:
     """Return messages deduplicated while preserving order."""
 
@@ -366,55 +603,82 @@ def _format_run_summary(
     if metrics is None:
         return None
 
-    parsed = metrics.files_parsed
-    reused_files = metrics.files_reused
-    failed_files = metrics.files_failed
-    discovered = metrics.files_discovered
-    inserted = metrics.chunks_emitted
-    reused_chunks = metrics.chunks_reused
-    fallbacks = metrics.fallbacks
-
     no_work_planned = plan is not None and not plan.entries
-    if (
-        not aborted
-        and not has_failures
-        and no_work_planned
-        and inserted == 0
-        and parsed == 0
-        and failed_files == 0
-    ):
+    if _is_no_work_run(metrics, aborted, has_failures, no_work_planned):
         return "no changes"
 
-    if aborted:
-        status = "aborted"
-    elif has_failures or failed_files > 0:
-        status = "completed with failures"
-    elif no_work_planned:
-        status = "no changes"
-    else:
-        status = "completed"
+    status = _select_summary_status(
+        metrics,
+        aborted=aborted,
+        has_failures=has_failures,
+        no_work_planned=no_work_planned,
+    )
 
-    file_segment = f"files parsed={parsed}"
-    file_details: list[str] = []
-    if reused_files:
-        file_details.append(f"reused={reused_files}")
-    if failed_files:
-        file_details.append(f"failed={failed_files}")
-    if discovered and discovered != parsed:
-        file_details.append(f"discovered={discovered}")
-    if file_details:
-        file_segment += f" ({', '.join(file_details)})"
-
-    chunk_segment = f"chunks inserted={inserted}"
-    chunk_details: list[str] = []
-    if reused_chunks:
-        chunk_details.append(f"reused={reused_chunks}")
-    if fallbacks:
-        chunk_details.append(f"fallbacks={fallbacks}")
-    if chunk_details:
-        chunk_segment += f", {', '.join(chunk_details)}"
-
+    file_segment = _summarize_file_metrics(metrics)
+    chunk_segment = _summarize_chunk_metrics(metrics)
     return f"{status}: {file_segment}; {chunk_segment}"
+
+
+def _is_no_work_run(
+    metrics: ParserRunMetrics,
+    aborted: bool,
+    has_failures: bool,
+    no_work_planned: bool,
+) -> bool:
+    if aborted or has_failures or not no_work_planned:
+        return False
+    if metrics.chunks_emitted:
+        return False
+    if metrics.files_parsed:
+        return False
+    return metrics.files_failed == 0
+
+
+def _select_summary_status(
+    metrics: ParserRunMetrics,
+    *,
+    aborted: bool,
+    has_failures: bool,
+    no_work_planned: bool,
+) -> str:
+    if aborted:
+        return "aborted"
+    if has_failures or metrics.files_failed > 0:
+        return "completed with failures"
+    if no_work_planned:
+        return "no changes"
+    return "completed"
+
+
+def _summarize_file_metrics(metrics: ParserRunMetrics) -> str:
+    details: list[str] = []
+    if metrics.files_reused:
+        details.append(f"reused={metrics.files_reused}")
+    if metrics.files_failed:
+        details.append(f"failed={metrics.files_failed}")
+    if (
+        metrics.files_discovered
+        and metrics.files_discovered != metrics.files_parsed
+    ):
+        details.append(f"discovered={metrics.files_discovered}")
+
+    segment = f"files parsed={metrics.files_parsed}"
+    if details:
+        segment += f" ({', '.join(details)})"
+    return segment
+
+
+def _summarize_chunk_metrics(metrics: ParserRunMetrics) -> str:
+    details: list[str] = []
+    if metrics.chunks_reused:
+        details.append(f"reused={metrics.chunks_reused}")
+    if metrics.fallbacks:
+        details.append(f"fallbacks={metrics.fallbacks}")
+
+    segment = f"chunks inserted={metrics.chunks_emitted}"
+    if details:
+        segment += f", {', '.join(details)}"
+    return segment
 
 
 def _vector_sync_note(source: str) -> str:
@@ -424,6 +688,365 @@ def _vector_sync_note(source: str) -> str:
         "Vector indexes are not updated automatically; run "
         f"`raggd vdb sync {source}` to refresh embeddings."
     )
+
+
+def _partition_targets(
+    parse_targets: Sequence[_ParseTarget],
+) -> tuple[list[_ParseTarget], list[_ParseTarget]]:
+    enabled: list[_ParseTarget] = []
+    disabled: list[_ParseTarget] = []
+    for target in parse_targets:
+        if target.config.enabled:
+            enabled.append(target)
+        else:
+            disabled.append(target)
+    return enabled, disabled
+
+
+def _notify_disabled_targets(targets: Sequence[_ParseTarget]) -> None:
+    for target in targets:
+        typer.secho(
+            f"Source {target.name} is disabled; skipping.",
+            fg=typer.colors.YELLOW,
+        )
+
+
+def _run_parse_targets(
+    *,
+    context: ParserCLIContext,
+    enabled_targets: Sequence[_ParseTarget],
+    concurrency: int,
+    fail_fast: bool,
+) -> dict[str, _ParseOutcome]:
+    if not enabled_targets:
+        return {}
+
+    scope_key = (
+        "workspace" if len(enabled_targets) > 1 else enabled_targets[0].name
+    )
+    stop_event = threading.Event()
+    with context.session_guard.acquire(scope=scope_key, action="parse"):
+        if concurrency <= 1 or len(enabled_targets) == 1:
+            return _run_targets_sequential(
+                context=context,
+                targets=enabled_targets,
+                fail_fast=fail_fast,
+                stop_event=stop_event,
+            )
+        return _run_targets_concurrent(
+            context=context,
+            targets=enabled_targets,
+            concurrency=concurrency,
+            fail_fast=fail_fast,
+            stop_event=stop_event,
+        )
+
+
+def _run_targets_sequential(
+    *,
+    context: ParserCLIContext,
+    targets: Sequence[_ParseTarget],
+    fail_fast: bool,
+    stop_event: threading.Event,
+) -> dict[str, _ParseOutcome]:
+    outcomes: dict[str, _ParseOutcome] = {}
+    for target in targets:
+        outcome = _parse_single_source(
+            context,
+            target,
+            fail_fast=fail_fast,
+            stop_event=stop_event,
+        )
+        outcomes[target.name] = outcome
+        if fail_fast and outcome.has_failures:
+            stop_event.set()
+            break
+    return outcomes
+
+
+def _run_targets_concurrent(
+    *,
+    context: ParserCLIContext,
+    targets: Sequence[_ParseTarget],
+    concurrency: int,
+    fail_fast: bool,
+    stop_event: threading.Event,
+) -> dict[str, _ParseOutcome]:
+    outcomes: dict[str, _ParseOutcome] = {}
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=concurrency,
+        thread_name_prefix="parser",
+    ) as executor:
+        future_map: dict[
+            concurrent.futures.Future[_ParseOutcome], _ParseTarget
+        ] = {}
+        for target in targets:
+            future = executor.submit(
+                _parse_single_source,
+                context,
+                target,
+                fail_fast=fail_fast,
+                stop_event=stop_event,
+            )
+            future_map[future] = target
+
+        for future in concurrent.futures.as_completed(future_map):
+            target = future_map[future]
+            try:
+                outcome = future.result()
+            except Exception as exc:  # pragma: no cover - executor path
+                context.logger.exception(
+                    "parser-parse-thread-error",
+                    source=target.name,
+                    error=str(exc),
+                )
+                outcome = _ParseOutcome(
+                    source=target.name,
+                    batch_id=None,
+                    batch_ref=None,
+                    errors=(f"Unhandled error: {exc}",),
+                )
+            outcomes[target.name] = outcome
+            if fail_fast and outcome.has_failures:
+                stop_event.set()
+    return outcomes
+
+
+def _render_parse_results(
+    parse_targets: Sequence[_ParseTarget],
+    outcomes: dict[str, _ParseOutcome],
+) -> int:
+    exit_code = 0
+    for target in parse_targets:
+        name = target.name
+        outcome = outcomes.get(name)
+        if outcome is None:
+            continue
+
+        _emit_outcome_messages(name, outcome)
+        failed = _emit_outcome_summary(name, outcome)
+        _emit_outcome_notes(name, outcome)
+
+        if failed:
+            exit_code = 1
+
+    return exit_code
+
+
+def _emit_outcome_messages(name: str, outcome: _ParseOutcome) -> None:
+    for warning in outcome.warnings:
+        typer.secho(f"[{name}] {warning}", fg=typer.colors.YELLOW)
+    for missing in outcome.missing_scope:
+        typer.secho(
+            f"[{name}] Scope filter missing: {missing}",
+            fg=typer.colors.YELLOW,
+        )
+    for failure in outcome.failed_files:
+        typer.secho(
+            f"[{name}] Failed to parse {failure}",
+            fg=typer.colors.RED,
+        )
+    for error in outcome.errors:
+        typer.secho(f"[{name}] {error}", fg=typer.colors.RED)
+
+
+def _emit_outcome_summary(name: str, outcome: _ParseOutcome) -> bool:
+    summary_text = outcome.summary
+    show_summary_line = bool(summary_text)
+
+    if outcome.has_failures:
+        typer.secho(f"[{name}] Parse incomplete.", fg=typer.colors.RED)
+        if show_summary_line:
+            typer.secho(
+                f"[{name}] Summary: {summary_text}",
+                fg=typer.colors.YELLOW,
+            )
+        return True
+
+    if outcome.batch_id:
+        batch_ref = outcome.batch_ref or outcome.batch_id
+        summary = f"batch {batch_ref}"
+    else:
+        summary = "no changes"
+    typer.secho(
+        f"[{name}] Parse completed ({summary}).",
+        fg=typer.colors.GREEN,
+    )
+    if show_summary_line:
+        typer.secho(
+            f"[{name}] Summary: {summary_text}",
+            fg=typer.colors.BLUE,
+        )
+    return False
+
+
+def _emit_outcome_notes(name: str, outcome: _ParseOutcome) -> None:
+    for note in outcome.notes:
+        typer.secho(f"[{name}] {note}", fg=typer.colors.YELLOW)
+
+
+def _ensure_target_ready(
+    target: _ParseTarget,
+    logger: Logger,
+) -> _ParseOutcome | None:
+    if not target.config.enabled:
+        message = (
+            f"Source {target.name!r} is disabled. Enable it with "
+            "`raggd source enable` before parsing."
+        )
+        logger.warning("parser-source-disabled")
+        return _ParseOutcome(
+            source=target.name,
+            batch_id=None,
+            batch_ref=None,
+            errors=(message,),
+            missing_scope=target.missing_scope,
+        )
+
+    root = target.config.path
+    if not root.exists() or not root.is_dir():
+        message = (
+            f"Source directory not found for {target.name!r}: {root}. "
+            "Run `raggd source refresh` first."
+        )
+        logger.error("parser-source-missing", path=str(root))
+        return _ParseOutcome(
+            source=target.name,
+            batch_id=None,
+            batch_ref=None,
+            errors=(message,),
+            missing_scope=target.missing_scope,
+        )
+
+    return None
+
+
+def _plan_source_or_outcome(
+    context: ParserCLIContext,
+    target: _ParseTarget,
+    logger: Logger,
+) -> ParserBatchPlan | _ParseOutcome:
+    parser_service = context.parser_service
+    try:
+        return parser_service.plan_source(
+            source=target.name,
+            scope=target.scope_paths,
+        )
+    except (
+        ParserModuleDisabledError,
+        ParserSourceNotConfiguredError,
+    ) as exc:
+        logger.error("parser-plan-error", error=str(exc))
+        return _ParseOutcome(
+            source=target.name,
+            batch_id=None,
+            batch_ref=None,
+            errors=(str(exc),),
+            missing_scope=target.missing_scope,
+        )
+    except Exception as exc:  # pragma: no cover - unexpected propagation
+        logger.exception("parser-plan-unhandled", error=str(exc))
+        return _ParseOutcome(
+            source=target.name,
+            batch_id=None,
+            batch_ref=None,
+            errors=(f"Planning failed: {exc}",),
+            missing_scope=target.missing_scope,
+        )
+
+
+def _stage_results(
+    *,
+    parser_service: ParserService,
+    target: _ParseTarget,
+    plan: ParserBatchPlan,
+    state: _PlanProcessingState,
+    fail_fast: bool,
+    stop_event: threading.Event | None,
+    logger: Logger,
+) -> tuple[
+    str | None,
+    str | None,
+    tuple[tuple[ParserPlanEntry, FileStageOutcome], ...],
+]:
+    if not state.results:
+        return None, None, ()
+
+    batch_uuid = generate_uuid7()
+    batch_id = str(batch_uuid)
+    batch_ref = short_uuid7(batch_uuid).value
+
+    try:
+        outcomes, stage_metrics = parser_service.stage_batch(
+            source=target.name,
+            batch_id=batch_id,
+            plan=plan,
+            results=tuple(state.results),
+            batch_ref=batch_ref,
+        )
+    except ParserError as exc:
+        message = f"Failed to stage parser batch: {exc}"
+        logger.error("parser-stage-error", error=str(exc))
+        state.cli_errors.append(message)
+        state.run_errors.append(message)
+        if fail_fast and stop_event:
+            stop_event.set()
+        return None, None, ()
+
+    state.run_metrics = stage_metrics
+    return batch_id, batch_ref, tuple(outcomes)
+
+
+def _build_vector_notes(
+    *,
+    batch_id: str | None,
+    aborted: bool,
+    metrics: ParserRunMetrics,
+    source: str,
+) -> list[str]:
+    if not batch_id or aborted:
+        return []
+    if metrics.chunks_emitted > 0 or metrics.chunks_reused > 0:
+        return [_vector_sync_note(source)]
+    return []
+
+
+def _record_manifest_update(
+    *,
+    parser_service: ParserService,
+    target: _ParseTarget,
+    plan: ParserBatchPlan,
+    batch_id: str | None,
+    summary: str | None,
+    state: _PlanProcessingState,
+    notes: Sequence[str],
+    logger: Logger,
+    fail_fast: bool,
+    stop_event: threading.Event | None,
+) -> tuple[ParserRunRecord | None, ParserManifestState | None]:
+    try:
+        run_record = parser_service.build_run_record(
+            plan=plan,
+            batch_id=batch_id,
+            summary=summary,
+            warnings=tuple(state.run_warnings),
+            errors=tuple(state.run_errors),
+            notes=tuple(notes),
+            metrics=state.run_metrics,
+        )
+        manifest_state = parser_service.record_run(
+            source=target.name,
+            run=run_record,
+        )
+        return run_record, manifest_state
+    except Exception as exc:  # pragma: no cover - manifest failure path
+        message = f"Failed to update parser manifest: {exc}"
+        logger.error("parser-manifest-error", error=str(exc))
+        state.cli_errors.append(message)
+        state.run_errors.append(message)
+        if fail_fast and stop_event:
+            stop_event.set()
+        return None, None
 
 
 def _parse_single_source(
@@ -445,63 +1068,15 @@ def _parse_single_source(
             aborted=True,
         )
 
-    if not target.config.enabled:
-        message = (
-            f"Source {target.name!r} is disabled. Enable it with "
-            "`raggd source enable` before parsing."
-        )
-        logger.warning("parser-source-disabled")
-        return _ParseOutcome(
-            source=target.name,
-            batch_id=None,
-            batch_ref=None,
-            warnings=(),
-            errors=(message,),
-            missing_scope=target.missing_scope,
-        )
+    ready = _ensure_target_ready(target, logger)
+    if ready is not None:
+        return ready
 
-    root = target.config.path
-    if not root.exists() or not root.is_dir():
-        message = (
-            f"Source directory not found for {target.name!r}: {root}. "
-            "Run `raggd source refresh` first."
-        )
-        logger.error("parser-source-missing", path=str(root))
-        return _ParseOutcome(
-            source=target.name,
-            batch_id=None,
-            batch_ref=None,
-            warnings=(),
-            errors=(message,),
-            missing_scope=target.missing_scope,
-        )
+    planned = _plan_source_or_outcome(context, target, logger)
+    if isinstance(planned, _ParseOutcome):
+        return planned
 
-    parser_service = context.parser_service
-
-    try:
-        plan = parser_service.plan_source(
-            source=target.name,
-            scope=target.scope_paths,
-        )
-    except (ParserModuleDisabledError, ParserSourceNotConfiguredError) as exc:
-        logger.error("parser-plan-error", error=str(exc))
-        return _ParseOutcome(
-            source=target.name,
-            batch_id=None,
-            batch_ref=None,
-            errors=(str(exc),),
-            missing_scope=target.missing_scope,
-        )
-    except Exception as exc:  # pragma: no cover - unexpected propagation
-        logger.exception("parser-plan-unhandled", error=str(exc))
-        return _ParseOutcome(
-            source=target.name,
-            batch_id=None,
-            batch_ref=None,
-            errors=(f"Planning failed: {exc}",),
-            missing_scope=target.missing_scope,
-        )
-
+    plan = planned
     scope_display = _scope_summary(target.scope_paths)
     logger.info(
         "parser-plan-created",
@@ -511,225 +1086,71 @@ def _parse_single_source(
         scope=scope_display,
     )
 
-    cli_warnings: list[str] = list(plan.warnings)
-    run_warnings: list[str] = []
-    cli_errors: list[str] = list(plan.errors)
-    run_errors: list[str] = []
-    failed_files: list[str] = []
+    executor = _PlanExecutor(
+        plan=plan,
+        target=target,
+        parser_service=context.parser_service,
+        cli_context=context,
+        logger=logger,
+        fail_fast=fail_fast,
+        stop_event=stop_event,
+    )
+    state = executor.run()
 
-    for missing in target.missing_scope:
-        message = f"Scope path missing: {missing}"
-        cli_warnings.append(message)
-        run_warnings.append(message)
+    batch_id, batch_ref, staged_outcomes = _stage_results(
+        parser_service=context.parser_service,
+        target=target,
+        plan=plan,
+        state=state,
+        fail_fast=fail_fast,
+        stop_event=stop_event,
+        logger=logger,
+    )
 
-    run_metrics = plan.metrics.copy()
-    registry = parser_service.registry
-    handlers_cache: dict[str, Any] = {}
-    results: list[tuple[ParserPlanEntry, HandlerResult]] = []
-    aborted = False
+    notes = _build_vector_notes(
+        batch_id=batch_id,
+        aborted=state.aborted,
+        metrics=state.run_metrics,
+        source=target.name,
+    )
 
-    handler_context: ParseContext | None = None
-    if plan.entries:
-        try:
-            handler_context = _build_handler_context(
-                parser_service=parser_service,
-                cli_context=context,
-                source=target,
-            )
-        except TokenEncoderError as exc:
-            message = (
-                "Failed to load token encoder for parser handlers: "
-                f"{exc}. Install the parser extras or adjust configuration."
-            )
-            logger.error("parser-token-encoder-error", error=str(exc))
-            cli_errors.append(message)
-            run_errors.append(message)
-        else:
-            for entry in plan.entries:
-                if stop_event and stop_event.is_set():
-                    aborted = True
-                    logger.info(
-                        "parser-handler-skipped",
-                        path=entry.relative_path.as_posix(),
-                        reason="stop-signal",
-                    )
-                    break
+    manifest_failures = bool(
+        plan.errors or state.run_errors or state.failed_files or state.aborted
+    )
+    manifest_summary = _format_run_summary(
+        plan=plan,
+        metrics=state.run_metrics,
+        aborted=state.aborted,
+        has_failures=manifest_failures,
+    )
 
-                handler_name = entry.handler.name
-                handler_logger = handler_context.scoped_logger(handler_name)
-                handler = handlers_cache.get(handler_name)
-                if handler is None:
-                    try:
-                        handler = registry.create_handler(
-                            handler_name,
-                            context=handler_context,
-                        )
-                    except Exception as exc:
-                        message = (
-                            f"Failed to initialize handler {handler_name!r} for "
-                            f"{entry.relative_path.as_posix()}: {exc}"
-                        )
-                        handler_logger.error(
-                            "parser-handler-init-error",
-                            path=entry.relative_path.as_posix(),
-                            error=str(exc),
-                        )
-                        cli_errors.append(message)
-                        run_errors.append(message)
-                        failed_files.append(entry.relative_path.as_posix())
-                        if fail_fast:
-                            aborted = True
-                            if stop_event:
-                                stop_event.set()
-                            break
-                        continue
-                    handlers_cache[handler_name] = handler
-
-                try:
-                    result = handler.parse(
-                        path=entry.absolute_path,
-                        context=handler_context,
-                    )
-                except Exception as exc:  # pragma: no cover - handler failure path
-                    message = (
-                        f"Handler {handler_name!r} failed for "
-                        f"{entry.relative_path.as_posix()}: {exc}"
-                    )
-                    handler_logger.error(
-                        "parser-handler-error",
-                        path=entry.relative_path.as_posix(),
-                        error=str(exc),
-                    )
-                    cli_errors.append(message)
-                    run_errors.append(message)
-                    failed_files.append(entry.relative_path.as_posix())
-                    if fail_fast:
-                        aborted = True
-                        if stop_event:
-                            stop_event.set()
-                        break
-                    continue
-
-                if result.errors:
-                    for message in result.errors:
-                        formatted = (
-                            f"{entry.relative_path.as_posix()}: {message}"
-                        )
-                        cli_errors.append(formatted)
-                        run_errors.append(formatted)
-                        failed_files.append(entry.relative_path.as_posix())
-                    if fail_fast:
-                        aborted = True
-                        if stop_event:
-                            stop_event.set()
-                        break
-                    continue
-
-                if result.warnings:
-                    for warning in result.warnings:
-                        formatted = (
-                            f"{entry.relative_path.as_posix()}: {warning}"
-                        )
-                        cli_warnings.append(formatted)
-                        run_warnings.append(formatted)
-
-                results.append((entry, result))
-
-    else:
-        logger.info("parser-plan-empty", source=target.name)
-
-    batch_id: str | None = None
-    batch_ref: str | None = None
-    staged_outcomes: tuple[tuple[ParserPlanEntry, FileStageOutcome], ...] = ()
-
-    if failed_files:
-        failed = len(set(failed_files))
-        run_metrics.files_failed = max(run_metrics.files_failed + failed, failed)
-        run_metrics.files_parsed = max(0, run_metrics.files_parsed - failed)
-
-    if results:
-        batch_uuid = generate_uuid7()
-        batch_id = str(batch_uuid)
-        batch_ref = short_uuid7(batch_uuid).value
-        try:
-            outcomes, stage_metrics = parser_service.stage_batch(
-                source=target.name,
-                batch_id=batch_id,
-                plan=plan,
-                results=tuple(results),
-                batch_ref=batch_ref,
-            )
-        except ParserError as exc:
-            message = f"Failed to stage parser batch: {exc}"
-            logger.error("parser-stage-error", error=str(exc))
-            cli_errors.append(message)
-            run_errors.append(message)
-            if fail_fast and stop_event:
-                stop_event.set()
-            staged_outcomes = ()
-        else:
-            staged_outcomes = tuple(outcomes)
-            run_metrics = stage_metrics
-
-    notes: list[str] = []
-    if (
-        batch_id
-        and not aborted
-        and (run_metrics.chunks_emitted > 0 or run_metrics.chunks_reused > 0)
-    ):
-        notes.append(_vector_sync_note(target.name))
-
-    run_record: ParserRunRecord | None = None
-    manifest_state: ParserManifestState | None = None
-
-    try:
-        run_record = parser_service.build_run_record(
-            plan=plan,
-            batch_id=batch_id,
-            summary=_format_run_summary(
-                plan=plan,
-                metrics=run_metrics,
-                aborted=aborted,
-                has_failures=bool(
-                    plan.errors or run_errors or failed_files or aborted
-                ),
-            ),
-            warnings=tuple(run_warnings),
-            errors=tuple(run_errors),
-            notes=tuple(notes),
-            metrics=run_metrics,
-        )
-        manifest_state = parser_service.record_run(
-            source=target.name,
-            run=run_record,
-        )
-    except Exception as exc:  # pragma: no cover - manifest failure path
-        message = f"Failed to update parser manifest: {exc}"
-        logger.error("parser-manifest-error", error=str(exc))
-        cli_errors.append(message)
-        run_errors.append(message)
-        run_record = None
-        manifest_state = None
-        if fail_fast and stop_event:
-            stop_event.set()
+    run_record, manifest_state = _record_manifest_update(
+        parser_service=context.parser_service,
+        target=target,
+        plan=plan,
+        batch_id=batch_id,
+        summary=manifest_summary,
+        state=state,
+        notes=notes,
+        logger=logger,
+        fail_fast=fail_fast,
+        stop_event=stop_event,
+    )
 
     has_failures = bool(
-        plan.errors
-        or run_errors
-        or failed_files
-        or aborted
+        plan.errors or state.run_errors or state.failed_files or state.aborted
     )
     summary_text = _format_run_summary(
         plan=plan,
-        metrics=run_metrics,
-        aborted=aborted,
+        metrics=state.run_metrics,
+        aborted=state.aborted,
         has_failures=has_failures,
     )
 
-    warnings_out = _unique_messages(cli_warnings)
-    errors_out = _unique_messages(cli_errors)
+    warnings_out = _unique_messages(state.cli_warnings)
+    errors_out = _unique_messages(state.cli_errors)
     notes_out = _unique_messages(notes)
-    failed_files_out = tuple(sorted(set(failed_files)))
+    failed_files_out = tuple(sorted(set(state.failed_files)))
 
     logger.info(
         "parser-parse-finished",
@@ -737,7 +1158,7 @@ def _parse_single_source(
         warnings=len(warnings_out),
         errors=len(errors_out),
         failed_files=len(failed_files_out),
-        aborted=aborted,
+        aborted=state.aborted,
         summary=summary_text,
     )
 
@@ -746,13 +1167,13 @@ def _parse_single_source(
         batch_id=batch_id,
         batch_ref=batch_ref,
         plan=plan,
-        metrics=run_metrics,
+        metrics=state.run_metrics,
         staged=staged_outcomes,
         warnings=warnings_out,
         errors=errors_out,
         failed_files=failed_files_out,
         missing_scope=target.missing_scope,
-        aborted=aborted,
+        aborted=state.aborted,
         summary=summary_text,
         notes=notes_out,
         manifest_state=manifest_state,
@@ -778,6 +1199,310 @@ def _emit_unimplemented(
         enabled=context.settings.enabled,
     )
     raise typer.Exit(code=1)
+
+
+def _format_setting_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if value is None:
+        return "inherit"
+    if isinstance(value, tuple):
+        if not value:
+            return "none"
+        return ", ".join(str(item) for item in value)
+    if isinstance(value, HealthStatus):
+        return value.value
+    if hasattr(value, "value"):
+        try:
+            return str(value.value)
+        except Exception:  # pragma: no cover - defensive fallback
+            pass
+    return str(value)
+
+
+def _coerce_health_status(value: object) -> HealthStatus:
+    if isinstance(value, HealthStatus):
+        return value
+    try:
+        return HealthStatus(str(value))
+    except Exception:  # pragma: no cover - defensive fallback
+        return HealthStatus.UNKNOWN
+
+
+def _compute_config_overrides(
+    settings: ParserModuleSettings,
+) -> tuple[str, ...]:
+    baseline = ParserModuleSettings()
+    overrides: list[str] = []
+
+    def _maybe_add(label: str, actual: object, default: object) -> None:
+        if actual == default:
+            return
+        overrides.append(
+            f"{label}: {_format_setting_value(actual)} "
+            f"(default {_format_setting_value(default)})"
+        )
+
+    _maybe_add("enabled", settings.enabled, baseline.enabled)
+    _maybe_add("extras", settings.extras, baseline.extras)
+    _maybe_add(
+        "fail_fast",
+        settings.fail_fast,
+        baseline.fail_fast,
+    )
+    _maybe_add(
+        "max_concurrency",
+        settings.max_concurrency,
+        baseline.max_concurrency,
+    )
+    _maybe_add(
+        "general_max_tokens",
+        settings.general_max_tokens,
+        baseline.general_max_tokens,
+    )
+    _maybe_add(
+        "gitignore_behavior",
+        settings.gitignore_behavior,
+        baseline.gitignore_behavior,
+    )
+
+    handler_names = set(baseline.handlers) | set(settings.handlers)
+    for name in sorted(handler_names):
+        actual = settings.handlers.get(name)
+        default = baseline.handlers.get(name, ParserHandlerSettings())
+        if actual is None:
+            actual = ParserHandlerSettings()
+        _maybe_add(
+            f"handlers.{name}.enabled",
+            actual.enabled,
+            default.enabled,
+        )
+        _maybe_add(
+            f"handlers.{name}.max_tokens",
+            actual.max_tokens,
+            default.max_tokens,
+        )
+
+    return tuple(overrides)
+
+
+def _format_timestamp(value: datetime | None) -> str:
+    if value is None:
+        return "never"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _shorten_batch_id(batch_id: str | None) -> str:
+    if not batch_id:
+        return "none"
+    try:
+        shortened = short_uuid7(uuid.UUID(batch_id))
+    except (ValueError, AttributeError):
+        return batch_id
+    return shortened.value
+
+
+def _render_handler_coverage(
+    state: ParserManifestState,
+) -> tuple[str, ...]:
+    coverage: list[str] = []
+    names = set(state.handler_versions) | set(state.metrics.handlers_invoked)
+    for name in sorted(names):
+        count = state.metrics.handlers_invoked.get(name, 0)
+        version = state.handler_versions.get(name)
+        details = f"{name}: count={count}"
+        if version:
+            details += f", version={version}"
+        coverage.append(details)
+    return tuple(coverage)
+
+
+def _render_dependency_gaps(
+    availability: Sequence[Any],
+) -> tuple[tuple[str, tuple[str, ...]]]:
+    gaps: list[tuple[str, tuple[str, ...]]] = []
+    for snapshot in availability:
+        name = getattr(snapshot, "name", "handler")
+        enabled = getattr(snapshot, "enabled", True)
+        status = _coerce_health_status(
+            getattr(snapshot, "status", HealthStatus.UNKNOWN)
+        )
+        summary = getattr(snapshot, "summary", None)
+        warnings = tuple(getattr(snapshot, "warnings", ()) or ())
+        reasons: list[str] = []
+        if not enabled:
+            reasons.append("disabled by configuration")
+        if enabled and status != HealthStatus.OK:
+            reasons.append(summary or f"status={status.value}")
+        if warnings:
+            reasons.extend(warnings)
+        if reasons:
+            gaps.append((name, tuple(reasons)))
+    return tuple(gaps)
+
+
+def _render_handler_availability(
+    availability: Sequence[Any],
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    for snapshot in sorted(
+        availability,
+        key=lambda item: getattr(item, "name", ""),
+    ):
+        name = getattr(snapshot, "name", "handler")
+        status = _coerce_health_status(
+            getattr(snapshot, "status", HealthStatus.UNKNOWN)
+        )
+        enabled = getattr(snapshot, "enabled", True)
+        summary = getattr(snapshot, "summary", None)
+        label = "enabled" if enabled else "disabled"
+        if enabled:
+            line = f"{name}: {label} (status={status.value})"
+        else:
+            line = f"{name}: {label}"
+        if summary:
+            line += f" - {summary}"
+        lines.append(line)
+    return tuple(lines)
+
+
+def _resolve_info_sources(
+    context: ParserCLIContext,
+    source: str | None,
+) -> tuple[list[str], list[str]]:
+    sources = [name for name, _ in _sorted_workspace_sources(context.config)]
+    if source is None:
+        return sources, []
+    normalized = source.strip()
+    if normalized in context.config.workspace_sources:
+        return [normalized], []
+    return [], [normalized]
+
+
+def _emit_basic_info(
+    *,
+    state: ParserManifestState,
+    settings_enabled: bool,
+) -> None:
+    typer.echo(f"  Module enabled: {'yes' if settings_enabled else 'no'}")
+    typer.echo(f"  Last batch id: {_shorten_batch_id(state.last_batch_id)}")
+    status = _coerce_health_status(state.last_run_status)
+    status_color = {
+        HealthStatus.OK: typer.colors.GREEN,
+        HealthStatus.DEGRADED: typer.colors.YELLOW,
+        HealthStatus.ERROR: typer.colors.RED,
+        HealthStatus.UNKNOWN: typer.colors.BLUE,
+    }.get(status, typer.colors.WHITE)
+    typer.secho(
+        f"  Last run status: {status.value}",
+        fg=status_color,
+    )
+    typer.echo(
+        f"  Last run started: {_format_timestamp(state.last_run_started_at)}"
+    )
+    typer.echo(
+        "  Last run completed: "
+        f"{_format_timestamp(state.last_run_completed_at)}"
+    )
+    typer.echo(f"  Last run summary: {state.last_run_summary or 'none'}")
+
+
+def _emit_run_messages(state: ParserManifestState) -> None:
+    if state.warning_count:
+        typer.echo("  Last run warnings:")
+        for warning in state.last_run_warnings:
+            typer.secho(f"    - {warning}", fg=typer.colors.YELLOW)
+    else:
+        typer.echo("  Last run warnings: none")
+
+    if state.error_count:
+        typer.echo("  Last run errors:")
+        for error in state.last_run_errors:
+            typer.secho(f"    - {error}", fg=typer.colors.RED)
+    else:
+        typer.echo("  Last run errors: none")
+
+
+def _emit_metrics_summary(state: ParserManifestState) -> None:
+    metrics = state.metrics
+    typer.echo(
+        (
+            "  Last run metrics: parsed={parsed} reused={reused} "
+            "chunks={chunks} reused_chunks={chunks_reused}"
+        ).format(
+            parsed=metrics.files_parsed,
+            reused=metrics.files_reused,
+            chunks=metrics.chunks_emitted,
+            chunks_reused=metrics.chunks_reused,
+        )
+    )
+
+
+def _emit_handler_sections(
+    *,
+    state: ParserManifestState,
+    availability: tuple[Any, ...],
+) -> None:
+    coverage = _render_handler_coverage(state)
+    if coverage:
+        typer.echo("  Handler coverage:")
+        for line in coverage:
+            typer.echo(f"    - {line}")
+    else:
+        typer.echo("  Handler coverage: none recorded")
+
+    availability_lines = _render_handler_availability(availability)
+    if availability_lines:
+        typer.echo("  Handler availability:")
+        for line in availability_lines:
+            typer.echo(f"    - {line}")
+    else:
+        typer.echo("  Handler availability: none")
+
+
+def _emit_dependency_section(availability: tuple[Any, ...]) -> None:
+    gaps = _render_dependency_gaps(availability)
+    if gaps:
+        typer.echo("  Dependency gaps:")
+        for name, reasons in gaps:
+            typer.echo(f"    - {name}:")
+            for reason in reasons:
+                typer.secho(f"      * {reason}", fg=typer.colors.YELLOW)
+    else:
+        typer.echo("  Dependency gaps: none")
+
+
+def _emit_overrides_summary(overrides: tuple[str, ...]) -> None:
+    if overrides:
+        typer.echo("  Configuration overrides:")
+        for entry in overrides:
+            typer.echo(f"    - {entry}")
+    else:
+        typer.echo("  Configuration overrides: none")
+
+
+def _display_source_info(
+    *,
+    name: str,
+    state: ParserManifestState,
+    availability: tuple[Any, ...],
+    overrides: tuple[str, ...],
+    settings_enabled: bool,
+) -> None:
+    typer.secho(
+        f"Parser info for {name}",
+        fg=typer.colors.CYAN,
+        bold=True,
+    )
+    _emit_basic_info(state=state, settings_enabled=settings_enabled)
+    _emit_run_messages(state)
+    _emit_metrics_summary(state)
+    _emit_handler_sections(state=state, availability=availability)
+    _emit_dependency_section(availability)
+    _emit_overrides_summary(overrides)
+    typer.echo("")
 
 
 @_parser_app.callback()
@@ -906,9 +1631,7 @@ def parse_command(
     fail_fast: bool | None = typer.Option(
         None,
         "--fail-fast/--no-fail-fast",
-        help=(
-            "Override configured fail-fast behavior for this parse run."
-        ),
+        help=("Override configured fail-fast behavior for this parse run."),
     ),
 ) -> None:
     context = _require_context(ctx)
@@ -934,14 +1657,8 @@ def parse_command(
         )
         raise typer.Exit(code=0)
 
-    enabled_targets = [target for target in parse_targets if target.config.enabled]
-    disabled_targets = [target for target in parse_targets if not target.config.enabled]
-
-    for target in disabled_targets:
-        typer.secho(
-            f"Source {target.name} is disabled; skipping.",
-            fg=typer.colors.YELLOW,
-        )
+    enabled_targets, disabled_targets = _partition_targets(parse_targets)
+    _notify_disabled_targets(disabled_targets)
 
     if not enabled_targets:
         raise typer.Exit(code=1)
@@ -962,122 +1679,14 @@ def parse_command(
         fail_fast=resolved_fail_fast,
     )
 
-    scope_key = (
-        "workspace"
-        if len(enabled_targets) > 1
-        else enabled_targets[0].name
+    outcomes = _run_parse_targets(
+        context=context,
+        enabled_targets=enabled_targets,
+        concurrency=concurrency,
+        fail_fast=resolved_fail_fast,
     )
 
-    stop_event = threading.Event()
-    outcomes: dict[str, _ParseOutcome] = {}
-
-    with context.session_guard.acquire(scope=scope_key, action="parse"):
-        if concurrency <= 1 or len(enabled_targets) == 1:
-            for target in enabled_targets:
-                outcome = _parse_single_source(
-                    context,
-                    target,
-                    fail_fast=resolved_fail_fast,
-                    stop_event=stop_event,
-                )
-                outcomes[target.name] = outcome
-                if resolved_fail_fast and outcome.has_failures:
-                    stop_event.set()
-                    break
-        else:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=concurrency,
-                thread_name_prefix="parser",
-            ) as executor:
-                future_map: dict[
-                    concurrent.futures.Future[_ParseOutcome], _ParseTarget
-                ] = {}
-                for target in enabled_targets:
-                    future = executor.submit(
-                        _parse_single_source,
-                        context,
-                        target,
-                        fail_fast=resolved_fail_fast,
-                        stop_event=stop_event,
-                    )
-                    future_map[future] = target
-
-                for future in concurrent.futures.as_completed(future_map):
-                    target = future_map[future]
-                    try:
-                        outcome = future.result()
-                    except Exception as exc:  # pragma: no cover - executor path
-                        context.logger.exception(
-                            "parser-parse-thread-error",
-                            source=target.name,
-                            error=str(exc),
-                        )
-                        outcome = _ParseOutcome(
-                            source=target.name,
-                            batch_id=None,
-                            batch_ref=None,
-                            errors=(f"Unhandled error: {exc}",),
-                        )
-                    outcomes[target.name] = outcome
-                    if resolved_fail_fast and outcome.has_failures:
-                        stop_event.set()
-
-    exit_code = 0
-
-    for target in parse_targets:
-        name = target.name
-        outcome = outcomes.get(name)
-        if outcome is None:
-            continue
-
-        for warning in outcome.warnings:
-            typer.secho(f"[{name}] {warning}", fg=typer.colors.YELLOW)
-        for missing in outcome.missing_scope:
-            typer.secho(
-                f"[{name}] Scope filter missing: {missing}",
-                fg=typer.colors.YELLOW,
-            )
-        for failure in outcome.failed_files:
-            typer.secho(
-                f"[{name}] Failed to parse {failure}",
-                fg=typer.colors.RED,
-            )
-        for error in outcome.errors:
-            typer.secho(f"[{name}] {error}", fg=typer.colors.RED)
-
-        summary_text = outcome.summary
-        show_summary_line = bool(summary_text)
-
-        if outcome.has_failures:
-            exit_code = 1
-            typer.secho(
-                f"[{name}] Parse incomplete.",
-                fg=typer.colors.RED,
-            )
-            if show_summary_line:
-                typer.secho(
-                    f"[{name}] Summary: {summary_text}",
-                    fg=typer.colors.YELLOW,
-                )
-        else:
-            summary = (
-                f"batch {outcome.batch_ref or outcome.batch_id}"
-                if outcome.batch_id
-                else "no changes"
-            )
-            typer.secho(
-                f"[{name}] Parse completed ({summary}).",
-                fg=typer.colors.GREEN,
-            )
-            if show_summary_line:
-                typer.secho(
-                    f"[{name}] Summary: {summary_text}",
-                    fg=typer.colors.BLUE,
-                )
-
-        for note in outcome.notes:
-            typer.secho(f"[{name}] {note}", fg=typer.colors.YELLOW)
-
+    exit_code = _render_parse_results(parse_targets, outcomes)
     raise typer.Exit(code=exit_code)
 
 
@@ -1094,8 +1703,54 @@ def info_command(
     ),
 ) -> None:
     context = _require_context(ctx)
-    target = source or "*"
-    _emit_unimplemented(context, command="info", summary=target)
+    sources, invalid = _resolve_info_sources(context, source)
+
+    if invalid:
+        for name in invalid:
+            typer.secho(f"Unknown source: {name}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    if not sources:
+        typer.secho(
+            "No sources configured; nothing to report.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+
+    availability = context.parser_service.handler_availability()
+    overrides = _compute_config_overrides(context.settings)
+
+    exit_code = 0
+    for name in sources:
+        try:
+            state = context.parser_service.load_manifest_state(name)
+        except Exception as exc:  # pragma: no cover - manifest failure path
+            typer.secho(
+                f"Failed to load parser manifest for {name}: {exc}",
+                fg=typer.colors.RED,
+            )
+            context.logger.error(
+                "parser-info-error",
+                source=name,
+                error=str(exc),
+            )
+            exit_code = 1
+            continue
+        _display_source_info(
+            name=name,
+            state=state,
+            availability=availability,
+            overrides=overrides,
+            settings_enabled=context.settings.enabled,
+        )
+
+    context.logger.info(
+        "parser-info",
+        sources=sources,
+        module_enabled=context.settings.enabled,
+        overrides=len(overrides),
+    )
+    raise typer.Exit(code=exit_code)
 
 
 @_parser_app.command(

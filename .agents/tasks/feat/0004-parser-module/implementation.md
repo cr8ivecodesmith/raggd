@@ -100,7 +100,7 @@
 - [x] Centralize parser CLI wiring so all subcommands share manifest readers, service resolution, and concurrency/session guards consistent with follow-up #3.
 - [x] `parse`: implement the Typer command to honor `--fail-fast`, thread explicit path arguments to traversal, enforce concurrency limits, validate batch preconditions, and emit scope-filter logs.
 - [x] `parse`: after staging, surface batch summaries, raise vector-index warnings, persist manifest updates, and ensure non-zero exits align with Phase 3 service semantics.
-- [ ] `info`: reuse shared manifest readers to expose the last batch id (git SHA/uuid7), handler coverage, dependency gaps, and effective configuration overrides.
+- [x] `info`: reuse shared manifest readers to expose the last batch id (git SHA/uuid7), handler coverage, dependency gaps, and effective configuration overrides.
 - [ ] `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limit/pagination behavior per CLI contract.
 - [ ] `remove`: guard the latest successful batch unless `--force`, perform dependency checks, emit vector-index warnings, and persist tombstones for removed batches.
 
@@ -125,6 +125,23 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 11:25 PST
+**Summary**
+Delivered the Phase 6 info command to report manifest state, handler health, and
+configuration overrides.
+
+**Changes**
+- Added parser CLI helpers to render manifest summaries, availability, gaps, and
+  override details for `raggd parser info`.
+- Introduced CLI tests covering the info command happy-path, empty workspace,
+  and bad-target scenarios.
+- Refactored output rendering into focused helpers to satisfy lint complexity
+  limits while normalizing health status coercion.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/cli/test_parser.py`
+- `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`
+
 ### 2025-10-08 09:45 PST
 **Summary**
 Completed Phase 6 post-run flow by surfacing parse summaries, vector sync reminders, and manifest persistence.
@@ -146,6 +163,19 @@ Implemented the Phase 6 parse command pre-run flow with fail-fast overrides, sco
 - Updated CLI tests to cover the new parse behavior, including missing scope warnings and stubbed planning.
 
 **Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/cli/test_parser.py`
+
+### 2025-10-08 10:15 PST
+**Summary**
+Resolved Ruff C901 violations by restructuring parser CLI flow and tidying supporting helpers.
+
+**Changes**
+- Introduced a plan executor helper, outcome rendering utilities, and manifest/staging helpers to cut `_parse_single_source` and `parse_command` complexity while preserving UX.
+- Renamed `ParserSessionTimeout` to `ParserSessionTimeoutError` and broke long strings across CLI, persistence, and tests to satisfy lint rules.
+- Added parse outcome printing helpers to streamline CLI output and avoid duplicated manifest warnings.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`
 - `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/cli/test_parser.py`
 
 ### 2025-10-08 07:35 PST

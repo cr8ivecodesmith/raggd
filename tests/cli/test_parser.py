@@ -64,7 +64,10 @@ def test_parser_parse_no_sources_configured(tmp_path: Path) -> None:
     assert "No sources configured" in result.stdout
 
 
-def test_parser_parse_scope_filters(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_parser_parse_scope_filters(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
     env = _workspace_env(tmp_path)
     app = create_app()
@@ -352,7 +355,10 @@ def test_parser_parse_emits_vector_sync_note(
         results,
         batch_ref: str | None = None,
         **_: object,
-    ) -> tuple[list[tuple[ParserPlanEntry, FileStageOutcome]], ParserRunMetrics]:
+    ) -> tuple[
+        list[tuple[ParserPlanEntry, FileStageOutcome]],
+        ParserRunMetrics,
+    ]:
         metrics = plan.metrics.copy()
         metrics.chunks_emitted = len(results)
         outcomes: list[tuple[ParserPlanEntry, FileStageOutcome]] = []
@@ -419,7 +425,9 @@ def test_parser_parse_emits_vector_sync_note(
 
     assert result.exit_code == 0, result.stdout
     assert "Parse completed (batch" in result.stdout
-    assert "Summary: completed: files parsed=1; chunks inserted=1" in result.stdout
+    assert (
+        "Summary: completed: files parsed=1; chunks inserted=1" in result.stdout
+    )
 
     expected_note = (
         "Vector indexes are not updated automatically; run "
@@ -457,7 +465,9 @@ def test_parser_parse_module_disabled(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Parser module is disabled" in result.stdout
-def test_parser_info_and_batches_unimplemented(tmp_path: Path) -> None:
+
+
+def test_parser_info_no_sources_configured(tmp_path: Path) -> None:
     runner = CliRunner()
     env = _workspace_env(tmp_path)
 
@@ -471,8 +481,172 @@ def test_parser_info_and_batches_unimplemented(tmp_path: Path) -> None:
         env=env,
         catch_exceptions=False,
     )
+
+    assert info_result.exit_code == 0
+    assert "No sources configured" in info_result.stdout
+
+
+def test_parser_info_unknown_source(tmp_path: Path) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+    app = create_app()
+
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    init_source = runner.invoke(
+        app,
+        [
+            "source",
+            "init",
+            "demo",
+            "--target",
+            str(target_dir),
+            "--force-refresh",
+        ],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_source.exit_code == 0, init_source.stdout
+
+    info_result = runner.invoke(
+        app,
+        ["parser", "info", "missing"],
+        env=env,
+        catch_exceptions=False,
+    )
+
     assert info_result.exit_code == 1
-    assert "not available yet" in info_result.stdout
+    assert "Unknown source: missing" in info_result.stdout
+
+
+def test_parser_info_reports_manifest_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+    app = create_app()
+
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    init_source = runner.invoke(
+        app,
+        [
+            "source",
+            "init",
+            "demo",
+            "--target",
+            str(target_dir),
+            "--force-refresh",
+        ],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_source.exit_code == 0, init_source.stdout
+
+    from datetime import datetime, timezone
+
+    from raggd.modules.db.uuid7 import generate_uuid7, short_uuid7
+    from raggd.modules.parser.registry import HandlerAvailability
+
+    run_timestamp = datetime(2025, 10, 8, 8, 15, tzinfo=timezone.utc)
+    batch_id = generate_uuid7(when=run_timestamp)
+    metrics = ParserRunMetrics(
+        files_parsed=2,
+        files_reused=1,
+        chunks_emitted=3,
+        chunks_reused=1,
+        handlers_invoked={"text": 2, "python": 1},
+    )
+    manifest_state = ParserManifestState(
+        last_batch_id=str(batch_id),
+        last_run_status=HealthStatus.DEGRADED,
+        last_run_started_at=datetime(2025, 10, 8, 8, 15, tzinfo=timezone.utc),
+        last_run_completed_at=datetime(2025, 10, 8, 8, 17, tzinfo=timezone.utc),
+        last_run_summary="parse completed",
+        last_run_warnings=("install tree-sitter runtime",),
+        handler_versions={"text": "1.0.0", "python": "3.11"},
+        metrics=metrics,
+    )
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.ParserService.load_manifest_state",
+        lambda self, source: manifest_state,
+    )
+
+    handler_availability = (
+        HandlerAvailability(
+            name="text",
+            enabled=True,
+            status=HealthStatus.OK,
+            summary=None,
+            warnings=(),
+        ),
+        HandlerAvailability(
+            name="markdown",
+            enabled=True,
+            status=HealthStatus.DEGRADED,
+            summary="tree-sitter missing",
+            warnings=("install tree-sitter runtime",),
+        ),
+        HandlerAvailability(
+            name="python",
+            enabled=False,
+            status=HealthStatus.UNKNOWN,
+            summary=None,
+            warnings=(),
+        ),
+    )
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.ParserService.handler_availability",
+        lambda self: handler_availability,
+    )
+
+    info_result = runner.invoke(
+        app,
+        ["parser", "info"],
+        env=env,
+        catch_exceptions=False,
+    )
+
+    assert info_result.exit_code == 0, info_result.stdout
+    stdout = info_result.stdout
+    short_id = short_uuid7(batch_id).value
+    assert "Parser info for demo" in stdout
+    assert f"Last batch id: {short_id}" in stdout
+    assert "Last run status: degraded" in stdout
+    assert "Last run summary: parse completed" in stdout
+    assert "Last run warnings" in stdout
+    assert "install tree-sitter runtime" in stdout
+    assert (
+        "Last run metrics: parsed=2 reused=1 chunks=3 reused_chunks=1" in stdout
+    )
+    assert "Handler coverage:" in stdout
+    assert "text: count=2, version=1.0.0" in stdout
+    assert "Handler availability:" in stdout
+    assert "markdown: enabled (status=degraded" in stdout
+    assert "python: disabled" in stdout
+    assert "Dependency gaps:" in stdout
+    assert "tree-sitter runtime" in stdout
+    assert "Configuration overrides: none" in stdout
+
+
+def test_parser_batches_unimplemented(tmp_path: Path) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+
+    app = create_app()
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
 
     batches_result = runner.invoke(
         app,

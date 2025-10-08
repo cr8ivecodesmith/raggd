@@ -656,4 +656,7 @@ class ChunkWritePipeline:
         end_offset: int,
         part_index: int,
     ) -> str:
-        return f"{batch_id}:{handler}:{file_path}:{start_offset}:{end_offset}:{part_index}"
+        return (
+            f"{batch_id}:{handler}:{file_path}:{start_offset}:"
+            f"{end_offset}:{part_index}"
+        )
