@@ -143,9 +143,10 @@ def test_checkhealth_generates_health_document(tmp_path: Path) -> None:
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 1, result.stdout
     assert "source: ok" in result.stdout
     assert "db: ok" in result.stdout
+    assert "parser: unknown" in result.stdout
     assert "  - demo: ok" in result.stdout
 
     document_path = workspace / ".health.json"
@@ -159,6 +160,11 @@ def test_checkhealth_generates_health_document(tmp_path: Path) -> None:
     db_detail = payload["db"]["details"][0]
     assert db_detail["name"] == "demo"
     assert db_detail["status"] == "ok"
+    assert payload["parser"]["status"] == "unknown"
+    parser_detail = payload["parser"]["details"][0]
+    assert parser_detail["name"] == "demo"
+    assert parser_detail["status"] == "unknown"
+    assert "parser manifest" in parser_detail["summary"]
 
 
 def test_checkhealth_accepts_module_filter(tmp_path: Path) -> None:
@@ -174,6 +180,7 @@ def test_checkhealth_accepts_module_filter(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "source: ok" in result.stdout
     assert "db:" not in result.stdout
+    assert "parser:" not in result.stdout
 
 
 def test_checkhealth_reports_unknown_module(tmp_path: Path) -> None:
@@ -399,7 +406,7 @@ def test_checkhealth_logs_carried_forward_modules(tmp_path: Path) -> None:
         env={"RAGGD_WORKSPACE": str(workspace)},
         catch_exceptions=False,
     )
-    assert first.exit_code == 0
+    assert first.exit_code == 1
 
     document_path = workspace / ".health.json"
     payload = json.loads(document_path.read_text(encoding="utf-8"))
@@ -417,5 +424,5 @@ def test_checkhealth_logs_carried_forward_modules(tmp_path: Path) -> None:
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 0
-    assert "source:" in result.stdout
+    assert result.exit_code == 2
+    assert "source: error" in result.stdout

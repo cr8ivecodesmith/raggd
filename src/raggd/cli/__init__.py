@@ -26,6 +26,7 @@ from raggd.cli.init import init_workspace
 from raggd.cli.parser import create_parser_app
 from raggd.cli.source import create_source_app
 from raggd.modules.db import db_health_hook
+from raggd.modules.parser import parser_health_hook
 from raggd.source import source_health_hook
 from raggd.core.config import (
     AppConfig,
@@ -104,6 +105,7 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
         description="Rich document and source parsing utilities.",
         extras=("parser",),
         default_toggle=ParserModuleSettings(enabled=True),
+        health_hook=parser_health_hook,
     ),
     ModuleDescriptor(
         name="rag",

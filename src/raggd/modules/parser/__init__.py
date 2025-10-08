@@ -18,6 +18,7 @@ from .handlers import (
     ParserHandler,
     ParserHandlerFactory,
 )
+from .health import parser_health_hook
 from .models import (
     ParserManifestState,
     ParserRunMetrics,
@@ -83,6 +84,7 @@ __all__ = [
     "ParserHandler",
     "ParserHandlerFactory",
     "HandlerFactoryError",
+    "parser_health_hook",
     "ChunkRecomposer",
     "ChunkSlicePart",
     "RecomposedChunk",

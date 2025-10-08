@@ -44,7 +44,7 @@
   - [x] Phase 3 — Core parser services (see Phase 3 notes below).
   - [x] Phase 4 — Handler implementations (see Phase 4 notes below).
   - [x] Phase 5 — Persistence & recomposition support (see Phase 5 notes below).
-  - [ ] Phase 6 — CLI subcommand behaviors (see Phase 6 notes below).
+  - [x] Phase 6 — CLI subcommand behaviors (see Phase 6 notes below).
   - [ ] Phase 7 — Concurrency & telemetry hardening (see Phase 7 notes below).
   - [ ] Phase 8 — Documentation & cleanup (see Phase 8 notes below).
 
@@ -108,7 +108,7 @@
 - [x] Lock coverage: audit parser DB transactions per follow-up #1, extend `DbLifecycleService` locking helpers, and document seam-first mitigation choices per `.agents/guides/engineering-guide.md`.
 - [x] Parallel stress suite: add workflow-aligned stress tests that trigger concurrent `raggd parser parse` runs, capture lock contention metrics, and gate CI on passing runs.
 - [x] Structured telemetry: emit structured logs/metrics for handler runtimes, queue depth, and throttling decisions while surfacing dependency fallback degradation states.
-- [ ] Health integration: finalize `checkhealth` hooks to assert manifest vs. DB alignment (`modules.parser.last_batch_id` vs batches) and validate chunk-slice integrity (contiguous part indices, delegated parent references).
+- [x] Health integration: finalize `checkhealth` hooks to assert manifest vs. DB alignment (`modules.parser.last_batch_id` vs batches) and validate chunk-slice integrity (contiguous part indices, delegated parent references).
 - [ ] Alerting & runbooks: wire telemetry into existing monitoring hooks, update runbook entries in line with `.agents/guides/workflow.md`, and highlight alert thresholds for concurrency regressions.
 
 ### Phase 8 — Documentation & cleanup
@@ -127,6 +127,28 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-10 10:45 PST
+**Summary**
+Fixed pytest discovery after introducing the parser health tests so Phase 7 checks stay green locally.
+
+**Changes**
+- Renamed `tests/modules/parser/test_health.py` to `test_parser_health.py` to give pytest a unique module name alongside the DB health coverage.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/modules/parser/test_parser_health.py tests/modules/db/test_health.py`
+### 2025-10-08 23:50 PST
+**Summary**
+Closed Phase 7 health integration by wiring parser checkhealth coverage and
+aligning CLI expectations.
+**Changes**
+- Implemented `parser_health_hook` to compare manifest metadata with database
+  batches and chunk slices, surfacing integrity issues and parser rerun actions.
+- Registered the parser module health hook in the CLI module registry and
+  exposed the new entry point for downstream callers.
+- Added focused parser health tests and updated checkhealth CLI tests to handle
+  parser status reporting and carried-forward module logging.
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/modules/parser/test_health.py tests/cli/test_checkhealth.py`
 ### 2025-10-10 09:05 PST
 **Summary**
 Wrapped Phase 7 structured telemetry by instrumenting handler runtime metrics,
