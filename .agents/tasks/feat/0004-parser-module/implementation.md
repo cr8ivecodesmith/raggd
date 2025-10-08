@@ -105,7 +105,7 @@
 - [x] `remove`: guard the latest successful batch unless `--force`, perform dependency checks, emit vector-index warnings, and persist tombstones for removed batches.
 
 ### Phase 7 — Concurrency & telemetry hardening
-- [ ] Lock coverage: audit parser DB transactions per follow-up #1, extend `DbLifecycleService` locking helpers, and document seam-first mitigation choices per `.agents/guides/engineering-guide.md`.
+- [x] Lock coverage: audit parser DB transactions per follow-up #1, extend `DbLifecycleService` locking helpers, and document seam-first mitigation choices per `.agents/guides/engineering-guide.md`.
 - [ ] Parallel stress suite: add workflow-aligned stress tests that trigger concurrent `raggd parser parse` runs, capture lock contention metrics, and gate CI on passing runs.
 - [ ] Structured telemetry: emit structured logs/metrics for handler runtimes, queue depth, and throttling decisions while surfacing dependency fallback degradation states.
 - [ ] Health integration: finalize `checkhealth` hooks to assert manifest vs. DB alignment (`modules.parser.last_batch_id` vs batches) and validate chunk-slice integrity (contiguous part indices, delegated parent references).
@@ -127,6 +127,18 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-09 09:30 PST
+**Summary**
+Completed Phase 7 lock coverage by auditing parser database transactions and formalizing per-source serialization seams.
+
+**Changes**
+- Added `DbLifecycleService.lock`/`lock_path` with configurable timeouts to guard parser writes, following seam-first guidance for module boundaries.
+- Wrapped parser persistence and CLI (`batches`, `remove`) routines with the new lock and elevated user-facing messages for contention and timeouts.
+- Extended DB settings for lock configuration and introduced unit coverage for lock lifecycle and timeout handling.
+- Refactored parser staging to split validation/metrics helpers, resolving the Ruff C901 warning without suppressing complexity checks.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/modules/db/test_settings.py tests/modules/db/test_lifecycle.py tests/modules/parser/test_persistence.py`
 ### 2025-10-08 19:45 PST
 **Summary**
 Exercised the parser CLI end-to-end without `tiktoken` installed and added a graceful tokenizer fallback so Phase 6 flows succeed in minimal environments.

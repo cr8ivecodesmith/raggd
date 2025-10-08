@@ -11,7 +11,9 @@ from raggd.core.paths import WorkspacePaths
 from raggd.modules.db import (
     DbLifecycleError,
     DbLifecycleNotImplementedError,
+    DbLockTimeoutError,
     DbManifestSyncError,
+    DbModuleSettings,
     DbOperationError,
     DbLifecycleService,
 )
@@ -184,6 +186,37 @@ class RecordingBackend:
     ) -> DbResetOutcome:
         self._record("reset", source=source, force=force, now=now)
         return DbResetOutcome(status=self.reset_status)
+
+
+def test_db_lock_creates_and_releases(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+    service = DbLifecycleService(workspace=paths)
+
+    lock_path = service.lock_path("alpha")
+    assert lock_path.parent.exists()
+    assert not lock_path.exists()
+
+    with service.lock("alpha", action="test"):
+        assert lock_path.exists()
+
+    assert not lock_path.exists()
+    sanitized = service.lock_path("alpha/beta").name
+    assert sanitized.startswith("alpha_beta")
+
+
+def test_db_lock_timeout_raises(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+    settings = DbModuleSettings(lock_timeout=0.0, lock_poll_interval=0.0)
+    service = DbLifecycleService(workspace=paths, db_settings=settings)
+
+    with service.lock("alpha", action="outer"):
+        with pytest.raises(DbLockTimeoutError):
+            with service.lock("alpha", action="inner"):
+                pass
 
 
 def test_ensure_updates_manifest_and_pending(tmp_path: Path) -> None:

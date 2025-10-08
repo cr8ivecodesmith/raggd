@@ -13,6 +13,10 @@ def test_db_settings_from_mapping_honors_overrides() -> None:
             "run_allow_outside": False,
             "run_autocommit_default": True,
             "drift_warning_seconds": 120,
+            "lock_timeout": 2.5,
+            "lock_poll_interval": 0.05,
+            "lock_suffix": ".dblock",
+            "lock_namespace": "sqlite",
         }
     }
 
@@ -27,6 +31,10 @@ def test_db_settings_from_mapping_honors_overrides() -> None:
     assert settings.run_allow_outside is False
     assert settings.run_autocommit_default is True
     assert settings.drift_warning_seconds == 120
+    assert settings.lock_timeout == 2.5
+    assert settings.lock_poll_interval == 0.05
+    assert settings.lock_suffix == ".dblock"
+    assert settings.lock_namespace == "sqlite"
 
 
 def test_db_settings_from_mapping_defaults_when_missing() -> None:
@@ -39,3 +47,7 @@ def test_db_settings_from_mapping_defaults_when_missing() -> None:
     assert settings.run_allow_outside is True
     assert settings.run_autocommit_default is False
     assert settings.drift_warning_seconds == 0
+    assert settings.lock_timeout == 10.0
+    assert settings.lock_poll_interval == 0.1
+    assert settings.lock_suffix == ".lock"
+    assert settings.lock_namespace == "db"

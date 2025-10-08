@@ -29,12 +29,22 @@ from .registry import (
     ParserHandlerDescriptor,
     build_default_registry,
 )
-from .staging import FileStageOutcome, parser_transaction
+from .staging import (
+    FileStageOutcome,
+    ParserPersistenceTransaction,
+    parser_transaction,
+)
 from .tokenizer import DEFAULT_ENCODER, TokenEncoder, get_token_encoder
 from .traversal import TraversalScope, TraversalService
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
-    from raggd.modules.db import DbLifecycleService
+    from raggd.modules.db import (
+        DbLifecycleService,
+        DbLockError,
+        DbLockTimeoutError,
+    )
+else:
+    from raggd.modules.db import DbLockError, DbLockTimeoutError
 
 __all__ = [
     "ParserError",
@@ -305,92 +315,185 @@ class ParserService:
         outcomes: list[tuple[ParserPlanEntry, FileStageOutcome]] = []
         metrics = plan.metrics.copy()
 
-        with parser_transaction(
-            self._db,
-            source,
-            hash_algorithm=self._hash_algorithm,
-            now=self._now,
-        ) as transaction:
-            transaction.ensure_batch(
-                batch_id=batch_id,
-                ref=batch_ref,
-                generated_at=batch_generated_at,
-                notes=batch_notes,
-            )
-
-            seen_entries: set[ParserPlanEntry] = set()
-
-            for entry, result in results:
-                if entry not in planned_entries:
-                    raise ParserError(
-                        "Result entry missing from plan: "
-                        f"{entry.relative_path.as_posix()}"
-                    )
-                if entry in seen_entries:
-                    raise ParserError(
-                        "Duplicate handler result provided for "
-                        f"{entry.relative_path.as_posix()}"
-                    )
-                seen_entries.add(entry)
-
-                raw_result_path = Path(result.file.path)
-                if raw_result_path.is_absolute():
-                    try:
-                        repo_path = raw_result_path.relative_to(plan.root)
-                    except ValueError as exc:
-                        raise ParserError(
-                            "Handler result path is outside the planned root: "
-                            f"{raw_result_path} (root {plan.root})"
-                        ) from exc
-                else:
-                    repo_path = raw_result_path
-
-                if repo_path != entry.relative_path:
-                    raise ParserError(
-                        "Handler result path mismatch for "
-                        f"{entry.relative_path.as_posix()} (got {repo_path})"
-                    )
-
-                language = result.file.language or entry.handler.name
-
-                handler_versions.setdefault(
-                    entry.handler.name, entry.handler.version
-                )
-
-                outcome = transaction.stage_file(
+        try:
+            with parser_transaction(
+                self._db,
+                source,
+                hash_algorithm=self._hash_algorithm,
+                now=self._now,
+            ) as transaction:
+                self._prepare_batch(
+                    transaction=transaction,
                     batch_id=batch_id,
-                    repo_path=repo_path,
-                    language=language,
-                    file_sha=entry.file_hash,
-                    handler_name=entry.handler.name,
-                    handler_version=entry.handler.version,
-                    handler_versions=handler_versions,
-                    result=result,
-                    absolute_path=entry.absolute_path,
+                    batch_ref=batch_ref,
+                    batch_generated_at=batch_generated_at,
+                    batch_notes=batch_notes,
                 )
-
-                outcomes.append((entry, outcome))
-
-                metrics.chunks_emitted += outcome.chunks_inserted
-                metrics.chunks_reused += outcome.chunks_reused
-                if (
-                    outcome.symbols_written == 0
-                    and outcome.chunks_inserted == 0
-                ):
-                    metrics.files_reused += 1
-
-                self._logger.debug(
-                    "parser-stage-file",
+                outcomes, metrics = self._stage_results_for_plan(
+                    transaction=transaction,
                     source=source,
-                    repo_path=entry.relative_path.as_posix(),
-                    handler=entry.handler.name,
-                    symbols_written=outcome.symbols_written,
-                    symbols_reused=outcome.symbols_reused,
-                    chunks_inserted=outcome.chunks_inserted,
-                    chunks_reused=outcome.chunks_reused,
+                    batch_id=batch_id,
+                    plan=plan,
+                    results=results,
+                    handler_versions=handler_versions,
+                    metrics=metrics,
+                    planned_entries=planned_entries,
                 )
+        except DbLockTimeoutError as exc:
+            raise ParserError(
+                f"Database lock timed out for {source!r}; "
+                "retry after active runs finish."
+            ) from exc
+        except DbLockError as exc:
+            raise ParserError(
+                f"Database lock failed for {source!r}: {exc}"
+            ) from exc
 
         return outcomes, metrics
+
+    def _prepare_batch(
+        self,
+        *,
+        transaction: "ParserPersistenceTransaction",
+        batch_id: str,
+        batch_ref: str | None,
+        batch_generated_at: datetime | None,
+        batch_notes: str | None,
+    ) -> None:
+        transaction.ensure_batch(
+            batch_id=batch_id,
+            ref=batch_ref,
+            generated_at=batch_generated_at,
+            notes=batch_notes,
+        )
+
+    def _stage_results_for_plan(
+        self,
+        *,
+        transaction: "ParserPersistenceTransaction",
+        source: str,
+        batch_id: str,
+        plan: ParserBatchPlan,
+        results: Sequence[tuple[ParserPlanEntry, HandlerResult]],
+        handler_versions: dict[str, str],
+        metrics: ParserRunMetrics,
+        planned_entries: dict[ParserPlanEntry, ParserPlanEntry],
+    ) -> tuple[
+        list[tuple[ParserPlanEntry, FileStageOutcome]],
+        ParserRunMetrics,
+    ]:
+        outcomes: list[tuple[ParserPlanEntry, FileStageOutcome]] = []
+        seen_entries: set[ParserPlanEntry] = set()
+
+        for entry, result in results:
+            self._validate_result_entry(
+                entry=entry,
+                planned_entries=planned_entries,
+                seen_entries=seen_entries,
+            )
+
+            repo_path = self._resolve_repo_path(
+                result_path=Path(result.file.path),
+                plan_root=plan.root,
+                entry=entry,
+            )
+
+            language = result.file.language or entry.handler.name
+            handler_versions.setdefault(
+                entry.handler.name,
+                entry.handler.version,
+            )
+
+            outcome = transaction.stage_file(
+                batch_id=batch_id,
+                repo_path=repo_path,
+                language=language,
+                file_sha=entry.file_hash,
+                handler_name=entry.handler.name,
+                handler_version=entry.handler.version,
+                handler_versions=handler_versions,
+                result=result,
+                absolute_path=entry.absolute_path,
+            )
+
+            outcomes.append((entry, outcome))
+            self._update_metrics_for_outcome(
+                metrics=metrics,
+                outcome=outcome,
+                entry=entry,
+                source=source,
+            )
+
+        return outcomes, metrics
+
+    def _validate_result_entry(
+        self,
+        *,
+        entry: ParserPlanEntry,
+        planned_entries: dict[ParserPlanEntry, ParserPlanEntry],
+        seen_entries: set[ParserPlanEntry],
+    ) -> None:
+        if entry not in planned_entries:
+            raise ParserError(
+                "Result entry missing from plan: "
+                f"{entry.relative_path.as_posix()}"
+            )
+        if entry in seen_entries:
+            raise ParserError(
+                "Duplicate handler result provided for "
+                f"{entry.relative_path.as_posix()}"
+            )
+        seen_entries.add(entry)
+
+    def _resolve_repo_path(
+        self,
+        *,
+        result_path: Path,
+        plan_root: Path,
+        entry: ParserPlanEntry,
+    ) -> Path:
+        if result_path.is_absolute():
+            try:
+                repo_path = result_path.relative_to(plan_root)
+            except ValueError as exc:
+                raise ParserError(
+                    "Handler result path is outside the planned root: "
+                    f"{result_path} (root {plan_root})"
+                ) from exc
+        else:
+            repo_path = result_path
+
+        if repo_path != entry.relative_path:
+            raise ParserError(
+                "Handler result path mismatch for "
+                f"{entry.relative_path.as_posix()} "
+                f"(got {repo_path})"
+            )
+        return repo_path
+
+    def _update_metrics_for_outcome(
+        self,
+        *,
+        metrics: ParserRunMetrics,
+        outcome: FileStageOutcome,
+        entry: ParserPlanEntry,
+        source: str,
+    ) -> None:
+        metrics.chunks_emitted += outcome.chunks_inserted
+        metrics.chunks_reused += outcome.chunks_reused
+        if outcome.symbols_written == 0 and outcome.chunks_inserted == 0:
+            metrics.files_reused += 1
+
+        self._logger.debug(
+            "parser-stage-file",
+            source=source,
+            repo_path=entry.relative_path.as_posix(),
+            handler=entry.handler.name,
+            symbols_written=outcome.symbols_written,
+            symbols_reused=outcome.symbols_reused,
+            chunks_inserted=outcome.chunks_inserted,
+            chunks_reused=outcome.chunks_reused,
+        )
 
     def build_run_record(
         self,

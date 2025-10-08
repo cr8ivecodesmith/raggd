@@ -22,6 +22,10 @@ class DbModuleSettings:
     run_allow_outside: bool = True
     run_autocommit_default: bool = False
     drift_warning_seconds: int = 0
+    lock_timeout: float = 10.0
+    lock_poll_interval: float = 0.1
+    lock_suffix: str = ".lock"
+    lock_namespace: str = "db"
 
 
 def db_settings_from_mapping(
@@ -51,6 +55,10 @@ def db_settings_from_mapping(
     run_allow_outside = bool(_read("run_allow_outside", True))
     run_autocommit_default = bool(_read("run_autocommit_default", False))
     drift_warning_seconds = int(_read("drift_warning_seconds", 0))
+    lock_timeout = float(_read("lock_timeout", 10.0))
+    lock_poll_interval = float(_read("lock_poll_interval", 0.1))
+    lock_suffix = str(_read("lock_suffix", ".lock"))
+    lock_namespace = str(_read("lock_namespace", "db"))
 
     return DbModuleSettings(
         migrations_path=migrations_path,
@@ -60,4 +68,8 @@ def db_settings_from_mapping(
         run_allow_outside=run_allow_outside,
         run_autocommit_default=run_autocommit_default,
         drift_warning_seconds=drift_warning_seconds,
+        lock_timeout=lock_timeout,
+        lock_poll_interval=lock_poll_interval,
+        lock_suffix=lock_suffix,
+        lock_namespace=lock_namespace,
     )

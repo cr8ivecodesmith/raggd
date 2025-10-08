@@ -23,7 +23,12 @@ from raggd.core.config import (
 )
 from raggd.core.logging import Logger, configure_logging, get_logger
 from raggd.core.paths import WorkspacePaths, resolve_workspace
-from raggd.modules.db import DbLifecycleService, db_settings_from_mapping
+from raggd.modules.db import (
+    DbLifecycleService,
+    DbLockError,
+    DbLockTimeoutError,
+    db_settings_from_mapping,
+)
 from raggd.modules.db.uuid7 import generate_uuid7, short_uuid7
 from raggd.modules.manifest import (
     ManifestService,
@@ -1482,31 +1487,50 @@ def _load_batch_summaries(
         context.logger.debug("parser-batches-db-missing", source=source)
         return (), None
 
-    uri = f"{db_path.resolve(strict=False).as_uri()}?mode=ro"
     try:
-        connection = sqlite3.connect(uri, uri=True)
-    except sqlite3.OperationalError as exc:
+        with context.db_service.lock(source, action="parser-batches"):
+            uri = f"{db_path.resolve(strict=False).as_uri()}?mode=ro"
+            try:
+                connection = sqlite3.connect(uri, uri=True)
+            except sqlite3.OperationalError as exc:
+                context.logger.error(
+                    "parser-batches-open-error",
+                    source=source,
+                    error=str(exc),
+                )
+                return (), f"Failed to open database for {source}: {exc}"
+
+            try:
+                connection.row_factory = sqlite3.Row
+                cursor = connection.execute(_BATCH_SUMMARY_QUERY, (limit,))
+                rows = cursor.fetchall()
+            except sqlite3.OperationalError as exc:
+                context.logger.error(
+                    "parser-batches-query-error",
+                    source=source,
+                    error=str(exc),
+                )
+                connection.close()
+                return (), f"Failed to query batches for {source}: {exc}"
+            finally:
+                connection.close()
+    except DbLockTimeoutError as exc:
         context.logger.error(
-            "parser-batches-open-error",
+            "parser-batches-lock-timeout",
             source=source,
             error=str(exc),
         )
-        return (), f"Failed to open database for {source}: {exc}"
-
-    try:
-        connection.row_factory = sqlite3.Row
-        cursor = connection.execute(_BATCH_SUMMARY_QUERY, (limit,))
-        rows = cursor.fetchall()
-    except sqlite3.OperationalError as exc:
+        return (), (
+            f"Timed out acquiring parser database lock for {source}; retry "
+            "after other runs complete."
+        )
+    except DbLockError as exc:
         context.logger.error(
-            "parser-batches-query-error",
+            "parser-batches-lock-error",
             source=source,
             error=str(exc),
         )
-        connection.close()
-        return (), f"Failed to query batches for {source}: {exc}"
-
-    connection.close()
+        return (), f"Failed to acquire parser database lock for {source}: {exc}"
 
     summaries = [
         _BatchSummary(
@@ -1714,11 +1738,42 @@ def _handle_remove_command(
         return 1
 
     try:
-        stats, removed_row, next_row, remaining = _perform_batch_removal(
-            context=context,
-            source=source,
-            batch_id=batch_id,
+        with context.db_service.lock(source, action="parser-remove"):
+            stats, removed_row, next_row, remaining = _perform_batch_removal(
+                context=context,
+                source=source,
+                batch_id=batch_id,
+            )
+            manifest_updated = _sync_manifest_after_removal(
+                context=context,
+                source=source,
+                manifest_state=manifest_state,
+                removed_batch=batch_id,
+                next_batch=next_row,
+            )
+    except DbLockTimeoutError as exc:
+        message = (
+            f"Timed out acquiring parser database lock for {source}; retry "
+            "after other runs complete."
         )
+        typer.secho(message, fg=typer.colors.RED)
+        context.logger.error(
+            "parser-remove-lock-timeout",
+            source=source,
+            batch=batch_id,
+            error=str(exc),
+        )
+        return 1
+    except DbLockError as exc:
+        message = f"Failed to acquire parser database lock for {source}: {exc}"
+        typer.secho(message, fg=typer.colors.RED)
+        context.logger.error(
+            "parser-remove-lock-error",
+            source=source,
+            batch=batch_id,
+            error=str(exc),
+        )
+        return 1
     except ParserRemoveBlockedError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         context.logger.warning(
@@ -1737,14 +1792,6 @@ def _handle_remove_command(
             error=str(exc),
         )
         return 1
-
-    manifest_updated = _sync_manifest_after_removal(
-        context=context,
-        source=source,
-        manifest_state=manifest_state,
-        removed_batch=batch_id,
-        next_batch=next_row,
-    )
 
     short_removed = _shorten_batch_id(removed_row.batch_id)
     typer.secho(

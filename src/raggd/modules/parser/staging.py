@@ -544,15 +544,16 @@ def parser_transaction(
 ) -> Iterator[ParserPersistenceTransaction]:
     """Yield a parser persistence transaction for ``source``."""
 
-    db_path = db_service.ensure(source)
-    connection = sqlite3.connect(db_path)
-    try:
-        connection.execute("PRAGMA foreign_keys = ON")
-        with connection:
-            yield ParserPersistenceTransaction(
-                connection,
-                hash_algorithm=hash_algorithm,
-                now=now,
-            )
-    finally:
-        connection.close()
+    with db_service.lock(source, action="parser-stage"):
+        db_path = db_service.ensure(source)
+        connection = sqlite3.connect(db_path)
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            with connection:
+                yield ParserPersistenceTransaction(
+                    connection,
+                    hash_algorithm=hash_algorithm,
+                    now=now,
+                )
+        finally:
+            connection.close()

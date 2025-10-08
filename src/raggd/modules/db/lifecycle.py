@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import os
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, cast
+from typing import Callable, Iterator, cast
 
 __all__ = [
+    "DbLockError",
+    "DbLockTimeoutError",
     "DbLifecycleError",
     "DbManifestSyncError",
     "DbOperationError",
@@ -24,6 +28,11 @@ from raggd.modules.manifest import (
     manifest_db_namespace,
 )
 from raggd.modules.manifest.migrator import MODULES_VERSION
+from raggd.modules.manifest.locks import (
+    FileLock,
+    ManifestLockError,
+    ManifestLockTimeoutError,
+)
 
 from .backend import (
     DbDowngradeOutcome,
@@ -46,6 +55,34 @@ def _default_now() -> datetime:
 
 class DbLifecycleError(RuntimeError):
     """Base error for database lifecycle operations."""
+
+
+class DbLockError(DbLifecycleError):
+    """Raised when database lock coordination fails."""
+
+    def __init__(
+        self,
+        *,
+        source: str,
+        action: str,
+        path: Path,
+        cause: Exception | None = None,
+    ) -> None:
+        message = (
+            f"Database lock acquisition failed for {source!r} "
+            f"while performing {action!r}: {path}"
+        )
+        if cause is not None:
+            message = f"{message} ({cause})"
+        super().__init__(message)
+        self.source = source
+        self.action = action
+        self.path = path
+        self.cause = cause
+
+
+class DbLockTimeoutError(DbLockError):
+    """Raised when acquiring the database lock times out."""
 
 
 class DbManifestSyncError(DbLifecycleError):
@@ -113,6 +150,56 @@ class DbLifecycleService:
             logger=self._logger,
             now=self._now,
         )
+
+    @contextmanager
+    def lock(self, source: str, *, action: str = "db") -> Iterator[None]:
+        """Serialize database access for ``source`` with a filesystem lock."""
+
+        lock_path = self.lock_path(source)
+        lock = FileLock(
+            path=lock_path,
+            timeout=self._db_settings.lock_timeout,
+            poll_interval=self._db_settings.lock_poll_interval,
+        )
+        log = self._logger.bind(
+            source=source,
+            action=action,
+            lock=str(lock_path),
+        )
+        log.debug("db-lock-acquire")
+        try:
+            lock.acquire()
+        except ManifestLockTimeoutError as exc:
+            log.error("db-lock-timeout", error=str(exc))
+            raise DbLockTimeoutError(
+                source=source,
+                action=action,
+                path=lock_path,
+                cause=exc,
+            ) from exc
+        except ManifestLockError as exc:
+            log.error("db-lock-error", error=str(exc))
+            raise DbLockError(
+                source=source,
+                action=action,
+                path=lock_path,
+                cause=exc,
+            ) from exc
+        try:
+            yield
+        finally:
+            log.debug("db-lock-release")
+            lock.release()
+
+    def lock_path(self, source: str) -> Path:
+        """Return the filesystem lock path for ``source``."""
+
+        lock_root = (
+            self._paths.workspace / ".locks" / self._db_settings.lock_namespace
+        )
+        lock_root.mkdir(parents=True, exist_ok=True)
+        key = self._sanitize_lock_key(source)
+        return lock_root / f"{key}{self._db_settings.lock_suffix}"
 
     def ensure(self, source: str) -> Path:
         """Ensure ``source`` has a database and manifest scaffolding."""
@@ -432,3 +519,12 @@ class DbLifecycleService:
                 source=source,
                 cause=exc,
             ) from exc
+
+    def _sanitize_lock_key(self, source: str) -> str:
+        cleaned = source.strip() if source else ""
+        if not cleaned:
+            cleaned = "workspace"
+        cleaned = (
+            cleaned.replace(os.sep, "_").replace("/", "_").replace("\\", "_")
+        )
+        return cleaned
