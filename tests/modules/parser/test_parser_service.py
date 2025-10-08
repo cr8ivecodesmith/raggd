@@ -229,13 +229,17 @@ def test_plan_source_logs_fallback_and_queue_depth(tmp_path: Path) -> None:
     assert plan.metrics.queue_depth == len(plan.entries)
 
     fallback_events = [
-        event for event in captured if event["event"] == "parser-handler-fallback"
+        event
+        for event in captured
+        if event["event"] == "parser-handler-fallback"
     ]
     assert fallback_events
     assert fallback_events[0]["handler"] == "text"
 
     degraded_events = [
-        event for event in captured if event["event"] == "parser-handler-degraded"
+        event
+        for event in captured
+        if event["event"] == "parser-handler-degraded"
     ]
     assert any(event["handler"] == "python" for event in degraded_events)
 

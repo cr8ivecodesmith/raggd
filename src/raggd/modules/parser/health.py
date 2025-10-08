@@ -18,7 +18,7 @@ from raggd.modules.manifest import (
     manifest_settings_from_config,
 )
 
-from .models import ParserManifestState
+from .models import ParserManifestState, ParserRunMetrics
 
 __all__ = ["parser_health_hook"]
 
@@ -74,6 +74,7 @@ def parser_health_hook(handle: WorkspaceHandle) -> Sequence[HealthReport]:
             handle=handle,
             manifest_service=manifest_service,
             parser_module_key=parser_module_key,
+            settings=settings,
         )
         reports.append(report)
 
@@ -86,6 +87,7 @@ def _evaluate_source(
     handle: WorkspaceHandle,
     manifest_service: ManifestService,
     parser_module_key: str,
+    settings: ParserModuleSettings,
 ) -> HealthReport:
     parser_actions = (
         f"Run `raggd parser parse {name}` to rebuild parser data.",
@@ -143,6 +145,16 @@ def _evaluate_source(
     actions.update(chunk_actions)
     if chunk_issues:
         actions.add(parser_actions[0])
+
+    metrics_result = _assess_concurrency_metrics(
+        state.metrics,
+        settings=settings,
+    )
+    metrics_severity, metrics_issues, metrics_actions = metrics_result
+    if metrics_severity is not None:
+        status = _elevate_status(status, metrics_severity)
+    issues.extend(metrics_issues)
+    actions.update(metrics_actions)
 
     summary = _summarize(issues, summary)
     return HealthReport(
@@ -212,8 +224,7 @@ def _observe_batch(
                 name=name,
                 status=HealthStatus.ERROR,
                 summary=(
-                    "Parser database missing while manifest references a "
-                    "batch."
+                    "Parser database missing while manifest references a batch."
                 ),
                 actions=parser_actions,
                 last_refresh_at=last_refresh_at,
@@ -228,9 +239,7 @@ def _observe_batch(
             HealthReport(
                 name=name,
                 status=HealthStatus.ERROR,
-                summary=(
-                    f"Failed to open parser database {db_path}: {exc}"
-                ),
+                summary=(f"Failed to open parser database {db_path}: {exc}"),
                 actions=parser_actions,
                 last_refresh_at=last_refresh_at,
             ),
@@ -250,8 +259,7 @@ def _observe_batch(
                         name=name,
                         status=HealthStatus.ERROR,
                         summary=(
-                            "Manifest last_batch_id missing from batches "
-                            "table."
+                            "Manifest last_batch_id missing from batches table."
                         ),
                         actions=parser_actions,
                         last_refresh_at=last_refresh_at,
@@ -320,9 +328,7 @@ def _assess_chunk_integrity(
                 metadata = json.loads(row.metadata_json)
             except json.JSONDecodeError:
                 severity = _max_severity(severity, HealthStatus.ERROR)
-                issues.append(
-                    f"chunk {row.chunk_id!r} metadata not valid JSON"
-                )
+                issues.append(f"chunk {row.chunk_id!r} metadata not valid JSON")
                 continue
 
             parent = metadata.get("delegate_parent_chunk")
@@ -335,9 +341,7 @@ def _assess_chunk_integrity(
         expected = list(range(part_total))
         if sorted_indices != expected:
             severity = _max_severity(severity, HealthStatus.ERROR)
-            issues.append(
-                f"chunk {chunk_id!r} part indices not contiguous"
-            )
+            issues.append(f"chunk {chunk_id!r} part indices not contiguous")
 
     chunk_ids = set(chunk_indices)
     for chunk_id, parent in parent_links.items():
@@ -346,6 +350,66 @@ def _assess_chunk_integrity(
             issues.append(
                 f"chunk {chunk_id!r} references missing parent {parent!r}"
             )
+
+    return severity, issues, actions
+
+
+def _assess_concurrency_metrics(
+    metrics: ParserRunMetrics,
+    *,
+    settings: ParserModuleSettings,
+) -> tuple[HealthStatus | None, list[str], set[str]]:
+    severity: HealthStatus | None = None
+    issues: list[str] = []
+    actions: set[str] = set()
+
+    wait_seconds = float(metrics.lock_wait_seconds or 0.0)
+    error_wait = settings.lock_wait_error_seconds
+    warn_wait = settings.lock_wait_warning_seconds
+    error_contention = settings.lock_contention_error
+    warn_contention = settings.lock_contention_warning
+
+    if wait_seconds >= error_wait:
+        severity = _max_severity(severity, HealthStatus.ERROR)
+        issues.append(
+            (
+                "parser lock waits accumulated "
+                f"{wait_seconds:.2f}s (error threshold {error_wait:.2f}s)"
+            )
+        )
+    elif wait_seconds >= warn_wait:
+        severity = _max_severity(severity, HealthStatus.DEGRADED)
+        issues.append(
+            (
+                "parser lock waits accumulated "
+                f"{wait_seconds:.2f}s (warning threshold {warn_wait:.2f}s)"
+            )
+        )
+
+    contention_events = int(metrics.lock_contention_events or 0)
+    if contention_events >= error_contention:
+        severity = _max_severity(severity, HealthStatus.ERROR)
+        issues.append(
+            "parser recorded "
+            f"{contention_events} lock contention events "
+            f"(error threshold {error_contention})"
+        )
+    elif contention_events >= warn_contention:
+        severity = _max_severity(severity, HealthStatus.DEGRADED)
+        issues.append(
+            "parser recorded "
+            f"{contention_events} lock contention events "
+            f"(warning threshold {warn_contention})"
+        )
+
+    if severity is not None:
+        actions.add(
+            (
+                "Inspect parser concurrency telemetry (see "
+                "docs/contribute/parser-runbook.md#alerts) and adjust "
+                "modules.parser.max_concurrency or stagger runs."
+            )
+        )
 
     return severity, issues, actions
 

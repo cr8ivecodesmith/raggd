@@ -107,7 +107,12 @@ class ParserRunMetrics(BaseModel):
 
         self.fallbacks += 1
 
-    def record_lock_wait(self, seconds: float, *, threshold: float = 1e-6) -> None:
+    def record_lock_wait(
+        self,
+        seconds: float,
+        *,
+        threshold: float = 1e-6,
+    ) -> None:
         """Accumulate database lock wait metrics."""
 
         if seconds < 0:

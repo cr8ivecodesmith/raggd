@@ -29,7 +29,11 @@ def _patch_click_bytesio() -> None:
     original_close = click.testing.BytesIOCopy.close
     base_getvalue = io.BytesIO.getvalue
 
-    def _safe_close(self: click.testing.BytesIOCopy, *args: Any, **kwargs: Any) -> None:  # type: ignore[name-defined]
+    def _safe_close(
+        self: click.testing.BytesIOCopy,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:  # type: ignore[name-defined]
         if not hasattr(self, "_raggd_snapshot"):
             try:
                 self._raggd_snapshot = base_getvalue(self)  # type: ignore[attr-defined]

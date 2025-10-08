@@ -523,12 +523,13 @@ def test_plan_executor_records_handler_runtime(
         state = executor.run()
 
     handler_name = plan.entries[0].handler.name
-    assert state.run_metrics.handler_runtime_seconds[handler_name] == pytest.approx(
-        1.5
-    )
+    runtime_seconds = state.run_metrics.handler_runtime_seconds[handler_name]
+    assert runtime_seconds == pytest.approx(1.5)
 
     runtime_events = [
-        event for event in captured if event["event"] == "parser-handler-runtime"
+        event
+        for event in captured
+        if event["event"] == "parser-handler-runtime"
     ]
     assert runtime_events
     assert runtime_events[0]["handler"] == handler_name

@@ -66,6 +66,7 @@ def _write_parser_manifest(
     batch_id: str | None,
     status: HealthStatus,
     summary: str | None = None,
+    metrics: ParserRunMetrics | None = None,
 ) -> ParserManifestState:
     manifest_service = ManifestService(workspace=paths)
     _, parser_key = manifest_service.settings.module_key(PARSER_MODULE_KEY)
@@ -78,7 +79,7 @@ def _write_parser_manifest(
         last_run_status=status,
         last_run_summary=summary,
         last_run_completed_at=completed,
-        metrics=ParserRunMetrics(),
+        metrics=metrics or ParserRunMetrics(),
     )
 
     def _mutate(snapshot):
@@ -177,7 +178,9 @@ def test_parser_health_hook_reports_pending_parse(tmp_path: Path) -> None:
     )
 
 
-def test_parser_health_hook_reports_chunk_integrity_error(tmp_path: Path) -> None:
+def test_parser_health_hook_reports_chunk_integrity_error(
+    tmp_path: Path,
+) -> None:
     paths = _make_workspace(tmp_path)
     config = _make_config(paths)
     handle = SimpleNamespace(paths=paths, config=config)
@@ -202,6 +205,70 @@ def test_parser_health_hook_reports_chunk_integrity_error(tmp_path: Path) -> Non
     assert report.status == HealthStatus.ERROR
     assert "not contiguous" in (report.summary or "")
     assert "parser parse" in " ".join(report.actions)
+
+
+def test_parser_health_hook_reports_lock_wait_warning(tmp_path: Path) -> None:
+    paths = _make_workspace(tmp_path)
+    config = _make_config(paths)
+    handle = SimpleNamespace(paths=paths, config=config)
+
+    metrics = ParserRunMetrics(lock_wait_seconds=7.5)
+    _write_parser_manifest(
+        paths=paths,
+        batch_id="batch-lock",
+        status=HealthStatus.OK,
+        summary="parse complete",
+        metrics=metrics,
+    )
+    _insert_chunk_slices(
+        paths=paths,
+        batch_id="batch-lock",
+        part_total=1,
+        part_indices=(0,),
+    )
+
+    reports = parser_health_hook(handle)
+
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.status == HealthStatus.DEGRADED
+    assert report.summary is not None
+    assert "lock waits" in report.summary
+    assert any(
+        "parser concurrency telemetry" in action for action in report.actions
+    )
+
+
+def test_parser_health_hook_reports_contention_error(tmp_path: Path) -> None:
+    paths = _make_workspace(tmp_path)
+    config = _make_config(paths)
+    handle = SimpleNamespace(paths=paths, config=config)
+
+    metrics = ParserRunMetrics(lock_contention_events=12)
+    _write_parser_manifest(
+        paths=paths,
+        batch_id="batch-contention",
+        status=HealthStatus.OK,
+        summary="parse complete",
+        metrics=metrics,
+    )
+    _insert_chunk_slices(
+        paths=paths,
+        batch_id="batch-contention",
+        part_total=1,
+        part_indices=(0,),
+    )
+
+    reports = parser_health_hook(handle)
+
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.status == HealthStatus.ERROR
+    assert report.summary is not None
+    assert "lock contention" in report.summary
+    assert any(
+        "parser concurrency telemetry" in action for action in report.actions
+    )
 
 
 def test_parser_health_hook_reports_healthy_state(tmp_path: Path) -> None:

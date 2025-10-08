@@ -109,7 +109,7 @@
 - [x] Parallel stress suite: add workflow-aligned stress tests that trigger concurrent `raggd parser parse` runs, capture lock contention metrics, and gate CI on passing runs.
 - [x] Structured telemetry: emit structured logs/metrics for handler runtimes, queue depth, and throttling decisions while surfacing dependency fallback degradation states.
 - [x] Health integration: finalize `checkhealth` hooks to assert manifest vs. DB alignment (`modules.parser.last_batch_id` vs batches) and validate chunk-slice integrity (contiguous part indices, delegated parent references).
-- [ ] Alerting & runbooks: wire telemetry into existing monitoring hooks, update runbook entries in line with `.agents/guides/workflow.md`, and highlight alert thresholds for concurrency regressions.
+- [x] Alerting & runbooks: wire telemetry into existing monitoring hooks, update runbook entries in line with `.agents/guides/workflow.md`, and highlight alert thresholds for concurrency regressions.
 
 ### Phase 8 — Documentation & cleanup
 - Update user docs/config samples, finalize release notes, and remove superseded code/tests.
@@ -127,6 +127,18 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-09 00:23 PST
+**Summary**
+Wired parser telemetry into health alerts and documented the concurrency runbook.
+
+**Changes**
+- Added lock wait and contention thresholds to parser configuration defaults.
+- Elevated parser health reports with concurrency thresholds and remediation actions.
+- Authored a parser runbook covering monitoring hooks and alert remediation.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/modules/parser/test_parser_health.py tests/cli/test_checkhealth.py`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run --no-sync ruff check`
 ### 2025-10-10 10:45 PST
 **Summary**
 Fixed pytest discovery after introducing the parser health tests so Phase 7 checks stay green locally.

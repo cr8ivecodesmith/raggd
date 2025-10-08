@@ -345,6 +345,32 @@ class ParserModuleSettings(ModuleToggle):
             "traversal."
         ),
     )
+    lock_wait_warning_seconds: float = Field(
+        default=5.0,
+        ge=0.0,
+        description=(
+            "Total seconds of database lock wait time that trigger a warning."
+        ),
+    )
+    lock_wait_error_seconds: float = Field(
+        default=30.0,
+        ge=0.0,
+        description=(
+            "Total seconds of database lock wait time that trigger an error."
+        ),
+    )
+    lock_contention_warning: int = Field(
+        default=3,
+        ge=0,
+        description=(
+            "Number of lock contention events recorded before warning."
+        ),
+    )
+    lock_contention_error: int = Field(
+        default=10,
+        ge=0,
+        description=("Number of lock contention events recorded before error."),
+    )
 
     model_config = {
         "frozen": True,
@@ -393,6 +419,18 @@ class ParserModuleSettings(ModuleToggle):
                 raise ValueError("Parser handler names cannot be blank.")
             normalized[key] = settings
         object.__setattr__(self, "handlers", normalized)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_thresholds(self) -> "ParserModuleSettings":
+        if self.lock_wait_error_seconds < self.lock_wait_warning_seconds:
+            raise ValueError(
+                "lock_wait_error_seconds must be >= lock_wait_warning_seconds"
+            )
+        if self.lock_contention_error < self.lock_contention_warning:
+            raise ValueError(
+                "lock_contention_error must be >= lock_contention_warning"
+            )
         return self
 
 

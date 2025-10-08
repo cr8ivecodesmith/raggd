@@ -56,6 +56,10 @@ general_max_tokens = 2000
 max_concurrency = "auto"
 fail_fast = false
 gitignore_behavior = "combined"
+lock_wait_warning_seconds = 5.0
+lock_wait_error_seconds = 30.0
+lock_contention_warning = 3
+lock_contention_error = 10
 
 [modules.parser.handlers]
 
