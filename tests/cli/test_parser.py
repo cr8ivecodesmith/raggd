@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 import sqlite3
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -752,6 +756,111 @@ def test_parser_parse_module_disabled(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Parser module is disabled" in result.stdout
+
+
+def test_parser_parse_parallel_runs_capture_lock_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+    app = create_app()
+
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file = target_dir / "sample.txt"
+    target_file.write_text("hello world\n" * 50, encoding="utf-8")
+
+    init_source = runner.invoke(
+        app,
+        [
+            "source",
+            "init",
+            "demo",
+            "--target",
+            str(target_dir),
+            "--force-refresh",
+        ],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_source.exit_code == 0, init_source.stdout
+
+    workspace_path = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
+    source_workspace_dir = workspace_path / "sources" / "demo"
+    source_workspace_dir.mkdir(parents=True, exist_ok=True)
+    (source_workspace_dir / ".gitignore").write_text(
+        "db.sqlite3\n*.sqlite3\n",
+        encoding="utf-8",
+    )
+    (source_workspace_dir / "readme.txt").write_text(
+        "concurrency test\n",
+        encoding="utf-8",
+    )
+
+    captured_metrics: list[ParserRunMetrics] = []
+    original_record_run = ParserService.record_run
+
+    def capture_record_run(
+        self: ParserService,
+        *,
+        source: str,
+        run,
+    ) -> ParserManifestState:
+        captured_metrics.append(run.metrics.copy())
+        return original_record_run(self, source=source, run=run)
+
+    monkeypatch.setattr(ParserService, "record_run", capture_record_run)
+
+    original_lock = DbLifecycleService.lock
+    first_stage_lock = threading.Event()
+    sleep_duration = 0.2
+
+    @contextmanager
+    def slow_stage_lock(
+        self: DbLifecycleService,
+        source: str,
+        *,
+        action: str = "db",
+    ):
+        with original_lock(self, source, action=action):
+            if not first_stage_lock.is_set() and action == "parser-stage":
+                first_stage_lock.set()
+                time.sleep(sleep_duration)
+            yield
+
+    monkeypatch.setattr(DbLifecycleService, "lock", slow_stage_lock)
+
+    barrier = threading.Barrier(2)
+
+    def invoke_parse():
+        runner_local = CliRunner()
+        barrier.wait(timeout=5)
+        return runner_local.invoke(
+            app,
+            ["parser", "parse", "demo"],
+            env=env,
+            catch_exceptions=False,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_a = executor.submit(invoke_parse)
+        future_b = executor.submit(invoke_parse)
+        result_a = future_a.result()
+        result_b = future_b.result()
+
+    assert result_a.exit_code == 0, result_a.stdout
+    assert result_b.exit_code == 0, result_b.stdout
+
+    assert len(captured_metrics) == 2
+    waits = [metrics.lock_wait_seconds for metrics in captured_metrics]
+    assert max(waits) >= sleep_duration * 0.9
+    assert any(
+        metrics.lock_contention_events >= 1 for metrics in captured_metrics
+    )
 
 
 def test_parser_info_no_sources_configured(tmp_path: Path) -> None:

@@ -315,6 +315,7 @@ class ParserService:
         outcomes: list[tuple[ParserPlanEntry, FileStageOutcome]] = []
         metrics = plan.metrics.copy()
 
+        lock_wait_seconds = 0.0
         try:
             with parser_transaction(
                 self._db,
@@ -322,6 +323,11 @@ class ParserService:
                 hash_algorithm=self._hash_algorithm,
                 now=self._now,
             ) as transaction:
+                lock_wait_seconds = getattr(
+                    transaction,
+                    "lock_wait_seconds",
+                    0.0,
+                )
                 self._prepare_batch(
                     transaction=transaction,
                     batch_id=batch_id,
@@ -348,6 +354,14 @@ class ParserService:
             raise ParserError(
                 f"Database lock failed for {source!r}: {exc}"
             ) from exc
+
+        if lock_wait_seconds:
+            metrics.record_lock_wait(lock_wait_seconds)
+            self._logger.debug(
+                "parser-stage-lock-wait",
+                source=source,
+                seconds=lock_wait_seconds,
+            )
 
         return outcomes, metrics
 

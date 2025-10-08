@@ -106,7 +106,7 @@
 
 ### Phase 7 — Concurrency & telemetry hardening
 - [x] Lock coverage: audit parser DB transactions per follow-up #1, extend `DbLifecycleService` locking helpers, and document seam-first mitigation choices per `.agents/guides/engineering-guide.md`.
-- [ ] Parallel stress suite: add workflow-aligned stress tests that trigger concurrent `raggd parser parse` runs, capture lock contention metrics, and gate CI on passing runs.
+- [x] Parallel stress suite: add workflow-aligned stress tests that trigger concurrent `raggd parser parse` runs, capture lock contention metrics, and gate CI on passing runs.
 - [ ] Structured telemetry: emit structured logs/metrics for handler runtimes, queue depth, and throttling decisions while surfacing dependency fallback degradation states.
 - [ ] Health integration: finalize `checkhealth` hooks to assert manifest vs. DB alignment (`modules.parser.last_batch_id` vs batches) and validate chunk-slice integrity (contiguous part indices, delegated parent references).
 - [ ] Alerting & runbooks: wire telemetry into existing monitoring hooks, update runbook entries in line with `.agents/guides/workflow.md`, and highlight alert thresholds for concurrency regressions.
@@ -127,6 +127,26 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-09 11:15 PST
+**Summary**
+Validated parser concurrency by instrumenting lock wait metrics and running
+parallel CLI parses against the same source.
+
+**Changes**
+- Taught `ParserRunMetrics` to accumulate database lock wait seconds and
+  contention counts, wiring `parser_transaction` to record wait durations.
+- Logged lock wait diagnostics during staging and added a CLI stress test that
+  launches concurrent `raggd parser parse` invocations while masking SQLite
+  artifacts via workspace gitignore rules.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace \
+  RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov \
+  tests/cli/test_parser.py::test_parser_parse_parallel_runs_capture_lock_metrics`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace \
+  RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov \
+  tests/modules/parser/test_parser_service.py`
+
 ### 2025-10-09 09:30 PST
 **Summary**
 Completed Phase 7 lock coverage by auditing parser database transactions and formalizing per-source serialization seams.

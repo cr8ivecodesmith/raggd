@@ -6,6 +6,7 @@ import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import time
 from pathlib import Path
 from typing import Callable, Iterator, Mapping, MutableMapping, Sequence
 
@@ -429,6 +430,7 @@ class ParserPersistenceTransaction:
             hash_algorithm=hash_algorithm,
             now=self._now,
         )
+        self.lock_wait_seconds: float = 0.0
 
     def ensure_batch(
         self,
@@ -544,16 +546,20 @@ def parser_transaction(
 ) -> Iterator[ParserPersistenceTransaction]:
     """Yield a parser persistence transaction for ``source``."""
 
+    start = time.perf_counter()
     with db_service.lock(source, action="parser-stage"):
+        wait_seconds = max(time.perf_counter() - start, 0.0)
         db_path = db_service.ensure(source)
         connection = sqlite3.connect(db_path)
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             with connection:
-                yield ParserPersistenceTransaction(
+                transaction = ParserPersistenceTransaction(
                     connection,
                     hash_algorithm=hash_algorithm,
                     now=now,
                 )
+                transaction.lock_wait_seconds = wait_seconds
+                yield transaction
         finally:
             connection.close()

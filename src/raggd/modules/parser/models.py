@@ -37,6 +37,8 @@ class ParserRunMetrics(BaseModel):
     chunks_reused: int = Field(default=0, ge=0)
     fallbacks: int = Field(default=0, ge=0)
     handlers_invoked: dict[str, int] = Field(default_factory=dict)
+    lock_wait_seconds: float = Field(default=0.0, ge=0.0)
+    lock_contention_events: int = Field(default=0, ge=0)
 
     model_config = {
         "str_strip_whitespace": True,
@@ -73,6 +75,15 @@ class ParserRunMetrics(BaseModel):
         """Increment the fallback counter."""
 
         self.fallbacks += 1
+
+    def record_lock_wait(self, seconds: float, *, threshold: float = 1e-6) -> None:
+        """Accumulate database lock wait metrics."""
+
+        if seconds < 0:
+            raise ValueError("seconds must be >= 0")
+        self.lock_wait_seconds += seconds
+        if seconds > threshold:
+            self.lock_contention_events += 1
 
     def copy(self) -> "ParserRunMetrics":
         """Return a shallow copy of the metrics snapshot."""
