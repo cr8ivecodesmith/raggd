@@ -9,9 +9,18 @@ import typer
 from typer.testing import CliRunner
 
 from raggd.cli import create_app
-from raggd.cli.parser import _require_context, _parser_app
+from raggd.cli.parser import (
+    ParserCLIContext,
+    ParserSessionGuard,
+    _require_context,
+    _parser_app,
+    configure_parser_commands,
+)
 import raggd.modules.parser  # noqa: F401 - ensure module import coverage
-from raggd.source.config import SourceConfigError
+from raggd.modules.db import DbLifecycleService
+from raggd.modules.manifest import ManifestService
+from raggd.modules.parser import ParserService
+from raggd.source.config import SourceConfigError, SourceConfigStore
 
 
 def _workspace_env(tmp_path: Path) -> dict[str, str]:
@@ -173,3 +182,34 @@ def test_parser_require_context_guard() -> None:
     ctx = typer.Context(click_command)
     with pytest.raises(typer.Exit):
         _require_context(ctx)
+
+
+def test_parser_configure_context_initializes_services(tmp_path: Path) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+
+    app = create_app()
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    workspace = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
+    click_command = typer.main.get_command(_parser_app)
+    ctx = typer.Context(click_command)
+
+    configure_parser_commands(
+        ctx,
+        workspace=workspace,
+        log_level=None,
+    )
+
+    context = _require_context(ctx)
+    assert isinstance(context, ParserCLIContext)
+    assert context.paths.workspace == workspace
+    assert isinstance(context.store, SourceConfigStore)
+    assert isinstance(context.manifest, ManifestService)
+    assert isinstance(context.db_service, DbLifecycleService)
+    assert isinstance(context.parser_service, ParserService)
+    assert isinstance(context.session_guard, ParserSessionGuard)
+    locks_root = workspace / ".locks" / "parser"
+    assert locks_root.exists()
+    assert context.session_guard.root == locks_root

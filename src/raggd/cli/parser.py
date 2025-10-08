@@ -3,16 +3,87 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Iterator, List
 
 import typer
 
 from raggd.core.config import AppConfig, ParserModuleSettings
 from raggd.core.logging import Logger, configure_logging, get_logger
 from raggd.core.paths import WorkspacePaths, resolve_workspace
+from raggd.modules.db import DbLifecycleService, db_settings_from_mapping
+from raggd.modules.manifest import ManifestService, manifest_settings_from_config
+from raggd.modules.manifest.locks import (
+    FileLock,
+    ManifestLockError,
+    ManifestLockTimeoutError,
+)
+from raggd.modules.parser import ParserService
 from raggd.source.config import SourceConfigError, SourceConfigStore
+
+
+class ParserSessionError(RuntimeError):
+    """Base error raised when acquiring a parser session fails."""
+
+
+class ParserSessionTimeout(ParserSessionError):
+    """Raised when acquiring a parser session lock times out."""
+
+
+@dataclass(slots=True)
+class ParserSessionGuard:
+    """Coordinate parser CLI sessions via filesystem locks."""
+
+    root: Path
+    logger: Logger
+    timeout: float = 10.0
+    poll_interval: float = 0.1
+
+    def __post_init__(self) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _sanitize_scope(self, scope: str | None) -> str:
+        if not scope:
+            return "workspace"
+        cleaned = scope.strip().replace(os.sep, "_").replace("/", "_")
+        return cleaned or "workspace"
+
+    def _lock_path(self, scope: str | None) -> Path:
+        name = self._sanitize_scope(scope)
+        return self.root / f"{name}.lock"
+
+    @contextmanager
+    def acquire(
+        self,
+        *,
+        scope: str | None = None,
+        action: str = "parser-cli",
+    ) -> Iterator[None]:
+        lock_path = self._lock_path(scope)
+        log = self.logger.bind(
+            scope=scope or "workspace",
+            action=action,
+            path=str(lock_path),
+        )
+        lock = FileLock(
+            lock_path,
+            timeout=self.timeout,
+            poll_interval=self.poll_interval,
+        )
+        log.debug("parser-session-acquire")
+        try:
+            with lock:
+                yield
+        except ManifestLockTimeoutError as exc:
+            log.error("parser-session-timeout", error=str(exc))
+            raise ParserSessionTimeout(str(exc)) from exc
+        except ManifestLockError as exc:
+            log.error("parser-session-lock-error", error=str(exc))
+            raise ParserSessionError(str(exc)) from exc
+        finally:
+            log.debug("parser-session-release")
 
 
 @dataclass(slots=True)
@@ -21,8 +92,13 @@ class ParserCLIContext:
 
     paths: WorkspacePaths
     config: AppConfig
+    store: SourceConfigStore
     settings: ParserModuleSettings
     logger: Logger
+    manifest: ManifestService
+    db_service: DbLifecycleService
+    parser_service: ParserService
+    session_guard: ParserSessionGuard
 
 
 _parser_app = typer.Typer(
@@ -128,19 +204,57 @@ def configure_parser_commands(
 
     logger = get_logger(__name__, command="parser")
     settings = config.parser
+    config_payload = config.model_dump(mode="python")
+    manifest_settings = manifest_settings_from_config(config_payload)
+    db_settings = db_settings_from_mapping(config_payload)
+
+    manifest_service = ManifestService(
+        workspace=paths,
+        settings=manifest_settings,
+        logger=logger.bind(component="manifest"),
+    )
+    db_service = DbLifecycleService(
+        workspace=paths,
+        manifest_service=manifest_service,
+        db_settings=db_settings,
+        logger=logger.bind(component="db-service"),
+    )
+    parser_service = ParserService(
+        workspace=paths,
+        config=config,
+        settings=settings,
+        manifest_service=manifest_service,
+        db_service=db_service,
+        logger=logger.bind(component="parser-service"),
+    )
+
+    locks_root = paths.workspace / ".locks" / "parser"
+    session_guard = ParserSessionGuard(
+        root=locks_root,
+        logger=logger.bind(component="session-guard"),
+    )
+
+    paths.sources_dir.mkdir(parents=True, exist_ok=True)
+
     logger.info(
         "parser-cli-context-created",
         enabled=settings.enabled,
         max_concurrency=settings.max_concurrency,
         fail_fast=settings.fail_fast,
         gitignore_behavior=settings.gitignore_behavior.value,
+        locks_root=str(locks_root),
     )
 
     ctx.obj = ParserCLIContext(
         paths=paths,
+        store=store,
         config=config,
         settings=settings,
         logger=logger,
+        manifest=manifest_service,
+        db_service=db_service,
+        parser_service=parser_service,
+        session_guard=session_guard,
     )
 
 

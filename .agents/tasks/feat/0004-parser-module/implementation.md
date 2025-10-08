@@ -97,7 +97,7 @@
 - [x] Formalize treating `chunk_slices` as the canonical artifact and enumerate the follow-up migration introducing a `chunk_assemblies` join table to anchor stable `chunk_id` values shared with vectors.
 
 ### Phase 6 — CLI subcommand behaviors
-- [ ] Centralize parser CLI wiring so all subcommands share manifest readers, service resolution, and concurrency/session guards consistent with follow-up #3.
+- [x] Centralize parser CLI wiring so all subcommands share manifest readers, service resolution, and concurrency/session guards consistent with follow-up #3.
 - [ ] `parse`: implement the Typer command to honor `--fail-fast`, thread explicit path arguments to traversal, enforce concurrency limits, validate batch preconditions, and emit scope-filter logs.
 - [ ] `parse`: after staging, surface batch summaries, raise vector-index warnings, persist manifest updates, and ensure non-zero exits align with Phase 3 service semantics.
 - [ ] `info`: reuse shared manifest readers to expose the last batch id (git SHA/uuid7), handler coverage, dependency gaps, and effective configuration overrides.
@@ -125,6 +125,15 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 07:35 PST
+**Summary**
+Centralized parser CLI context wiring for Phase 6 entry point.
+**Changes**
+- Added shared manifest, DB lifecycle, parser service, and session guard wiring within `configure_parser_commands`, extending the CLI context object.
+- Introduced a filesystem-backed parser session guard to coordinate subcommand execution and updated tests to assert service initialization.
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/cli/test_parser.py`
+
 ### 2025-10-08 06:25 PST
 **Summary**
 Cleaned up Ruff regressions from the staging/canonical-slice work without adding new suppressions.
