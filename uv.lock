@@ -2088,6 +2088,7 @@ mcp-rest = [
 parser = [
     { name = "libcst" },
     { name = "markdown-it-py" },
+    { name = "tiktoken" },
     { name = "tree-sitter" },
     { name = "tree-sitter-languages" },
 ]
@@ -2160,6 +2161,7 @@ modules = [
 parser = [
     { name = "libcst" },
     { name = "markdown-it-py" },
+    { name = "tiktoken" },
     { name = "tree-sitter" },
     { name = "tree-sitter-languages" },
 ]
@@ -2195,6 +2197,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13" },
     { name = "sentence-transformers", marker = "extra == 'local-embeddings'", specifier = ">=3" },
     { name = "structlog", specifier = ">=24" },
+    { name = "tiktoken", marker = "extra == 'parser'", specifier = ">=0.7" },
     { name = "tiktoken", marker = "extra == 'rag'", specifier = ">=0.7" },
     { name = "tomlkit", specifier = ">=0.12" },
     { name = "tree-sitter", marker = "extra == 'parser'", specifier = ">=0.21,<0.22" },
@@ -2264,6 +2267,7 @@ modules = [
 parser = [
     { name = "libcst", specifier = ">=1.4" },
     { name = "markdown-it-py", specifier = ">=3" },
+    { name = "tiktoken", specifier = ">=0.7" },
     { name = "tree-sitter", specifier = ">=0.21,<0.22" },
     { name = "tree-sitter-languages", specifier = ">=1.9" },
 ]

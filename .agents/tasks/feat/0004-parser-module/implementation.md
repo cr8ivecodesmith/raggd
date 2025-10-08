@@ -125,6 +125,20 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 19:45 PST
+**Summary**
+Exercised the parser CLI end-to-end without `tiktoken` installed and added a graceful tokenizer fallback so Phase 6 flows succeed in minimal environments.
+
+**Changes**
+- Added an approximate token encoder with structured logging when `tiktoken` is missing and wired parser extras to depend on `tiktoken>=0.7`.
+- Extended tokenizer tests to cover the fallback path and ensure counts stay deterministic.
+- Staged a `.tmp/parser-enduser` workspace (sample source files plus gitignore guards) for the manual Phase 6 verification run.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-enduser/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd parser parse sample`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-enduser/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd parser info sample`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-enduser/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd parser batches sample`
+- `RAGGD_WORKSPACE=$PWD/.tmp/parser-enduser/workspace RAGGD_LOG_LEVEL=debug python -m pytest --no-cov tests/modules/parser/test_tokenizer.py`
 ### 2025-10-08 18:05 PST
 **Summary**
 Completed Phase 6 remove subcommand with dependency safeguards and manifest reset handling.
