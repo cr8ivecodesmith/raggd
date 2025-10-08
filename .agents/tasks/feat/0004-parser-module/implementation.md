@@ -99,7 +99,7 @@
 ### Phase 6 — CLI subcommand behaviors
 - [x] Centralize parser CLI wiring so all subcommands share manifest readers, service resolution, and concurrency/session guards consistent with follow-up #3.
 - [x] `parse`: implement the Typer command to honor `--fail-fast`, thread explicit path arguments to traversal, enforce concurrency limits, validate batch preconditions, and emit scope-filter logs.
-- [ ] `parse`: after staging, surface batch summaries, raise vector-index warnings, persist manifest updates, and ensure non-zero exits align with Phase 3 service semantics.
+- [x] `parse`: after staging, surface batch summaries, raise vector-index warnings, persist manifest updates, and ensure non-zero exits align with Phase 3 service semantics.
 - [ ] `info`: reuse shared manifest readers to expose the last batch id (git SHA/uuid7), handler coverage, dependency gaps, and effective configuration overrides.
 - [ ] `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limit/pagination behavior per CLI contract.
 - [ ] `remove`: guard the latest successful batch unless `--force`, perform dependency checks, emit vector-index warnings, and persist tombstones for removed batches.
@@ -125,6 +125,18 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 09:45 PST
+**Summary**
+Completed Phase 6 post-run flow by surfacing parse summaries, vector sync reminders, and manifest persistence.
+
+**Changes**
+- Extended `_parse_single_source` to generate normalized run summaries, persist manifest entries, and emit vector sync notes alongside CLI/status logging.
+- Updated `parse` command output to show summary lines and vector reminders per source.
+- Expanded parser CLI test coverage for manifest writes, summary output, and vector sync warnings with patched service dependencies.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/cli/test_parser.py`
+
 ### 2025-10-08 08:50 PST
 **Summary**
 Implemented the Phase 6 parse command pre-run flow with fail-fast overrides, scope filtering, concurrency limiting, and session guard orchestration.

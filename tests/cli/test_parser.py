@@ -20,7 +20,20 @@ from raggd.cli.parser import (
 import raggd.modules.parser  # noqa: F401 - ensure module import coverage
 from raggd.modules.db import DbLifecycleService
 from raggd.modules.manifest import ManifestService
-from raggd.modules.parser import ParserBatchPlan, ParserRunMetrics, ParserService
+from raggd.modules import HealthStatus
+from raggd.modules.parser import (
+    FileStageOutcome,
+    HandlerChunk,
+    HandlerFile,
+    HandlerResult,
+    HandlerSelection,
+    HandlerProbeResult,
+    ParserBatchPlan,
+    ParserManifestState,
+    ParserPlanEntry,
+    ParserRunMetrics,
+    ParserService,
+)
 from raggd.source.config import SourceConfigError, SourceConfigStore
 
 
@@ -117,6 +130,309 @@ def test_parser_parse_scope_filters(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert "Scope filter missing" in result.stdout
     scope_paths = seen_scopes["demo"]
     assert scope_paths == (source_file.resolve(),)
+
+
+def test_parser_parse_records_manifest_without_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+    app = create_app()
+
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    init_source = runner.invoke(
+        app,
+        [
+            "source",
+            "init",
+            "demo",
+            "--target",
+            str(target_dir),
+            "--force-refresh",
+        ],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_source.exit_code == 0, init_source.stdout
+
+    def fake_plan(
+        self: ParserService,
+        *,
+        source: str,
+        scope: Sequence[Path] | None = None,
+    ) -> ParserBatchPlan:
+        config = self._config.workspace_sources[source]
+        return ParserBatchPlan(
+            source=source,
+            root=config.path,
+            entries=(),
+            warnings=("planner warning",),
+            errors=(),
+            metrics=ParserRunMetrics(),
+        )
+
+    monkeypatch.setattr("raggd.cli.parser.ParserService.plan_source", fake_plan)
+
+    build_calls: list[dict[str, object]] = []
+    original_build = ParserService.build_run_record
+
+    def spy_build(self: ParserService, **kwargs: object):
+        build_calls.append(kwargs)
+        return original_build(self, **kwargs)
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.ParserService.build_run_record",
+        spy_build,
+    )
+
+    record_calls: list[tuple[str, object]] = []
+
+    def fake_record(
+        self: ParserService,
+        *,
+        source: str,
+        run,
+    ) -> ParserManifestState:
+        record_calls.append((source, run))
+        return ParserManifestState(
+            last_batch_id=run.batch_id,
+            last_run_summary=run.summary,
+            last_run_status=run.status,
+            handler_versions=run.handler_versions,
+            metrics=run.metrics.copy(),
+        )
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.ParserService.record_run",
+        fake_record,
+    )
+
+    result = runner.invoke(
+        app,
+        ["parser", "parse"],
+        env=env,
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "planner warning" in result.stdout
+    assert "Summary: no changes" in result.stdout
+
+    assert len(build_calls) == 1
+    assert build_calls[0]["batch_id"] is None
+    assert len(record_calls) == 1
+    recorded_source, recorded_run = record_calls[0]
+    assert recorded_source == "demo"
+    assert recorded_run.summary == "no changes"
+
+
+def test_parser_parse_emits_vector_sync_note(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+    app = create_app()
+
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    workspace = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
+    source_dir = workspace / "sources" / "demo"
+
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    init_source = runner.invoke(
+        app,
+        [
+            "source",
+            "init",
+            "demo",
+            "--target",
+            str(target_dir),
+            "--force-refresh",
+        ],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_source.exit_code == 0, init_source.stdout
+
+    source_dir.mkdir(parents=True, exist_ok=True)
+    file_path = source_dir / "sample.txt"
+    file_path.write_text("vector testing", encoding="utf-8")
+
+    def fake_plan(
+        self: ParserService,
+        *,
+        source: str,
+        scope: Sequence[Path] | None = None,
+    ) -> ParserBatchPlan:
+        config = self._config.workspace_sources[source]
+        descriptor = self.registry.descriptors()["text"]
+        selection = HandlerSelection(
+            handler=descriptor,
+            resolved_via="extension",
+            fallback=False,
+            probe=HandlerProbeResult(status=HealthStatus.OK),
+        )
+        metrics = ParserRunMetrics(files_discovered=1, files_parsed=1)
+        return ParserBatchPlan(
+            source=source,
+            root=config.path,
+            entries=(
+                ParserPlanEntry(
+                    absolute_path=file_path,
+                    relative_path=Path("sample.txt"),
+                    handler=descriptor,
+                    selection=selection,
+                    file_hash="hash-sample",
+                ),
+            ),
+            warnings=(),
+            errors=(),
+            metrics=metrics,
+            handler_versions={descriptor.name: descriptor.version},
+        )
+
+    monkeypatch.setattr("raggd.cli.parser.ParserService.plan_source", fake_plan)
+
+    class _DummyEncoder:
+        def encode(self, value: str) -> list[int]:
+            return [0] * len(value)
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.ParserService.token_encoder",
+        lambda self: _DummyEncoder(),
+    )
+
+    def fake_create_handler(self, handler_name: str, *, context):
+        descriptor = self.descriptors()[handler_name]
+
+        class _Handler:
+            name = descriptor.name
+            version = descriptor.version
+            display_name = descriptor.display_name
+
+            def parse(self, *, path: Path, context) -> HandlerResult:
+                text = path.read_text(encoding="utf-8")
+                handler_file = HandlerFile(path=path, language=descriptor.name)
+                chunk = HandlerChunk(
+                    chunk_id="chunk-1",
+                    text=text,
+                    token_count=len(text.split()),
+                    start_offset=0,
+                    end_offset=len(text),
+                )
+                return HandlerResult(
+                    file=handler_file,
+                    chunks=(chunk,),
+                    warnings=(),
+                    errors=(),
+                )
+
+        return _Handler()
+
+    monkeypatch.setattr(
+        "raggd.modules.parser.registry.HandlerRegistry.create_handler",
+        fake_create_handler,
+    )
+
+    def fake_stage(
+        self: ParserService,
+        *,
+        source: str,
+        batch_id: str,
+        plan: ParserBatchPlan,
+        results,
+        batch_ref: str | None = None,
+        **_: object,
+    ) -> tuple[list[tuple[ParserPlanEntry, FileStageOutcome]], ParserRunMetrics]:
+        metrics = plan.metrics.copy()
+        metrics.chunks_emitted = len(results)
+        outcomes: list[tuple[ParserPlanEntry, FileStageOutcome]] = []
+        for idx, (entry, _result) in enumerate(results, start=1):
+            outcomes.append(
+                (
+                    entry,
+                    FileStageOutcome(
+                        file_id=idx,
+                        symbols_written=1,
+                        symbols_reused=0,
+                        chunks_inserted=1,
+                        chunks_reused=0,
+                    ),
+                )
+            )
+        return outcomes, metrics
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.ParserService.stage_batch",
+        fake_stage,
+    )
+
+    build_calls: list[dict[str, object]] = []
+    original_build = ParserService.build_run_record
+
+    def spy_build(self: ParserService, **kwargs: object):
+        build_calls.append(kwargs)
+        return original_build(self, **kwargs)
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.ParserService.build_run_record",
+        spy_build,
+    )
+
+    record_calls: list[tuple[str, object]] = []
+
+    def fake_record(
+        self: ParserService,
+        *,
+        source: str,
+        run,
+    ) -> ParserManifestState:
+        record_calls.append((source, run))
+        return ParserManifestState(
+            last_batch_id=run.batch_id,
+            last_run_summary=run.summary,
+            last_run_status=run.status,
+            handler_versions=run.handler_versions,
+            metrics=run.metrics.copy(),
+        )
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.ParserService.record_run",
+        fake_record,
+    )
+
+    result = runner.invoke(
+        app,
+        ["parser", "parse", "demo"],
+        env=env,
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Parse completed (batch" in result.stdout
+    assert "Summary: completed: files parsed=1; chunks inserted=1" in result.stdout
+
+    expected_note = (
+        "Vector indexes are not updated automatically; run "
+        "`raggd vdb sync demo` to refresh embeddings."
+    )
+    assert expected_note in result.stdout
+
+    assert len(build_calls) == 1
+    assert build_calls[0]["batch_id"] is not None
+    assert len(record_calls) == 1
+    recorded_source, recorded_run = record_calls[0]
+    assert recorded_source == "demo"
+    assert expected_note in recorded_run.notes
 
 
 def test_parser_parse_module_disabled(tmp_path: Path) -> None:

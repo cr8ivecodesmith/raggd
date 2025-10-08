@@ -28,11 +28,13 @@ from raggd.modules.parser import (
     HandlerResult,
     ParseContext,
     ParserBatchPlan,
+    ParserManifestState,
     ParserModuleDisabledError,
     ParserPlanEntry,
+    ParserRunMetrics,
+    ParserRunRecord,
     ParserService,
     ParserSourceNotConfiguredError,
-    ParserRunMetrics,
     TokenEncoderError,
 )
 from raggd.modules.parser.service import ParserError
@@ -142,6 +144,10 @@ class _ParseOutcome:
     failed_files: tuple[str, ...] = ()
     missing_scope: tuple[str, ...] = ()
     aborted: bool = False
+    summary: str | None = None
+    notes: tuple[str, ...] = ()
+    manifest_state: ParserManifestState | None = None
+    run_record: ParserRunRecord | None = None
 
     @property
     def has_failures(self) -> bool:
@@ -330,6 +336,96 @@ def _build_handler_context(
     )
 
 
+def _unique_messages(messages: Iterable[str]) -> tuple[str, ...]:
+    """Return messages deduplicated while preserving order."""
+
+    normalized = []
+    seen: dict[str, None] = {}
+    for message in messages:
+        if message is None:
+            continue
+        text = str(message)
+        if not text:
+            continue
+        if text in seen:
+            continue
+        seen[text] = None
+        normalized.append(text)
+    return tuple(normalized)
+
+
+def _format_run_summary(
+    *,
+    plan: ParserBatchPlan | None,
+    metrics: ParserRunMetrics | None,
+    aborted: bool,
+    has_failures: bool,
+) -> str | None:
+    """Create a human-readable summary for manifest and CLI output."""
+
+    if metrics is None:
+        return None
+
+    parsed = metrics.files_parsed
+    reused_files = metrics.files_reused
+    failed_files = metrics.files_failed
+    discovered = metrics.files_discovered
+    inserted = metrics.chunks_emitted
+    reused_chunks = metrics.chunks_reused
+    fallbacks = metrics.fallbacks
+
+    no_work_planned = plan is not None and not plan.entries
+    if (
+        not aborted
+        and not has_failures
+        and no_work_planned
+        and inserted == 0
+        and parsed == 0
+        and failed_files == 0
+    ):
+        return "no changes"
+
+    if aborted:
+        status = "aborted"
+    elif has_failures or failed_files > 0:
+        status = "completed with failures"
+    elif no_work_planned:
+        status = "no changes"
+    else:
+        status = "completed"
+
+    file_segment = f"files parsed={parsed}"
+    file_details: list[str] = []
+    if reused_files:
+        file_details.append(f"reused={reused_files}")
+    if failed_files:
+        file_details.append(f"failed={failed_files}")
+    if discovered and discovered != parsed:
+        file_details.append(f"discovered={discovered}")
+    if file_details:
+        file_segment += f" ({', '.join(file_details)})"
+
+    chunk_segment = f"chunks inserted={inserted}"
+    chunk_details: list[str] = []
+    if reused_chunks:
+        chunk_details.append(f"reused={reused_chunks}")
+    if fallbacks:
+        chunk_details.append(f"fallbacks={fallbacks}")
+    if chunk_details:
+        chunk_segment += f", {', '.join(chunk_details)}"
+
+    return f"{status}: {file_segment}; {chunk_segment}"
+
+
+def _vector_sync_note(source: str) -> str:
+    """Return the vector sync reminder for manifest and CLI output."""
+
+    return (
+        "Vector indexes are not updated automatically; run "
+        f"`raggd vdb sync {source}` to refresh embeddings."
+    )
+
+
 def _parse_single_source(
     context: ParserCLIContext,
     target: _ParseTarget,
@@ -415,147 +511,136 @@ def _parse_single_source(
         scope=scope_display,
     )
 
-    warnings: list[str] = []
-    errors: list[str] = list(plan.errors)
+    cli_warnings: list[str] = list(plan.warnings)
+    run_warnings: list[str] = []
+    cli_errors: list[str] = list(plan.errors)
+    run_errors: list[str] = []
     failed_files: list[str] = []
 
     for missing in target.missing_scope:
-        warnings.append(f"Scope path missing: {missing}")
+        message = f"Scope path missing: {missing}"
+        cli_warnings.append(message)
+        run_warnings.append(message)
 
-    for warning in plan.warnings:
-        warnings.append(warning)
-
-    if not plan.entries:
-        logger.info("parser-plan-empty", source=target.name)
-        run_metrics = plan.metrics.copy()
-        return _ParseOutcome(
-            source=target.name,
-            batch_id=None,
-            batch_ref=None,
-            plan=plan,
-            metrics=run_metrics,
-            warnings=tuple(warnings),
-            errors=tuple(errors),
-            missing_scope=target.missing_scope,
-        )
-
-    try:
-        handler_context = _build_handler_context(
-            parser_service=parser_service,
-            cli_context=context,
-            source=target,
-        )
-    except TokenEncoderError as exc:
-        message = (
-            "Failed to load token encoder for parser handlers: "
-            f"{exc}. Install the parser extras or adjust configuration."
-        )
-        logger.error("parser-token-encoder-error", error=str(exc))
-        return _ParseOutcome(
-            source=target.name,
-            batch_id=None,
-            batch_ref=None,
-            plan=plan,
-            errors=(message,),
-            warnings=tuple(warnings),
-            missing_scope=target.missing_scope,
-        )
-
+    run_metrics = plan.metrics.copy()
     registry = parser_service.registry
     handlers_cache: dict[str, Any] = {}
     results: list[tuple[ParserPlanEntry, HandlerResult]] = []
     aborted = False
 
-    for entry in plan.entries:
-        if stop_event and stop_event.is_set():
-            aborted = True
-            logger.info(
-                "parser-handler-skipped",
-                path=entry.relative_path.as_posix(),
-                reason="stop-signal",
-            )
-            break
-
-        handler_name = entry.handler.name
-        handler_logger = handler_context.scoped_logger(handler_name)
-        handler = handlers_cache.get(handler_name)
-        if handler is None:
-            try:
-                handler = registry.create_handler(
-                    handler_name,
-                    context=handler_context,
-                )
-            except Exception as exc:
-                message = (
-                    f"Failed to initialize handler {handler_name!r} for "
-                    f"{entry.relative_path.as_posix()}: {exc}"
-                )
-                handler_logger.error(
-                    "parser-handler-init-error",
-                    path=entry.relative_path.as_posix(),
-                    error=str(exc),
-                )
-                errors.append(message)
-                failed_files.append(entry.relative_path.as_posix())
-                if fail_fast:
-                    aborted = True
-                    if stop_event:
-                        stop_event.set()
-                    break
-                continue
-            handlers_cache[handler_name] = handler
-
+    handler_context: ParseContext | None = None
+    if plan.entries:
         try:
-            result = handler.parse(
-                path=entry.absolute_path,
-                context=handler_context,
+            handler_context = _build_handler_context(
+                parser_service=parser_service,
+                cli_context=context,
+                source=target,
             )
-        except Exception as exc:  # pragma: no cover - handler failure path
+        except TokenEncoderError as exc:
             message = (
-                f"Handler {handler_name!r} failed for "
-                f"{entry.relative_path.as_posix()}: {exc}"
+                "Failed to load token encoder for parser handlers: "
+                f"{exc}. Install the parser extras or adjust configuration."
             )
-            handler_logger.error(
-                "parser-handler-error",
-                path=entry.relative_path.as_posix(),
-                error=str(exc),
-            )
-            errors.append(message)
-            failed_files.append(entry.relative_path.as_posix())
-            if fail_fast:
-                aborted = True
-                if stop_event:
-                    stop_event.set()
-                break
-            continue
+            logger.error("parser-token-encoder-error", error=str(exc))
+            cli_errors.append(message)
+            run_errors.append(message)
+        else:
+            for entry in plan.entries:
+                if stop_event and stop_event.is_set():
+                    aborted = True
+                    logger.info(
+                        "parser-handler-skipped",
+                        path=entry.relative_path.as_posix(),
+                        reason="stop-signal",
+                    )
+                    break
 
-        if result.errors:
-            for message in result.errors:
-                formatted = (
-                    f"{entry.relative_path.as_posix()}: {message}"
-                )
-                errors.append(formatted)
-                failed_files.append(entry.relative_path.as_posix())
-            if fail_fast:
-                aborted = True
-                if stop_event:
-                    stop_event.set()
-                break
-            continue
+                handler_name = entry.handler.name
+                handler_logger = handler_context.scoped_logger(handler_name)
+                handler = handlers_cache.get(handler_name)
+                if handler is None:
+                    try:
+                        handler = registry.create_handler(
+                            handler_name,
+                            context=handler_context,
+                        )
+                    except Exception as exc:
+                        message = (
+                            f"Failed to initialize handler {handler_name!r} for "
+                            f"{entry.relative_path.as_posix()}: {exc}"
+                        )
+                        handler_logger.error(
+                            "parser-handler-init-error",
+                            path=entry.relative_path.as_posix(),
+                            error=str(exc),
+                        )
+                        cli_errors.append(message)
+                        run_errors.append(message)
+                        failed_files.append(entry.relative_path.as_posix())
+                        if fail_fast:
+                            aborted = True
+                            if stop_event:
+                                stop_event.set()
+                            break
+                        continue
+                    handlers_cache[handler_name] = handler
 
-        if result.warnings:
-            for warning in result.warnings:
-                warnings.append(
-                    f"{entry.relative_path.as_posix()}: {warning}"
-                )
+                try:
+                    result = handler.parse(
+                        path=entry.absolute_path,
+                        context=handler_context,
+                    )
+                except Exception as exc:  # pragma: no cover - handler failure path
+                    message = (
+                        f"Handler {handler_name!r} failed for "
+                        f"{entry.relative_path.as_posix()}: {exc}"
+                    )
+                    handler_logger.error(
+                        "parser-handler-error",
+                        path=entry.relative_path.as_posix(),
+                        error=str(exc),
+                    )
+                    cli_errors.append(message)
+                    run_errors.append(message)
+                    failed_files.append(entry.relative_path.as_posix())
+                    if fail_fast:
+                        aborted = True
+                        if stop_event:
+                            stop_event.set()
+                        break
+                    continue
 
-        results.append((entry, result))
+                if result.errors:
+                    for message in result.errors:
+                        formatted = (
+                            f"{entry.relative_path.as_posix()}: {message}"
+                        )
+                        cli_errors.append(formatted)
+                        run_errors.append(formatted)
+                        failed_files.append(entry.relative_path.as_posix())
+                    if fail_fast:
+                        aborted = True
+                        if stop_event:
+                            stop_event.set()
+                        break
+                    continue
+
+                if result.warnings:
+                    for warning in result.warnings:
+                        formatted = (
+                            f"{entry.relative_path.as_posix()}: {warning}"
+                        )
+                        cli_warnings.append(formatted)
+                        run_warnings.append(formatted)
+
+                results.append((entry, result))
+
+    else:
+        logger.info("parser-plan-empty", source=target.name)
 
     batch_id: str | None = None
     batch_ref: str | None = None
     staged_outcomes: tuple[tuple[ParserPlanEntry, FileStageOutcome], ...] = ()
-
-    run_metrics = plan.metrics.copy()
 
     if failed_files:
         failed = len(set(failed_files))
@@ -577,7 +662,8 @@ def _parse_single_source(
         except ParserError as exc:
             message = f"Failed to stage parser batch: {exc}"
             logger.error("parser-stage-error", error=str(exc))
-            errors.append(message)
+            cli_errors.append(message)
+            run_errors.append(message)
             if fail_fast and stop_event:
                 stop_event.set()
             staged_outcomes = ()
@@ -585,13 +671,74 @@ def _parse_single_source(
             staged_outcomes = tuple(outcomes)
             run_metrics = stage_metrics
 
+    notes: list[str] = []
+    if (
+        batch_id
+        and not aborted
+        and (run_metrics.chunks_emitted > 0 or run_metrics.chunks_reused > 0)
+    ):
+        notes.append(_vector_sync_note(target.name))
+
+    run_record: ParserRunRecord | None = None
+    manifest_state: ParserManifestState | None = None
+
+    try:
+        run_record = parser_service.build_run_record(
+            plan=plan,
+            batch_id=batch_id,
+            summary=_format_run_summary(
+                plan=plan,
+                metrics=run_metrics,
+                aborted=aborted,
+                has_failures=bool(
+                    plan.errors or run_errors or failed_files or aborted
+                ),
+            ),
+            warnings=tuple(run_warnings),
+            errors=tuple(run_errors),
+            notes=tuple(notes),
+            metrics=run_metrics,
+        )
+        manifest_state = parser_service.record_run(
+            source=target.name,
+            run=run_record,
+        )
+    except Exception as exc:  # pragma: no cover - manifest failure path
+        message = f"Failed to update parser manifest: {exc}"
+        logger.error("parser-manifest-error", error=str(exc))
+        cli_errors.append(message)
+        run_errors.append(message)
+        run_record = None
+        manifest_state = None
+        if fail_fast and stop_event:
+            stop_event.set()
+
+    has_failures = bool(
+        plan.errors
+        or run_errors
+        or failed_files
+        or aborted
+    )
+    summary_text = _format_run_summary(
+        plan=plan,
+        metrics=run_metrics,
+        aborted=aborted,
+        has_failures=has_failures,
+    )
+
+    warnings_out = _unique_messages(cli_warnings)
+    errors_out = _unique_messages(cli_errors)
+    notes_out = _unique_messages(notes)
+    failed_files_out = tuple(sorted(set(failed_files)))
+
     logger.info(
         "parser-parse-finished",
         batch_id=batch_id,
-        warnings=len(warnings),
-        errors=len(errors),
-        failed_files=len(set(failed_files)),
+        warnings=len(warnings_out),
+        errors=len(errors_out),
+        failed_files=len(failed_files_out),
         aborted=aborted,
+        summary=summary_text,
     )
 
     return _ParseOutcome(
@@ -601,11 +748,15 @@ def _parse_single_source(
         plan=plan,
         metrics=run_metrics,
         staged=staged_outcomes,
-        warnings=tuple(warnings),
-        errors=tuple(errors),
-        failed_files=tuple(sorted(set(failed_files))),
+        warnings=warnings_out,
+        errors=errors_out,
+        failed_files=failed_files_out,
         missing_scope=target.missing_scope,
         aborted=aborted,
+        summary=summary_text,
+        notes=notes_out,
+        manifest_state=manifest_state,
+        run_record=run_record,
     )
 
 
@@ -894,12 +1045,20 @@ def parse_command(
         for error in outcome.errors:
             typer.secho(f"[{name}] {error}", fg=typer.colors.RED)
 
+        summary_text = outcome.summary
+        show_summary_line = bool(summary_text)
+
         if outcome.has_failures:
             exit_code = 1
             typer.secho(
                 f"[{name}] Parse incomplete.",
                 fg=typer.colors.RED,
             )
+            if show_summary_line:
+                typer.secho(
+                    f"[{name}] Summary: {summary_text}",
+                    fg=typer.colors.YELLOW,
+                )
         else:
             summary = (
                 f"batch {outcome.batch_ref or outcome.batch_id}"
@@ -910,6 +1069,14 @@ def parse_command(
                 f"[{name}] Parse completed ({summary}).",
                 fg=typer.colors.GREEN,
             )
+            if show_summary_line:
+                typer.secho(
+                    f"[{name}] Summary: {summary_text}",
+                    fg=typer.colors.BLUE,
+                )
+
+        for note in outcome.notes:
+            typer.secho(f"[{name}] {note}", fg=typer.colors.YELLOW)
 
     raise typer.Exit(code=exit_code)
 
