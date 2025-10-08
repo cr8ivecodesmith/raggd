@@ -206,6 +206,8 @@ class ParserService:
 
         self._capture_handler_warnings(warnings)
 
+        fallback_logged: set[tuple[str, str]] = set()
+
         for result in traversal.iter_files(traversal_scope):
             metrics.files_discovered += 1
             shebang = self._read_shebang(result.absolute_path)
@@ -233,6 +235,17 @@ class ParserService:
                         selection.resolved_via,
                     )
                 )
+                fallback_key = (handler.name, selection.resolved_via)
+                if fallback_key not in fallback_logged:
+                    fallback_logged.add(fallback_key)
+                    self._logger.warning(
+                        "parser-handler-fallback",
+                        source=source,
+                        handler=handler.name,
+                        resolved_via=selection.resolved_via,
+                        probe_status=selection.probe.status.value,
+                        probe_summary=selection.probe.summary,
+                    )
 
             try:
                 file_hash = hash_file(
@@ -265,6 +278,8 @@ class ParserService:
             for name, descriptor in self._registry.descriptors().items()
         }
 
+        metrics.queue_depth = len(entries)
+
         plan = ParserBatchPlan(
             source=source,
             root=config.path,
@@ -282,6 +297,7 @@ class ParserService:
             warnings=len(plan.warnings),
             errors=len(plan.errors),
             fallbacks=metrics.fallbacks,
+            queue_depth=len(entries),
         )
         return plan
 
@@ -656,4 +672,11 @@ class ParserService:
             if availability.status is HealthStatus.OK:
                 continue
             detail = availability.summary or availability.status.value
+            self._logger.warning(
+                "parser-handler-degraded",
+                handler=availability.name,
+                status=availability.status.value,
+                summary=availability.summary,
+                warnings=availability.warnings,
+            )
             sink.append(f"Handler {availability.name} degraded: {detail}")

@@ -36,7 +36,9 @@ class ParserRunMetrics(BaseModel):
     chunks_emitted: int = Field(default=0, ge=0)
     chunks_reused: int = Field(default=0, ge=0)
     fallbacks: int = Field(default=0, ge=0)
+    queue_depth: int = Field(default=0, ge=0)
     handlers_invoked: dict[str, int] = Field(default_factory=dict)
+    handler_runtime_seconds: dict[str, float] = Field(default_factory=dict)
     lock_wait_seconds: float = Field(default=0.0, ge=0.0)
     lock_contention_events: int = Field(default=0, ge=0)
 
@@ -62,6 +64,22 @@ class ParserRunMetrics(BaseModel):
             normalized[str(name).strip()] = int(count)
         return normalized
 
+    @field_validator("handler_runtime_seconds")
+    @classmethod
+    def _validate_handler_runtime(
+        cls,
+        value: Mapping[str, float],
+    ) -> dict[str, float]:
+        normalized: dict[str, float] = {}
+        for name, seconds in (value or {}).items():
+            if seconds < 0:
+                raise ValueError(
+                    "Handler runtime seconds must be >= 0 (got "
+                    f"{seconds} for {name!r})."
+                )
+            normalized[str(name).strip()] = float(seconds)
+        return normalized
+
     def increment_handler(self, name: str, *, count: int = 1) -> None:
         """Increment the invocation counter for ``name`` by ``count``."""
 
@@ -70,6 +88,19 @@ class ParserRunMetrics(BaseModel):
         key = name.strip()
         current = self.handlers_invoked.get(key, 0)
         self.handlers_invoked[key] = current + count
+
+    def record_handler_runtime(
+        self,
+        name: str,
+        seconds: float,
+    ) -> None:
+        """Accumulate runtime seconds for ``name``."""
+
+        if seconds < 0:
+            raise ValueError("seconds must be >= 0")
+        key = name.strip()
+        current = self.handler_runtime_seconds.get(key, 0.0)
+        self.handler_runtime_seconds[key] = current + float(seconds)
 
     def record_fallback(self) -> None:
         """Increment the fallback counter."""

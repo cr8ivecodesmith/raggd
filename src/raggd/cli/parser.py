@@ -6,6 +6,7 @@ import concurrent.futures
 import os
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
@@ -364,15 +365,44 @@ def _resolve_concurrency(
     setting: int | str,
     *,
     target_count: int,
+    logger: Logger | None = None,
 ) -> int:
     if target_count <= 0:
         return 0
     if isinstance(setting, int):
-        return max(1, min(setting, target_count))
+        limit = max(1, setting)
+        resolved = max(1, min(limit, target_count))
+        if resolved < target_count and logger is not None:
+            logger.info(
+                "parser-concurrency-throttled",
+                target_count=target_count,
+                concurrency=resolved,
+                limit=limit,
+                mode="fixed",
+            )
+        return resolved
     if setting != "auto":  # Defensive guard; validation should prevent this.
-        return max(1, target_count)
+        resolved = max(1, target_count)
+        if logger is not None and resolved < target_count:
+            logger.info(
+                "parser-concurrency-throttled",
+                target_count=target_count,
+                concurrency=resolved,
+                limit=target_count,
+                mode="coerced",
+            )
+        return resolved
     cpu_count = os.cpu_count() or 1
-    return max(1, min(cpu_count, target_count))
+    resolved = max(1, min(cpu_count, target_count))
+    if resolved < target_count and logger is not None:
+        logger.info(
+            "parser-concurrency-throttled",
+            target_count=target_count,
+            concurrency=resolved,
+            limit=cpu_count,
+            mode="auto",
+        )
+    return resolved
 
 
 def _determine_fail_fast(
@@ -538,21 +568,48 @@ class _PlanExecutor:
         handler: Any,
         state: _PlanProcessingState,
     ) -> HandlerResult | None:
+        handler_logger = handler_context.scoped_logger(entry.handler.name)
+        start = time.perf_counter()
         try:
-            return handler.parse(
+            result = handler.parse(
                 path=entry.absolute_path,
                 context=handler_context,
             )
+            duration = max(0.0, time.perf_counter() - start)
+            state.run_metrics.record_handler_runtime(
+                entry.handler.name,
+                duration,
+            )
+            handler_logger.debug(
+                "parser-handler-runtime",
+                path=entry.relative_path.as_posix(),
+                handler=entry.handler.name,
+                seconds=duration,
+                fallback=entry.selection.fallback,
+                resolved_via=entry.selection.resolved_via,
+                probe_status=entry.selection.probe.status.value,
+                probe_summary=entry.selection.probe.summary,
+            )
+            return result
         except Exception as exc:  # pragma: no cover - handler failure path
+            duration = max(0.0, time.perf_counter() - start)
+            state.run_metrics.record_handler_runtime(
+                entry.handler.name,
+                duration,
+            )
             message = (
                 f"Handler {entry.handler.name!r} failed for "
                 f"{entry.relative_path.as_posix()}: {exc}"
             )
-            handler_logger = handler_context.scoped_logger(entry.handler.name)
             handler_logger.error(
                 "parser-handler-error",
                 path=entry.relative_path.as_posix(),
                 error=str(exc),
+                seconds=duration,
+                fallback=entry.selection.fallback,
+                resolved_via=entry.selection.resolved_via,
+                probe_status=entry.selection.probe.status.value,
+                probe_summary=entry.selection.probe.summary,
             )
             self._record_failure(
                 state,
@@ -2299,6 +2356,7 @@ def parse_command(
     concurrency = _resolve_concurrency(
         context.settings.max_concurrency,
         target_count=len(enabled_targets),
+        logger=context.logger,
     )
     resolved_fail_fast = _determine_fail_fast(
         override=fail_fast,

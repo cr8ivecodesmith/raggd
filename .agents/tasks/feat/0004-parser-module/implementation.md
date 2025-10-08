@@ -107,7 +107,7 @@
 ### Phase 7 — Concurrency & telemetry hardening
 - [x] Lock coverage: audit parser DB transactions per follow-up #1, extend `DbLifecycleService` locking helpers, and document seam-first mitigation choices per `.agents/guides/engineering-guide.md`.
 - [x] Parallel stress suite: add workflow-aligned stress tests that trigger concurrent `raggd parser parse` runs, capture lock contention metrics, and gate CI on passing runs.
-- [ ] Structured telemetry: emit structured logs/metrics for handler runtimes, queue depth, and throttling decisions while surfacing dependency fallback degradation states.
+- [x] Structured telemetry: emit structured logs/metrics for handler runtimes, queue depth, and throttling decisions while surfacing dependency fallback degradation states.
 - [ ] Health integration: finalize `checkhealth` hooks to assert manifest vs. DB alignment (`modules.parser.last_batch_id` vs batches) and validate chunk-slice integrity (contiguous part indices, delegated parent references).
 - [ ] Alerting & runbooks: wire telemetry into existing monitoring hooks, update runbook entries in line with `.agents/guides/workflow.md`, and highlight alert thresholds for concurrency regressions.
 
@@ -127,6 +127,22 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-10 09:05 PST
+**Summary**
+Wrapped Phase 7 structured telemetry by instrumenting handler runtime metrics,
+queue depth recording, fallback logging, and concurrency throttling diagnostics.
+
+**Changes**
+- Extended `ParserRunMetrics` with queue depth and per-handler runtime counters,
+  ensuring fallback warnings surface once per handler/trigger.
+- Emitted structured logs for degraded handlers, fallbacks, handler runtimes, and
+  concurrency throttling decisions across planner/service and CLI layers.
+- Updated parser service and CLI tests to capture the new telemetry surfaces.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/modules/parser/test_parser_service.py::test_plan_source_logs_fallback_and_queue_depth`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/cli/test_parser.py::test_plan_executor_records_handler_runtime tests/cli/test_parser.py::test_resolve_concurrency_logs_throttling tests/cli/test_parser.py::test_resolve_concurrency_logs_throttling_auto`
+
 ### 2025-10-09 11:15 PST
 **Summary**
 Validated parser concurrency by instrumenting lock wait metrics and running

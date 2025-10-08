@@ -31,6 +31,7 @@ from raggd.modules.parser.registry import (
     ParserHandlerDescriptor,
 )
 from raggd.source.models import WorkspaceSourceConfig
+from structlog.testing import capture_logs
 
 
 def _make_workspace(tmp_path: Path) -> WorkspacePaths:
@@ -205,6 +206,38 @@ def test_plan_source_fallback_when_handler_unhealthy(tmp_path: Path) -> None:
     assert entry.handler.name == "text"
     assert plan.metrics.fallbacks == 1
     assert any("Fallback" in warning for warning in plan.warnings)
+
+
+def test_plan_source_logs_fallback_and_queue_depth(tmp_path: Path) -> None:
+    paths = _make_workspace(tmp_path)
+    config = _make_config(paths, "beta")
+    settings = config.parser
+    registry = _make_registry(settings, python_status=HealthStatus.ERROR)
+    service = ParserService(
+        workspace=paths,
+        config=config,
+        settings=settings,
+        registry=registry,
+    )
+
+    root = paths.source_dir("beta")
+    (root / "module.py").write_text("print('fallback')\n", encoding="utf-8")
+
+    with capture_logs() as captured:
+        plan = service.plan_source(source="beta")
+
+    assert plan.metrics.queue_depth == len(plan.entries)
+
+    fallback_events = [
+        event for event in captured if event["event"] == "parser-handler-fallback"
+    ]
+    assert fallback_events
+    assert fallback_events[0]["handler"] == "text"
+
+    degraded_events = [
+        event for event in captured if event["event"] == "parser-handler-degraded"
+    ]
+    assert any(event["handler"] == "python" for event in degraded_events)
 
 
 def test_plan_source_raises_when_disabled(tmp_path: Path) -> None:

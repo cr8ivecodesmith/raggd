@@ -9,11 +9,45 @@ import shutil
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Mapping
+import io
+
+import click.testing
 
 import pytest
 
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.manifest import ManifestService, ManifestSettings, SourceRef
+
+
+def _patch_click_bytesio() -> None:
+    """Ensure ``click.testing.BytesIOCopy`` survives concurrent closes."""
+
+    sentinel = "_raggd_safe_getvalue"
+    if getattr(click.testing.BytesIOCopy, sentinel, False):  # type: ignore[attr-defined]
+        return
+
+    original_close = click.testing.BytesIOCopy.close
+    base_getvalue = io.BytesIO.getvalue
+
+    def _safe_close(self: click.testing.BytesIOCopy, *args: Any, **kwargs: Any) -> None:  # type: ignore[name-defined]
+        if not hasattr(self, "_raggd_snapshot"):
+            try:
+                self._raggd_snapshot = base_getvalue(self)  # type: ignore[attr-defined]
+            except ValueError:
+                self._raggd_snapshot = b""  # type: ignore[attr-defined]
+        original_close(self, *args, **kwargs)
+
+    def _safe_getvalue(self: click.testing.BytesIOCopy) -> bytes:  # type: ignore[name-defined]
+        if getattr(self, "closed", False):
+            return getattr(self, "_raggd_snapshot", b"")  # type: ignore[attr-defined]
+        return base_getvalue(self)
+
+    click.testing.BytesIOCopy.close = _safe_close  # type: ignore[assignment]
+    click.testing.BytesIOCopy.getvalue = _safe_getvalue  # type: ignore[assignment]
+    setattr(click.testing.BytesIOCopy, sentinel, True)
+
+
+_patch_click_bytesio()
 
 
 def _sanitize_node_id(node_id: str) -> str:

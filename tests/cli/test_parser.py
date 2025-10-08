@@ -10,6 +10,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Sequence
 
 import pytest
@@ -20,7 +21,10 @@ from raggd.cli import create_app
 from raggd.cli.parser import (
     ParserCLIContext,
     ParserSessionGuard,
+    _ParseTarget,
+    _PlanExecutor,
     _require_context,
+    _resolve_concurrency,
     _parser_app,
     configure_parser_commands,
 )
@@ -43,7 +47,11 @@ from raggd.modules.parser import (
     ParserService,
 )
 from raggd.source.config import SourceConfigError, SourceConfigStore
+from raggd.core.config import AppConfig, WorkspaceSettings
+from raggd.core.logging import get_logger
 from raggd.core.paths import WorkspacePaths, resolve_workspace
+from raggd.source.models import WorkspaceSourceConfig
+from structlog.testing import capture_logs
 
 
 def _workspace_env(tmp_path: Path) -> dict[str, str]:
@@ -424,6 +432,143 @@ def test_parser_parse_scope_filters(
     assert "Scope filter missing" in result.stdout
     scope_paths = seen_scopes["demo"]
     assert scope_paths == (source_file.resolve(),)
+
+
+def test_plan_executor_records_handler_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "workspace"
+    paths = WorkspacePaths(
+        workspace=root,
+        config_file=root / "raggd.toml",
+        logs_dir=root / "logs",
+        archives_dir=root / "archives",
+        sources_dir=root / "sources",
+    )
+    for entry in paths.iter_all():
+        if entry.suffix:
+            entry.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            entry.mkdir(parents=True, exist_ok=True)
+
+    source_dir = paths.source_dir("alpha")
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "alpha.txt").write_text(
+        "hello runtime\n",
+        encoding="utf-8",
+    )
+
+    workspace_settings = WorkspaceSettings(
+        root=paths.workspace,
+        sources={
+            "alpha": WorkspaceSourceConfig(
+                name="alpha",
+                path=source_dir,
+                enabled=True,
+            )
+        },
+    )
+    config = AppConfig(workspace_settings=workspace_settings, modules={})
+    service = ParserService(
+        workspace=paths,
+        config=config,
+        settings=config.parser,
+    )
+
+    plan = service.plan_source(source="alpha")
+    assert len(plan.entries) == 1
+    assert plan.metrics.queue_depth == 1
+
+    target = _ParseTarget(
+        name="alpha",
+        config=config.workspace_sources["alpha"],
+        scope_paths=(),
+        missing_scope=(),
+    )
+
+    cli_logger = get_logger("test", component="parser-cli-runtime")
+    cli_context = SimpleNamespace(
+        parser_service=service,
+        paths=paths,
+        config=config,
+        settings=config.parser,
+        logger=cli_logger,
+    )
+
+    values = iter([100.0, 101.5])
+
+    def _fake_perf_counter() -> float:
+        try:
+            return next(values)
+        except StopIteration:
+            return 101.5
+
+    monkeypatch.setattr(
+        "raggd.cli.parser.time.perf_counter",
+        _fake_perf_counter,
+    )
+
+    executor = _PlanExecutor(
+        plan=plan,
+        target=target,
+        parser_service=service,
+        cli_context=cli_context,
+        logger=cli_logger,
+        fail_fast=False,
+        stop_event=None,
+    )
+
+    with capture_logs() as captured:
+        state = executor.run()
+
+    handler_name = plan.entries[0].handler.name
+    assert state.run_metrics.handler_runtime_seconds[handler_name] == pytest.approx(
+        1.5
+    )
+
+    runtime_events = [
+        event for event in captured if event["event"] == "parser-handler-runtime"
+    ]
+    assert runtime_events
+    assert runtime_events[0]["handler"] == handler_name
+    assert runtime_events[0]["seconds"] == pytest.approx(1.5)
+
+
+def test_resolve_concurrency_logs_throttling() -> None:
+    logger = get_logger("test", component="parser-cli-throttle")
+    with capture_logs() as captured:
+        resolved = _resolve_concurrency(1, target_count=3, logger=logger)
+
+    assert resolved == 1
+    throttle_events = [
+        event
+        for event in captured
+        if event["event"] == "parser-concurrency-throttled"
+    ]
+    assert throttle_events
+    assert throttle_events[0]["limit"] == 1
+    assert throttle_events[0]["mode"] == "fixed"
+
+
+def test_resolve_concurrency_logs_throttling_auto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("raggd.cli.parser.os.cpu_count", lambda: 2)
+    logger = get_logger("test", component="parser-cli-throttle")
+
+    with capture_logs() as captured:
+        resolved = _resolve_concurrency("auto", target_count=4, logger=logger)
+
+    assert resolved == 2
+    throttle_events = [
+        event
+        for event in captured
+        if event["event"] == "parser-concurrency-throttled"
+    ]
+    assert throttle_events
+    assert throttle_events[0]["limit"] == 2
+    assert throttle_events[0]["mode"] == "auto"
 
 
 def test_parser_parse_records_manifest_without_changes(
