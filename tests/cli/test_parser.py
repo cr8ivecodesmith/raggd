@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Sequence
 
 import pytest
 import typer
@@ -19,7 +20,7 @@ from raggd.cli.parser import (
 import raggd.modules.parser  # noqa: F401 - ensure module import coverage
 from raggd.modules.db import DbLifecycleService
 from raggd.modules.manifest import ManifestService
-from raggd.modules.parser import ParserService
+from raggd.modules.parser import ParserBatchPlan, ParserRunMetrics, ParserService
 from raggd.source.config import SourceConfigError, SourceConfigStore
 
 
@@ -31,7 +32,7 @@ def _workspace_env(tmp_path: Path) -> dict[str, str]:
     }
 
 
-def test_parser_parse_reports_unimplemented(tmp_path: Path) -> None:
+def test_parser_parse_no_sources_configured(tmp_path: Path) -> None:
     runner = CliRunner()
     env = _workspace_env(tmp_path)
 
@@ -46,20 +47,100 @@ def test_parser_parse_reports_unimplemented(tmp_path: Path) -> None:
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 1
-    assert "not available yet" in result.stdout
+    assert result.exit_code == 0
+    assert "No sources configured" in result.stdout
 
 
-def test_legacy_parse_command_is_deprecated() -> None:
+def test_parser_parse_scope_filters(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     runner = CliRunner()
+    env = _workspace_env(tmp_path)
     app = create_app()
 
-    result = runner.invoke(app, ["parse"], catch_exceptions=False)
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    workspace = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "sample.txt").write_text("hello", encoding="utf-8")
+
+    init_source = runner.invoke(
+        app,
+        [
+            "source",
+            "init",
+            "demo",
+            "--target",
+            str(target_dir),
+            "--force-refresh",
+        ],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_source.exit_code == 0, init_source.stdout
+
+    seen_scopes: dict[str, tuple[Path, ...]] = {}
+    source_dir = workspace / "sources" / "demo"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    source_file = source_dir / "sample.txt"
+    source_file.write_text("hello", encoding="utf-8")
+    assert source_file.exists()
+
+    def fake_plan(
+        self: ParserService,
+        *,
+        source: str,
+        scope: Sequence[Path] | None = None,
+    ) -> ParserBatchPlan:
+        config = self._config.workspace_sources[source]
+        resolved_scope = tuple(scope or ())
+        seen_scopes[source] = resolved_scope
+        return ParserBatchPlan(
+            source=source,
+            root=config.path,
+            entries=(),
+            warnings=(),
+            errors=(),
+            metrics=ParserRunMetrics(),
+        )
+
+    monkeypatch.setattr("raggd.cli.parser.ParserService.plan_source", fake_plan)
+
+    result = runner.invoke(
+        app,
+        ["parser", "parse", "demo", "sample.txt", "docs/missing"],
+        env=env,
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Scope filter missing" in result.stdout
+    scope_paths = seen_scopes["demo"]
+    assert scope_paths == (source_file.resolve(),)
+
+
+def test_parser_parse_module_disabled(tmp_path: Path) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+    app = create_app()
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--disable-module", "parser"],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    result = runner.invoke(
+        app,
+        ["parser", "parse"],
+        env=env,
+        catch_exceptions=False,
+    )
 
     assert result.exit_code == 1
-    assert "has moved" in result.stdout
-
-
+    assert "Parser module is disabled" in result.stdout
 def test_parser_info_and_batches_unimplemented(tmp_path: Path) -> None:
     runner = CliRunner()
     env = _workspace_env(tmp_path)

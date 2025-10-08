@@ -424,20 +424,6 @@ def create_app() -> "typer.Typer":
             existing=workspace_exists,
         )
 
-    @app.command(
-        "parse",
-        help="Deprecated entry point. Use `raggd parser parse` instead.",
-    )
-    def legacy_parse_command() -> None:
-        typer.secho(
-            (
-                "`raggd parse` has moved. Invoke `raggd parser parse` "
-                "going forward."
-            ),
-            fg=typer.colors.YELLOW,
-        )
-        raise typer.Exit(code=1)
-
     return app
 
 

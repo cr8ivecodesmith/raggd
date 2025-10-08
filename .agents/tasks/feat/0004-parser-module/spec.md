@@ -17,7 +17,7 @@ Establish a `raggd parser` command group that owns parsing workflows end-to-end.
 - Generating or syncing vector databases/embeddings (future work will consume parser output).
 - Maintaining the legacy `raggd parse` entry point; the old command can be removed in favor of the new group.
 - Running background daemons or live file monitoring; parsing remains an on-demand operation.
-- Guaranteeing backwards compatibility with existing parser prototypes—obsolete code and tests may be deleted to reduce bloat.
+- Guaranteeing backwards compatibility with existing code and tests may be deleted to reduce bloat.
 
 ## Behavior (BDD-ish)
 - Given a user runs `raggd parser parse <source>` and the source has a configured target, the CLI walks the target respecting `.gitignore`, selects handlers, persists new/changed entities into `<workspace>/sources/<name>/db.sqlite3`, updates `modules.parser` manifest metadata (last batch id, run timestamps, handler notes), and exits `0` on success.

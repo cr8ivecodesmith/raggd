@@ -28,7 +28,7 @@
 ### Affected source files
 - **Create**: `src/raggd/cli/parser.py`, `src/raggd/modules/parser/__init__.py`, handler modules under `src/raggd/modules/parser/handlers/`, SQL files under `src/raggd/modules/parser/sql/`, new migrations under `src/raggd/modules/db/migrations/`.
 - **Modify**: `src/raggd/cli/__init__.py` (register sub-app), `src/raggd/modules/__init__.py` (add module descriptor), `src/raggd/modules/db/...` (lock helpers, lifecycle wiring), config defaults (`src/raggd/config/defaults.py`), manifest schemas, and test fixtures.
-- **Delete**: Legacy `raggd parse` CLI entry and obsolete parser prototypes/tests.
+- **Delete**: Legacy and obsolete code/tests that conflicts with the new parser design (if any).
 - **Config/flags**: Introduce `modules.parser.*` settings; ensure defaults and workspace overrides cover handler toggles, max tokens, concurrency, fail-fast, and gitignore behavior.
 ### Security considerations
 - Ensure traversal respects `.gitignore` to avoid ingesting secrets; continue redacting sensitive paths in telemetry logs.
@@ -42,14 +42,14 @@
   - [x] Phase 1 — CLI scaffolding & configuration (see Phase 1 notes below).
   - [x] Phase 2 — Database groundwork (see Phase 2 notes below).
   - [x] Phase 3 — Core parser services (see Phase 3 notes below).
-  - [ ] Phase 4 — Handler implementations (see Phase 4 notes below).
-  - [ ] Phase 5 — Persistence & recomposition support (see Phase 5 notes below).
+  - [x] Phase 4 — Handler implementations (see Phase 4 notes below).
+  - [x] Phase 5 — Persistence & recomposition support (see Phase 5 notes below).
   - [ ] Phase 6 — CLI subcommand behaviors (see Phase 6 notes below).
   - [ ] Phase 7 — Concurrency & telemetry hardening (see Phase 7 notes below).
   - [ ] Phase 8 — Documentation & cleanup (see Phase 8 notes below).
 
 ### Phase 1 — CLI scaffolding & configuration
-- Add `raggd parser` Typer app, load settings, wire module descriptor, and deprecate the legacy command while keeping tests green.
+- Add `raggd parser` Typer app, load settings, wire module descriptor while keeping tests green.
 - Establish dependency injection seams so later phases can plug services without circular imports.
 - Define the full `modules.parser` configuration surface (handlers map with `null` inheritance, `general_max_tokens`, `max_concurrency`, `fail_fast`, `gitignore_behavior`) and expose defaults plus workspace overrides through `info` output.
 
@@ -98,7 +98,7 @@
 
 ### Phase 6 — CLI subcommand behaviors
 - [x] Centralize parser CLI wiring so all subcommands share manifest readers, service resolution, and concurrency/session guards consistent with follow-up #3.
-- [ ] `parse`: implement the Typer command to honor `--fail-fast`, thread explicit path arguments to traversal, enforce concurrency limits, validate batch preconditions, and emit scope-filter logs.
+- [x] `parse`: implement the Typer command to honor `--fail-fast`, thread explicit path arguments to traversal, enforce concurrency limits, validate batch preconditions, and emit scope-filter logs.
 - [ ] `parse`: after staging, surface batch summaries, raise vector-index warnings, persist manifest updates, and ensure non-zero exits align with Phase 3 service semantics.
 - [ ] `info`: reuse shared manifest readers to expose the last batch id (git SHA/uuid7), handler coverage, dependency gaps, and effective configuration overrides.
 - [ ] `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limit/pagination behavior per CLI contract.
@@ -125,6 +125,17 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 08:50 PST
+**Summary**
+Implemented the Phase 6 parse command pre-run flow with fail-fast overrides, scope filtering, concurrency limiting, and session guard orchestration.
+
+**Changes**
+- Added full parse command wiring to plan sources, resolve scoped paths, honor fail-fast overrides, run staged batches, and enforce session guards with configurable concurrency.
+- Updated CLI tests to cover the new parse behavior, including missing scope warnings and stubbed planning.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/cli/test_parser.py`
+
 ### 2025-10-08 07:35 PST
 **Summary**
 Centralized parser CLI context wiring for Phase 6 entry point.
@@ -392,7 +403,7 @@ Tightened plan to close spec-alignment gaps.
 Completed Phase 1 CLI scaffolding with parser configuration defaults.
 **Changes**
 - Added parser-specific configuration models, defaults, and serialization updates.
-- Introduced the `raggd parser` Typer app with stub subcommands and legacy alias messaging.
+- Introduced the `raggd parser` Typer app with stub subcommands.
 - Renamed the parser module descriptor/extras and refreshed tests covering config and CLI output.
 ### 2025-10-06 02:06 PST
 **Summary**
