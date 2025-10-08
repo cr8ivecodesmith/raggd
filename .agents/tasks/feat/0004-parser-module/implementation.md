@@ -105,9 +105,11 @@
 - [x] `remove`: guard the latest successful batch unless `--force`, perform dependency checks, emit vector-index warnings, and persist tombstones for removed batches.
 
 ### Phase 7 — Concurrency & telemetry hardening
-- Audit DB locks (follow-up #1), add structured logs/metrics, stress tests for parallel parses, and finalize health hook integration.
-- Capture degraded handler states in telemetry when dependency fallbacks trigger.
-- Verify health checks ensure manifest/db alignment (`modules.parser.last_batch_id` vs `batches`) and enforce chunk-slice integrity (contiguous part indices, valid delegated parent references) before surfacing `OK` status.
+- [ ] Lock coverage: audit parser DB transactions per follow-up #1, extend `DbLifecycleService` locking helpers, and document seam-first mitigation choices per `.agents/guides/engineering-guide.md`.
+- [ ] Parallel stress suite: add workflow-aligned stress tests that trigger concurrent `raggd parser parse` runs, capture lock contention metrics, and gate CI on passing runs.
+- [ ] Structured telemetry: emit structured logs/metrics for handler runtimes, queue depth, and throttling decisions while surfacing dependency fallback degradation states.
+- [ ] Health integration: finalize `checkhealth` hooks to assert manifest vs. DB alignment (`modules.parser.last_batch_id` vs batches) and validate chunk-slice integrity (contiguous part indices, delegated parent references).
+- [ ] Alerting & runbooks: wire telemetry into existing monitoring hooks, update runbook entries in line with `.agents/guides/workflow.md`, and highlight alert thresholds for concurrency regressions.
 
 ### Phase 8 — Documentation & cleanup
 - Update user docs/config samples, finalize release notes, and remove superseded code/tests.
