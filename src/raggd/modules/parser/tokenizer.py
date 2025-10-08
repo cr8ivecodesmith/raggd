@@ -104,7 +104,7 @@ def _load_encoding(name: str) -> TokenEncoderProtocol:
         return _build_fallback_encoding(name)
     try:
         return tiktoken.get_encoding(name)
-    except KeyError as exc:
+    except (KeyError, ValueError) as exc:
         raise TokenEncoderError(f"Unknown token encoder: {name}") from exc
 
 

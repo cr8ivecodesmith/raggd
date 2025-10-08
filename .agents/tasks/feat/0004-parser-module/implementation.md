@@ -131,7 +131,7 @@ Exercised the parser CLI end-to-end without `tiktoken` installed and added a gra
 
 **Changes**
 - Added an approximate token encoder with structured logging when `tiktoken` is missing and wired parser extras to depend on `tiktoken>=0.7`.
-- Extended tokenizer tests to cover the fallback path and ensure counts stay deterministic.
+- Extended tokenizer tests to cover the fallback path, ensure counts stay deterministic, and hardened error wrapping so unknown encoders surface as `TokenEncoderError` even on newer `tiktoken` releases.
 - Staged a `.tmp/parser-enduser` workspace (sample source files plus gitignore guards) for the manual Phase 6 verification run.
 
 **Testing**
