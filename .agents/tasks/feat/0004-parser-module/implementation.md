@@ -102,7 +102,7 @@
 - [x] `parse`: after staging, surface batch summaries, raise vector-index warnings, persist manifest updates, and ensure non-zero exits align with Phase 3 service semantics.
 - [x] `info`: reuse shared manifest readers to expose the last batch id (git SHA/uuid7), handler coverage, dependency gaps, and effective configuration overrides.
 - [x] `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limit/pagination behavior per CLI contract.
-- [ ] `remove`: guard the latest successful batch unless `--force`, perform dependency checks, emit vector-index warnings, and persist tombstones for removed batches.
+- [x] `remove`: guard the latest successful batch unless `--force`, perform dependency checks, emit vector-index warnings, and persist tombstones for removed batches.
 
 ### Phase 7 — Concurrency & telemetry hardening
 - Audit DB locks (follow-up #1), add structured logs/metrics, stress tests for parallel parses, and finalize health hook integration.
@@ -125,6 +125,17 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 18:05 PST
+**Summary**
+Completed Phase 6 remove subcommand with dependency safeguards and manifest reset handling.
+
+**Changes**
+- Implemented `raggd parser remove` with validation for target batches, vector index guards, chunk/symbol/file reassignment, and manifest tombstone updates.
+- Added CLI output/logging for removal statistics and reuse of session guard + vector sync reminders.
+- Expanded parser CLI tests covering remove behaviors, vector index failures, manifest updates, and persistence adjustments.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/cli/test_parser.py`
 ### 2025-10-08 12:45 PST
 **Summary**
 Implemented the Phase 6 batches command to surface recent parser runs with manifest-aware health flags.

@@ -19,6 +19,7 @@ from raggd.core.config import (
     AppConfig,
     ParserModuleSettings,
     ParserHandlerSettings,
+    PARSER_MODULE_KEY,
 )
 from raggd.core.logging import Logger, configure_logging, get_logger
 from raggd.core.paths import WorkspacePaths, resolve_workspace
@@ -26,8 +27,10 @@ from raggd.modules.db import DbLifecycleService, db_settings_from_mapping
 from raggd.modules.db.uuid7 import generate_uuid7, short_uuid7
 from raggd.modules.manifest import (
     ManifestService,
+    ManifestSnapshot,
     manifest_settings_from_config,
 )
+from raggd.modules.manifest.migrator import MODULES_VERSION
 from raggd.modules.manifest.locks import (
     FileLock,
     ManifestLockError,
@@ -192,6 +195,31 @@ class _PlanProcessingState:
         default_factory=list
     )
     aborted: bool = False
+
+
+@dataclass(slots=True)
+class _BatchRemovalStats:
+    """Collected counters from batch removal operations."""
+
+    chunks_reassigned: int = 0
+    chunks_deleted: int = 0
+    chunk_first_reassigned: int = 0
+    chunk_last_seen_reset: int = 0
+    symbols_reassigned: int = 0
+    symbol_last_seen_reset: int = 0
+    symbols_deleted: int = 0
+    files_reassigned: int = 0
+    files_deleted: int = 0
+
+
+@dataclass(slots=True)
+class _BatchRow:
+    """Metadata snapshot captured for a batch before removal."""
+
+    batch_id: str
+    ref: str | None
+    generated_at: datetime | None
+    notes: str | None
 
 
 _parser_app = typer.Typer(
@@ -1658,6 +1686,397 @@ def _emit_overrides_summary(overrides: tuple[str, ...]) -> None:
         typer.echo("  Configuration overrides: none")
 
 
+class ParserRemoveError(RuntimeError):
+    """Raised when parser batch removal cannot proceed."""
+
+
+class ParserRemoveBlocked(ParserRemoveError):
+    """Raised when removal is blocked by dependency checks."""
+
+
+def _handle_remove_command(
+    *,
+    context: ParserCLIContext,
+    source: str,
+    batch_id: str,
+    manifest_state: ParserManifestState,
+    force: bool,
+) -> int:
+    db_path = context.paths.source_database_path(source)
+    if not db_path.exists():
+        typer.secho(
+            f"Parser database not found for {source}; nothing to remove.",
+            fg=typer.colors.RED,
+        )
+        context.logger.error(
+            "parser-remove-missing-db",
+            source=source,
+            batch=batch_id,
+        )
+        return 1
+
+    try:
+        stats, removed_row, next_row, remaining = _perform_batch_removal(
+            context=context,
+            source=source,
+            batch_id=batch_id,
+        )
+    except ParserRemoveBlocked as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        context.logger.warning(
+            "parser-remove-blocked",
+            source=source,
+            batch=batch_id,
+            reason=str(exc),
+        )
+        return 1
+    except ParserRemoveError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        context.logger.error(
+            "parser-remove-error",
+            source=source,
+            batch=batch_id,
+            error=str(exc),
+        )
+        return 1
+
+    manifest_updated = _sync_manifest_after_removal(
+        context=context,
+        source=source,
+        manifest_state=manifest_state,
+        removed_batch=batch_id,
+        next_batch=next_row,
+    )
+
+    short_removed = _shorten_batch_id(removed_row.batch_id)
+    typer.secho(
+        f"Removed parser batch {short_removed} from {source}.",
+        fg=typer.colors.GREEN,
+    )
+    typer.echo(
+        "  removed ref: %s  generated_at: %s"
+        % (
+            removed_row.ref or "none",
+            _format_generated_at(removed_row.generated_at),
+        )
+    )
+    typer.echo(
+        "  chunks: reassigned=%d  deleted=%d  first_seen_resets=%d  last_seen_resets=%d"
+        % (
+            stats.chunks_reassigned,
+            stats.chunks_deleted,
+            stats.chunk_first_reassigned,
+            stats.chunk_last_seen_reset,
+        )
+    )
+    typer.echo(
+        "  symbols: first_seen_resets=%d  last_seen_resets=%d  deleted=%d"
+        % (
+            stats.symbols_reassigned,
+            stats.symbol_last_seen_reset,
+            stats.symbols_deleted,
+        )
+    )
+    typer.echo(
+        "  files: reassigned=%d  deleted=%d"
+        % (stats.files_reassigned, stats.files_deleted)
+    )
+    typer.echo(f"  remaining batches: {remaining}")
+
+    typer.secho(_vector_sync_note(source), fg=typer.colors.YELLOW)
+
+    if manifest_updated:
+        typer.secho(
+            (
+                "Parser manifest reset; run `raggd parser parse %s` to "
+                "re-establish baseline data." % source
+            ),
+            fg=typer.colors.YELLOW,
+        )
+
+    context.logger.info(
+        "parser-remove",
+        source=source,
+        batch=batch_id,
+        short_batch=short_removed,
+        force=force,
+        chunks_reassigned=stats.chunks_reassigned,
+        chunks_deleted=stats.chunks_deleted,
+        chunk_first_seen_resets=stats.chunk_first_reassigned,
+        chunk_last_seen_resets=stats.chunk_last_seen_reset,
+        symbols_reassigned=stats.symbols_reassigned,
+        symbol_last_seen_resets=stats.symbol_last_seen_reset,
+        symbols_deleted=stats.symbols_deleted,
+        files_reassigned=stats.files_reassigned,
+        files_deleted=stats.files_deleted,
+        remaining_batches=remaining,
+        manifest_updated=manifest_updated,
+    )
+    return 0
+
+
+def _perform_batch_removal(
+    *,
+    context: ParserCLIContext,
+    source: str,
+    batch_id: str,
+) -> tuple[_BatchRemovalStats, _BatchRow, _BatchRow | None, int]:
+    db_path = context.paths.source_database_path(source)
+    try:
+        connection = sqlite3.connect(db_path)
+    except sqlite3.OperationalError as exc:
+        raise ParserRemoveError(
+            f"Failed to open database for {source}: {exc}"
+        ) from exc
+
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+
+        batch_cursor = connection.execute(
+            (
+                "SELECT id, ref, generated_at, notes "
+                "FROM batches WHERE id = :batch"
+            ),
+            {"batch": batch_id},
+        )
+        batch_row = batch_cursor.fetchone()
+        if batch_row is None:
+            raise ParserRemoveError(
+                f"Batch {batch_id} not found for source {source}."
+            )
+
+        vector_count = connection.execute(
+            "SELECT COUNT(*) FROM vdbs WHERE batch_id = :batch",
+            {"batch": batch_id},
+        ).fetchone()[0]
+        if vector_count:
+            raise ParserRemoveBlocked(
+                (
+                    f"Batch {batch_id} is referenced by {vector_count} vector "
+                    "index(es); run `raggd vdb reset` or detach them before "
+                    "removing the parser batch."
+                )
+            )
+
+        stats = _BatchRemovalStats()
+
+        with connection:
+            reassigned = connection.execute(
+                (
+                    "UPDATE chunk_slices\n"
+                    "   SET batch_id = last_seen_batch,\n"
+                    "       first_seen_batch = CASE\n"
+                    "           WHEN first_seen_batch = :batch\n"
+                    "           THEN last_seen_batch\n"
+                    "           ELSE first_seen_batch\n"
+                    "       END\n"
+                    " WHERE batch_id = :batch\n"
+                    "   AND last_seen_batch <> :batch"
+                ),
+                {"batch": batch_id},
+            )
+            stats.chunks_reassigned = max(reassigned.rowcount or 0, 0)
+
+            deleted_chunks = connection.execute(
+                "DELETE FROM chunk_slices WHERE batch_id = :batch",
+                {"batch": batch_id},
+            )
+            stats.chunks_deleted = max(deleted_chunks.rowcount or 0, 0)
+
+            first_seen_resets = connection.execute(
+                (
+                    "UPDATE chunk_slices\n"
+                    "   SET first_seen_batch = batch_id\n"
+                    " WHERE first_seen_batch = :batch\n"
+                    "   AND batch_id <> :batch"
+                ),
+                {"batch": batch_id},
+            )
+            stats.chunk_first_reassigned = max(
+                first_seen_resets.rowcount or 0, 0
+            )
+
+            last_seen_resets = connection.execute(
+                (
+                    "UPDATE chunk_slices\n"
+                    "   SET last_seen_batch = batch_id\n"
+                    " WHERE last_seen_batch = :batch\n"
+                    "   AND batch_id <> :batch"
+                ),
+                {"batch": batch_id},
+            )
+            stats.chunk_last_seen_reset = max(
+                last_seen_resets.rowcount or 0, 0
+            )
+
+            symbol_reassign = connection.execute(
+                (
+                    "UPDATE symbols\n"
+                    "   SET first_seen_batch = last_seen_batch\n"
+                    " WHERE first_seen_batch = :batch\n"
+                    "   AND last_seen_batch <> :batch"
+                ),
+                {"batch": batch_id},
+            )
+            stats.symbols_reassigned = max(
+                symbol_reassign.rowcount or 0, 0
+            )
+
+            symbol_last_seen_reset = connection.execute(
+                (
+                    "UPDATE symbols\n"
+                    "   SET last_seen_batch = COALESCE(\n"
+                    "       (SELECT MAX(last_seen_batch)\n"
+                    "          FROM chunk_slices\n"
+                    "         WHERE chunk_slices.symbol_id = symbols.id\n"
+                    "           AND chunk_slices.last_seen_batch <> :batch),\n"
+                    "       first_seen_batch\n"
+                    "   )\n"
+                    " WHERE last_seen_batch = :batch\n"
+                    "   AND first_seen_batch <> :batch"
+                ),
+                {"batch": batch_id},
+            )
+            stats.symbol_last_seen_reset = max(
+                symbol_last_seen_reset.rowcount or 0, 0
+            )
+
+            symbol_deleted = connection.execute(
+                "DELETE FROM symbols WHERE last_seen_batch = :batch",
+                {"batch": batch_id},
+            )
+            stats.symbols_deleted = max(symbol_deleted.rowcount or 0, 0)
+
+            files_reassigned = connection.execute(
+                (
+                    "UPDATE files\n"
+                    "   SET batch_id = (\n"
+                    "       SELECT MAX(last_seen_batch)\n"
+                    "         FROM chunk_slices\n"
+                    "        WHERE chunk_slices.file_id = files.id\n"
+                    "          AND chunk_slices.last_seen_batch <> :batch\n"
+                    "   )\n"
+                    " WHERE batch_id = :batch\n"
+                    "   AND EXISTS (\n"
+                    "       SELECT 1\n"
+                    "         FROM chunk_slices\n"
+                    "        WHERE chunk_slices.file_id = files.id\n"
+                    "          AND chunk_slices.last_seen_batch <> :batch\n"
+                    "   )"
+                ),
+                {"batch": batch_id},
+            )
+            stats.files_reassigned = max(
+                files_reassigned.rowcount or 0, 0
+            )
+
+            files_deleted = connection.execute(
+                "DELETE FROM files WHERE batch_id = :batch",
+                {"batch": batch_id},
+            )
+            stats.files_deleted = max(files_deleted.rowcount or 0, 0)
+
+            connection.execute(
+                "DELETE FROM batches WHERE id = :batch",
+                {"batch": batch_id},
+            )
+
+        next_cursor = connection.execute(
+            (
+                "SELECT id, ref, generated_at, notes\n"
+                "  FROM batches\n"
+                " ORDER BY generated_at DESC, id DESC\n"
+                " LIMIT 1"
+            )
+        )
+        next_row = next_cursor.fetchone()
+
+        remaining = connection.execute(
+            "SELECT COUNT(*) FROM batches",
+        ).fetchone()[0]
+
+    finally:
+        connection.close()
+
+    removed = _BatchRow(
+        batch_id=str(batch_row["id"]),
+        ref=batch_row["ref"] if batch_row["ref"] else None,
+        generated_at=_parse_generated_at(batch_row["generated_at"]),
+        notes=batch_row["notes"] if batch_row["notes"] else None,
+    )
+
+    if next_row is None:
+        next_batch: _BatchRow | None = None
+    else:
+        next_batch = _BatchRow(
+            batch_id=str(next_row["id"]),
+            ref=next_row["ref"] if next_row["ref"] else None,
+            generated_at=_parse_generated_at(next_row["generated_at"]),
+            notes=next_row["notes"] if next_row["notes"] else None,
+        )
+
+    return stats, removed, next_batch, int(remaining)
+
+
+def _sync_manifest_after_removal(
+    *,
+    context: ParserCLIContext,
+    source: str,
+    manifest_state: ParserManifestState,
+    removed_batch: str,
+    next_batch: _BatchRow | None,
+) -> bool:
+    if manifest_state.last_batch_id != removed_batch:
+        return False
+
+    manifest_service = context.manifest
+    modules_key, module_key = manifest_service.settings.module_key(
+        PARSER_MODULE_KEY
+    )
+    short_removed = _shorten_batch_id(removed_batch)
+    next_note = None
+    if next_batch is not None:
+        next_note = (
+            "Next available batch is %s (generated_at: %s)"
+            % (
+                _shorten_batch_id(next_batch.batch_id),
+                _format_generated_at(next_batch.generated_at),
+            )
+        )
+
+    def _mutate(snapshot: ManifestSnapshot) -> None:
+        modules = snapshot.ensure_modules()
+        current_payload = modules.get(module_key)
+        current_state = ParserManifestState.from_mapping(current_payload)
+        notes: list[str] = [
+            f"Removed parser batch {short_removed} via CLI.",
+            _vector_sync_note(source),
+            f"Run `raggd parser parse {source}` to regenerate parser data.",
+        ]
+        if next_note:
+            notes.insert(1, next_note)
+
+        replacement = ParserManifestState(
+            enabled=current_state.enabled,
+            last_batch_id=None,
+            last_run_started_at=None,
+            last_run_completed_at=None,
+            last_run_status=HealthStatus.DEGRADED,
+            last_run_summary=f"Manual removal of parser batch {short_removed}.",
+            last_run_warnings=(notes[0],),
+            last_run_errors=(),
+            last_run_notes=tuple(notes),
+            handler_versions={},
+            metrics=ParserRunMetrics(),
+        )
+        modules[module_key] = replacement.to_mapping()
+        snapshot.data["modules_version"] = MODULES_VERSION
+
+    manifest_service.write(source, mutate=_mutate)
+    return True
+
+
 def _display_source_info(
     *,
     name: str,
@@ -2037,8 +2456,71 @@ def remove_command(
     ),
 ) -> None:
     context = _require_context(ctx)
-    summary = f"source={source or '*'},batch={batch or '*'},force={force}"
-    _emit_unimplemented(context, command="remove", summary=summary)
+    if source is None or not source.strip():
+        typer.secho(
+            "Provide a source name to remove parser batches from.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+
+    normalized_source = source.strip()
+    if normalized_source not in context.config.workspace_sources:
+        typer.secho(f"Unknown source: {normalized_source}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    if batch is None or not str(batch).strip():
+        typer.secho(
+            "Provide a parser batch identifier to remove.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+
+    normalized_batch = str(batch).strip()
+
+    try:
+        manifest_state = context.parser_service.load_manifest_state(
+            normalized_source
+        )
+    except Exception as exc:  # pragma: no cover - manifest failure path
+        typer.secho(
+            f"Failed to load parser manifest for {normalized_source}: {exc}",
+            fg=typer.colors.RED,
+        )
+        context.logger.error(
+            "parser-remove-manifest-error",
+            source=normalized_source,
+            batch=normalized_batch,
+            error=str(exc),
+        )
+        raise typer.Exit(code=1)
+
+    if (
+        not force
+        and manifest_state.last_batch_id
+        and manifest_state.last_batch_id == normalized_batch
+    ):
+        typer.secho(
+            (
+                f"Batch {normalized_batch} is the latest parser run for "
+                f"{normalized_source}; rerun with --force to remove it."
+            ),
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+
+    with context.session_guard.acquire(
+        scope=normalized_source,
+        action="remove",
+    ):
+        exit_code = _handle_remove_command(
+            context=context,
+            source=normalized_source,
+            batch_id=normalized_batch,
+            manifest_state=manifest_state,
+            force=force,
+        )
+
+    raise typer.Exit(code=exit_code)
 
 
 def create_parser_app() -> typer.Typer:

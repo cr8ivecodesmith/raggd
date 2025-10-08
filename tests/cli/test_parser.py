@@ -39,7 +39,7 @@ from raggd.modules.parser import (
     ParserService,
 )
 from raggd.source.config import SourceConfigError, SourceConfigStore
-from raggd.core.paths import resolve_workspace
+from raggd.core.paths import WorkspacePaths, resolve_workspace
 
 
 def _workspace_env(tmp_path: Path) -> dict[str, str]:
@@ -49,6 +49,271 @@ def _workspace_env(tmp_path: Path) -> dict[str, str]:
         "RAGGD_WORKSPACE": str(workspace),
     }
 
+
+def _setup_remove_workspace(
+    tmp_path: Path,
+) -> tuple[
+    CliRunner,
+    typer.Typer,
+    dict[str, str],
+    WorkspacePaths,
+    ManifestService,
+    DbLifecycleService,
+    ParserService,
+    str,
+    str,
+    datetime,
+    datetime,
+]:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+    app = create_app()
+
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "sample.py").write_text("print('hi')\n", encoding="utf-8")
+
+    init_source = runner.invoke(
+        app,
+        [
+            "source",
+            "init",
+            "demo",
+            "--target",
+            str(target_dir),
+            "--force-refresh",
+        ],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_source.exit_code == 0, init_source.stdout
+
+    workspace = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
+    paths = resolve_workspace(workspace_override=workspace)
+    store = SourceConfigStore(config_path=paths.config_file)
+    config = store.load()
+
+    manifest_service = ManifestService(workspace=paths)
+    db_service = DbLifecycleService(
+        workspace=paths,
+        manifest_service=manifest_service,
+    )
+
+    db_path = db_service.ensure("demo")
+
+    first_generated = datetime(2024, 1, 1, 8, tzinfo=timezone.utc)
+    second_generated = datetime(2024, 1, 2, 12, tzinfo=timezone.utc)
+    batch_a = str(generate_uuid7(when=first_generated))
+    batch_b = str(generate_uuid7(when=second_generated))
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (batch_a, "ref-a", first_generated.isoformat(), "initial sync"),
+        )
+        connection.execute(
+            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (batch_b, "ref-b", second_generated.isoformat(), "follow-up sync"),
+        )
+
+        file_a = connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
+                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (batch_a, "src/legacy.py", "python", "sha-legacy", 111, 128),
+        ).lastrowid
+
+        file_reused = connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
+                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (batch_b, "src/reused.py", "python", "sha-reused", 222, 256),
+        ).lastrowid
+
+        symbol_legacy = connection.execute(
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
+                "imports_json, deps_out_json, docstring, summary, tokens, "
+                "first_seen_batch, last_seen_batch) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                file_a,
+                "function",
+                "legacy:main",
+                1,
+                5,
+                "sym-legacy",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                20,
+                batch_a,
+                batch_a,
+            ),
+        ).lastrowid
+
+        symbol_reused = connection.execute(
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
+                "imports_json, deps_out_json, docstring, summary, tokens, "
+                "first_seen_batch, last_seen_batch) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                file_reused,
+                "class",
+                "reused:Thing",
+                10,
+                40,
+                "sym-reused",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                32,
+                batch_a,
+                batch_b,
+            ),
+        ).lastrowid
+
+        connection.execute(
+            (
+                "INSERT INTO chunk_slices (batch_id, file_id, symbol_id, "
+                "parent_symbol_id, chunk_id, handler_name, handler_version, "
+                "part_index, part_total, start_line, end_line, start_byte, "
+                "end_byte, token_count, content_hash, content_norm_hash, "
+                "content_text, overflow_is_truncated, overflow_reason, "
+                "metadata_json, created_at, updated_at, first_seen_batch, "
+                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                batch_a,
+                file_a,
+                symbol_legacy,
+                None,
+                "chunk-legacy",
+                "python",
+                "1.0.0",
+                0,
+                1,
+                1,
+                5,
+                0,
+                120,
+                18,
+                "hash-legacy",
+                None,
+                "legacy body",
+                0,
+                None,
+                None,
+                first_generated.isoformat(),
+                first_generated.isoformat(),
+                batch_a,
+                batch_a,
+            ),
+        )
+
+        connection.execute(
+            (
+                "INSERT INTO chunk_slices (batch_id, file_id, symbol_id, "
+                "parent_symbol_id, chunk_id, handler_name, handler_version, "
+                "part_index, part_total, start_line, end_line, start_byte, "
+                "end_byte, token_count, content_hash, content_norm_hash, "
+                "content_text, overflow_is_truncated, overflow_reason, "
+                "metadata_json, created_at, updated_at, first_seen_batch, "
+                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                batch_a,
+                file_reused,
+                symbol_reused,
+                None,
+                "chunk-reused",
+                "python",
+                "1.0.0",
+                0,
+                1,
+                10,
+                40,
+                0,
+                320,
+                45,
+                "hash-reused",
+                None,
+                "reused body",
+                0,
+                None,
+                None,
+                first_generated.isoformat(),
+                second_generated.isoformat(),
+                batch_a,
+                batch_b,
+            ),
+        )
+
+    parser_service = ParserService(
+        workspace=paths,
+        config=config,
+        manifest_service=manifest_service,
+        db_service=db_service,
+    )
+
+    plan = ParserBatchPlan(
+        source="demo",
+        root=paths.source_dir("demo"),
+        entries=(),
+        warnings=(),
+        errors=(),
+        metrics=ParserRunMetrics(files_parsed=2, files_discovered=2, chunks_emitted=2),
+    )
+    run = parser_service.build_run_record(
+        plan=plan,
+        batch_id=batch_b,
+        status=HealthStatus.OK,
+        summary="follow-up sync",
+        warnings=(),
+        errors=(),
+        notes=("vector sync required",),
+        started_at=second_generated,
+        completed_at=second_generated,
+        metrics=ParserRunMetrics(
+            files_discovered=2,
+            files_parsed=2,
+            chunks_emitted=2,
+        ),
+    )
+    parser_service.record_run(source="demo", run=run)
+
+    return (
+        runner,
+        app,
+        env,
+        paths,
+        manifest_service,
+        db_service,
+        parser_service,
+        batch_a,
+        batch_b,
+        first_generated,
+        second_generated,
+    )
 
 def test_parser_parse_no_sources_configured(tmp_path: Path) -> None:
     runner = CliRunner()
@@ -978,31 +1243,215 @@ def test_parser_batches_lists_recent_batches(tmp_path: Path) -> None:
     assert "notes: initial sync" in stdout
 
 
-def test_parser_remove_unimplemented(tmp_path: Path) -> None:
-    runner = CliRunner()
-    env = _workspace_env(tmp_path)
-
-    app = create_app()
-    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
-    assert init_result.exit_code == 0, init_result.stdout
-
-    wildcard_result = runner.invoke(
+def test_parser_remove_rejects_latest_without_force(tmp_path: Path) -> None:
+    (
+        runner,
         app,
-        ["parser", "remove", "--force"],
+        env,
+        paths,
+        manifest_service,
+        db_service,
+        parser_service,
+        batch_a,
+        batch_b,
+        _first_generated,
+        _second_generated,
+    ) = _setup_remove_workspace(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["parser", "remove", "demo", batch_b],
         env=env,
         catch_exceptions=False,
     )
-    assert wildcard_result.exit_code == 1
-    assert "not available yet" in wildcard_result.stdout
 
-    explicit_result = runner.invoke(
+    assert result.exit_code == 1
+    assert "latest parser run" in result.stdout
+
+    db_path = db_service.ensure("demo")
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) FROM batches WHERE id = ?",
+            (batch_b,),
+        ).fetchone()
+        assert row[0] == 1
+
+    state = parser_service.load_manifest_state("demo")
+    assert state.last_batch_id == batch_b
+    assert state.last_run_status == HealthStatus.OK.value
+
+
+def test_parser_remove_blocks_when_vectors_present(tmp_path: Path) -> None:
+    (
+        runner,
         app,
-        ["parser", "remove", "demo", "batch-1"],
+        env,
+        _paths,
+        _manifest_service,
+        db_service,
+        _parser_service,
+        batch_a,
+        _batch_b,
+        first_generated,
+        _second_generated,
+    ) = _setup_remove_workspace(tmp_path)
+
+    db_path = db_service.ensure("demo")
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            (
+                "INSERT INTO embedding_models (provider, name, dim) "
+                "VALUES (?, ?, ?)"
+            ),
+            ("openai", "text-ada", 1536),
+        )
+        model_id = connection.execute(
+            "SELECT id FROM embedding_models WHERE provider = ?",
+            ("openai",),
+        ).fetchone()[0]
+        connection.execute(
+            (
+                "INSERT INTO vdbs (name, batch_id, embedding_model_id, faiss_path, created_at) "
+                "VALUES (?, ?, ?, ?, ?)"
+            ),
+            ("demo-index", batch_a, model_id, "index.faiss", first_generated.isoformat()),
+        )
+
+    result = runner.invoke(
+        app,
+        ["parser", "remove", "demo", batch_a],
         env=env,
         catch_exceptions=False,
     )
-    assert explicit_result.exit_code == 1
-    assert "not available yet" in explicit_result.stdout
+
+    assert result.exit_code == 1
+    assert "vector index" in result.stdout
+
+
+def test_parser_remove_removes_non_latest_batch(tmp_path: Path) -> None:
+    (
+        runner,
+        app,
+        env,
+        paths,
+        manifest_service,
+        db_service,
+        parser_service,
+        batch_a,
+        batch_b,
+        _first_generated,
+        _second_generated,
+    ) = _setup_remove_workspace(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["parser", "remove", "demo", batch_a],
+        env=env,
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Removed parser batch" in result.stdout
+    assert "vector indexes" in result.stdout.lower()
+
+    db_path = db_service.ensure("demo")
+    with sqlite3.connect(db_path) as connection:
+        remaining = connection.execute(
+            "SELECT id FROM batches ORDER BY generated_at",
+        ).fetchall()
+        assert [row[0] for row in remaining] == [batch_b]
+
+        chunk_row = connection.execute(
+            (
+                "SELECT batch_id, first_seen_batch, last_seen_batch "
+                "FROM chunk_slices WHERE chunk_id = ?"
+            ),
+            ("chunk-reused",),
+        ).fetchone()
+        assert chunk_row == (batch_b, batch_b, batch_b)
+
+        legacy_chunk = connection.execute(
+            "SELECT COUNT(*) FROM chunk_slices WHERE chunk_id = ?",
+            ("chunk-legacy",),
+        ).fetchone()[0]
+        assert legacy_chunk == 0
+
+        symbol_row = connection.execute(
+            (
+                "SELECT first_seen_batch, last_seen_batch FROM symbols "
+                "WHERE symbol_path = ?"
+            ),
+            ("reused:Thing",),
+        ).fetchone()
+        assert symbol_row == (batch_b, batch_b)
+
+        files_batch_a = connection.execute(
+            "SELECT COUNT(*) FROM files WHERE batch_id = ?",
+            (batch_a,),
+        ).fetchone()[0]
+        assert files_batch_a == 0
+
+    state = parser_service.load_manifest_state("demo")
+    assert state.last_batch_id == batch_b
+    assert state.last_run_status == HealthStatus.OK.value
+
+
+def test_parser_remove_force_clears_manifest(tmp_path: Path) -> None:
+    (
+        runner,
+        app,
+        env,
+        paths,
+        manifest_service,
+        db_service,
+        parser_service,
+        batch_a,
+        batch_b,
+        _first_generated,
+        _second_generated,
+    ) = _setup_remove_workspace(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["parser", "remove", "demo", batch_b, "--force"],
+        env=env,
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "parser manifest reset" in result.stdout.lower()
+
+    db_path = db_service.ensure("demo")
+    with sqlite3.connect(db_path) as connection:
+        remaining = connection.execute(
+            "SELECT id FROM batches ORDER BY generated_at",
+        ).fetchall()
+        assert [row[0] for row in remaining] == [batch_a]
+
+        symbol_row = connection.execute(
+            (
+                "SELECT first_seen_batch, last_seen_batch FROM symbols "
+                "WHERE symbol_path = ?"
+            ),
+            ("reused:Thing",),
+        ).fetchone()
+        assert symbol_row == (batch_a, batch_a)
+
+        chunk_row = connection.execute(
+            (
+                "SELECT batch_id, first_seen_batch, last_seen_batch FROM chunk_slices "
+                "WHERE chunk_id = ?"
+            ),
+            ("chunk-reused",),
+        ).fetchone()
+        assert chunk_row == (batch_a, batch_a, batch_a)
+
+    state = parser_service.load_manifest_state("demo")
+    assert state.last_batch_id is None
+    assert state.last_run_status == HealthStatus.DEGRADED.value
+    assert any("Removed parser batch" in note for note in state.last_run_notes)
+    assert any("raggd parser parse" in note for note in state.last_run_notes)
+
 
 
 def test_parser_workspace_missing_config(tmp_path: Path) -> None:
