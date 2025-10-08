@@ -101,7 +101,7 @@
 - [x] `parse`: implement the Typer command to honor `--fail-fast`, thread explicit path arguments to traversal, enforce concurrency limits, validate batch preconditions, and emit scope-filter logs.
 - [x] `parse`: after staging, surface batch summaries, raise vector-index warnings, persist manifest updates, and ensure non-zero exits align with Phase 3 service semantics.
 - [x] `info`: reuse shared manifest readers to expose the last batch id (git SHA/uuid7), handler coverage, dependency gaps, and effective configuration overrides.
-- [ ] `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limit/pagination behavior per CLI contract.
+- [x] `batches`: list recent batches with file/symbol/chunk counts, timestamps, health flags, and limit/pagination behavior per CLI contract.
 - [ ] `remove`: guard the latest successful batch unless `--force`, perform dependency checks, emit vector-index warnings, and persist tombstones for removed batches.
 
 ### Phase 7 — Concurrency & telemetry hardening
@@ -125,6 +125,18 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-08 12:45 PST
+**Summary**
+Implemented the Phase 6 batches command to surface recent parser runs with manifest-aware health flags.
+
+**Changes**
+- Added batch summary helpers that query SQLite for file, symbol, and chunk counts while reusing manifest state to label the latest run.
+- Implemented `raggd parser batches` rendering with colored status output, limit handling, and graceful fallbacks when databases are missing.
+- Expanded CLI coverage for the batches command, including empty workspace, unknown source, and populated database scenarios.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache uv run pytest --no-cov tests/cli/test_parser.py`
+
 ### 2025-10-08 11:25 PST
 **Summary**
 Delivered the Phase 6 info command to report manifest state, handler health, and

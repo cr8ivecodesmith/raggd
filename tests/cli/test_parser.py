@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -19,6 +22,7 @@ from raggd.cli.parser import (
 )
 import raggd.modules.parser  # noqa: F401 - ensure module import coverage
 from raggd.modules.db import DbLifecycleService
+from raggd.modules.db.uuid7 import generate_uuid7, short_uuid7
 from raggd.modules.manifest import ManifestService
 from raggd.modules import HealthStatus
 from raggd.modules.parser import (
@@ -35,6 +39,7 @@ from raggd.modules.parser import (
     ParserService,
 )
 from raggd.source.config import SourceConfigError, SourceConfigStore
+from raggd.core.paths import resolve_workspace
 
 
 def _workspace_env(tmp_path: Path) -> dict[str, str]:
@@ -640,7 +645,7 @@ def test_parser_info_reports_manifest_state(
     assert "Configuration overrides: none" in stdout
 
 
-def test_parser_batches_unimplemented(tmp_path: Path) -> None:
+def test_parser_batches_no_sources_configured(tmp_path: Path) -> None:
     runner = CliRunner()
     env = _workspace_env(tmp_path)
 
@@ -650,12 +655,327 @@ def test_parser_batches_unimplemented(tmp_path: Path) -> None:
 
     batches_result = runner.invoke(
         app,
+        ["parser", "batches"],
+        env=env,
+        catch_exceptions=False,
+    )
+
+    assert batches_result.exit_code == 0
+    assert "No sources configured" in batches_result.stdout
+
+
+def test_parser_batches_unknown_source(tmp_path: Path) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+
+    app = create_app()
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    result = runner.invoke(
+        app,
+        ["parser", "batches", "mystery"],
+        env=env,
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1
+    assert "Unknown source: mystery" in result.stdout
+
+
+def test_parser_batches_lists_recent_batches(tmp_path: Path) -> None:
+    runner = CliRunner()
+    env = _workspace_env(tmp_path)
+
+    app = create_app()
+    init_result = runner.invoke(app, ["init"], env=env, catch_exceptions=False)
+    assert init_result.exit_code == 0, init_result.stdout
+
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    init_source = runner.invoke(
+        app,
+        [
+            "source",
+            "init",
+            "demo",
+            "--target",
+            str(target_dir),
+            "--force-refresh",
+        ],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert init_source.exit_code == 0, init_source.stdout
+
+    workspace = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
+    paths = resolve_workspace(workspace_override=workspace)
+    store = SourceConfigStore(config_path=paths.config_file)
+    config = store.load()
+
+    manifest_service = ManifestService(workspace=paths)
+    db_service = DbLifecycleService(
+        workspace=paths,
+        manifest_service=manifest_service,
+    )
+
+    db_path = db_service.ensure("demo")
+
+    first_generated = datetime(2024, 1, 1, 12, tzinfo=timezone.utc)
+    second_generated = datetime(2024, 1, 2, 12, tzinfo=timezone.utc)
+    batch_a = str(generate_uuid7(when=first_generated))
+    batch_b = str(generate_uuid7(when=second_generated))
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (batch_a, "ref-a", first_generated.isoformat(), "initial sync"),
+        )
+        connection.execute(
+            "INSERT INTO batches (id, ref, generated_at, notes) VALUES (?, ?, ?, ?)",
+            (batch_b, "ref-b", second_generated.isoformat(), "follow-up sync"),
+        )
+
+        file_a = connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
+                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (batch_a, "src/alpha.py", "python", "sha-alpha", 111, 100),
+        ).lastrowid
+
+        file_b1 = connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
+                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (batch_b, "src/beta.py", "python", "sha-beta", 222, 200),
+        ).lastrowid
+
+        file_b2 = connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
+                "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (batch_b, "src/gamma.py", "markdown", "sha-gamma", 333, 300),
+        ).lastrowid
+
+        symbol_a = connection.execute(
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
+                "imports_json, deps_out_json, docstring, summary, tokens, "
+                "first_seen_batch, last_seen_batch) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                file_a,
+                "function",
+                "alpha:main",
+                1,
+                5,
+                "sym-alpha",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                15,
+                batch_a,
+                batch_a,
+            ),
+        ).lastrowid
+
+        symbol_b1 = connection.execute(
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
+                "imports_json, deps_out_json, docstring, summary, tokens, "
+                "first_seen_batch, last_seen_batch) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                file_b1,
+                "class",
+                "beta:Widget",
+                10,
+                40,
+                "sym-beta-1",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                30,
+                batch_b,
+                batch_b,
+            ),
+        ).lastrowid
+
+        symbol_b2 = connection.execute(
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+                "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
+                "imports_json, deps_out_json, docstring, summary, tokens, "
+                "first_seen_batch, last_seen_batch) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                file_b2,
+                "heading",
+                "gamma:section",
+                1,
+                8,
+                "sym-beta-2",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                12,
+                batch_b,
+                batch_b,
+            ),
+        ).lastrowid
+
+        connection.execute(
+            (
+                "INSERT INTO chunk_slices (batch_id, file_id, symbol_id, "
+                "parent_symbol_id, chunk_id, handler_name, handler_version, "
+                "part_index, part_total, start_line, end_line, start_byte, "
+                "end_byte, token_count, content_hash, content_norm_hash, "
+                "content_text, overflow_is_truncated, overflow_reason, "
+                "metadata_json, created_at, updated_at, first_seen_batch, "
+                "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                batch_a,
+                file_a,
+                symbol_a,
+                None,
+                "chunk-alpha-1",
+                "python",
+                "1.0.0",
+                0,
+                1,
+                1,
+                5,
+                0,
+                120,
+                42,
+                "chunk-alpha-hash",
+                None,
+                "alpha body",
+                0,
+                None,
+                None,
+                first_generated.isoformat(),
+                first_generated.isoformat(),
+                batch_a,
+                batch_a,
+            ),
+        )
+
+        for index, (file_id, symbol_id, chunk_id, tokens) in enumerate(
+            (
+                (file_b1, symbol_b1, "chunk-beta-1", 58),
+                (file_b1, symbol_b1, "chunk-beta-2", 31),
+                (file_b2, symbol_b2, "chunk-gamma-1", 17),
+            )
+        ):
+            connection.execute(
+                (
+                    "INSERT INTO chunk_slices (batch_id, file_id, symbol_id, "
+                    "parent_symbol_id, chunk_id, handler_name, handler_version, "
+                    "part_index, part_total, start_line, end_line, start_byte, "
+                    "end_byte, token_count, content_hash, content_norm_hash, "
+                    "content_text, overflow_is_truncated, overflow_reason, "
+                    "metadata_json, created_at, updated_at, first_seen_batch, "
+                    "last_seen_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                ),
+                (
+                    batch_b,
+                    file_id,
+                    symbol_id,
+                    None,
+                    chunk_id,
+                    "python" if file_id == file_b1 else "markdown",
+                    "1.0.0",
+                    0,
+                    1,
+                    1 + index,
+                    10 + index,
+                    0,
+                    200 + index,
+                    tokens,
+                    f"hash-{chunk_id}",
+                    None,
+                    f"body-{chunk_id}",
+                    0,
+                    None,
+                    None,
+                    second_generated.isoformat(),
+                    second_generated.isoformat(),
+                    batch_b,
+                    batch_b,
+                ),
+            )
+
+    parser_service = ParserService(
+        workspace=paths,
+        config=config,
+        manifest_service=manifest_service,
+        db_service=db_service,
+    )
+
+    plan = ParserBatchPlan(
+        source="demo",
+        root=paths.source_dir("demo"),
+        entries=(),
+        warnings=(),
+        errors=(),
+        metrics=ParserRunMetrics(files_discovered=2, files_parsed=2, chunks_emitted=3),
+    )
+    run = parser_service.build_run_record(
+        plan=plan,
+        batch_id=batch_b,
+        status=HealthStatus.DEGRADED,
+        summary="follow-up sync",
+        warnings=("handler fallback",),
+        errors=(),
+        notes=("vector sync required",),
+        started_at=second_generated,
+        completed_at=second_generated,
+    )
+    parser_service.record_run(source="demo", run=run)
+
+    batches_result = runner.invoke(
+        app,
         ["parser", "batches", "--limit", "5"],
         env=env,
         catch_exceptions=False,
     )
-    assert batches_result.exit_code == 1
-    assert "not available yet" in batches_result.stdout
+
+    assert batches_result.exit_code == 0, batches_result.stdout
+    stdout = batches_result.stdout
+    short_latest = short_uuid7(uuid.UUID(batch_b)).value
+
+    assert "Parser batches for demo (showing up to 5)" in stdout
+    assert "status=degraded" in stdout
+    assert "latest" in stdout
+    assert "files: 2  symbols: 2  chunks: 3" in stdout
+    assert "notes: follow-up sync" in stdout
+    assert f"batch {short_latest}" in stdout
+    assert "status=unknown" in stdout
+    assert "notes: initial sync" in stdout
 
 
 def test_parser_remove_unimplemented(tmp_path: Path) -> None:

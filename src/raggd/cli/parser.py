@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import os
+import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -162,6 +163,19 @@ class _ParseOutcome:
     @property
     def has_failures(self) -> bool:
         return bool(self.errors or self.failed_files or self.aborted)
+
+
+@dataclass(slots=True)
+class _BatchSummary:
+    """Lightweight summary of a persisted parser batch."""
+
+    batch_id: str
+    ref: str | None
+    generated_at: datetime | None
+    notes: str | None
+    file_count: int
+    symbol_count: int
+    chunk_count: int
 
 
 @dataclass(slots=True)
@@ -1381,6 +1395,167 @@ def _resolve_info_sources(
     return [], [normalized]
 
 
+_BATCH_SUMMARY_QUERY = """
+    SELECT
+        b.id AS batch_id,
+        b.ref AS ref,
+        b.generated_at AS generated_at,
+        b.notes AS notes,
+        COALESCE(f.file_count, 0) AS file_count,
+        COALESCE(s.symbol_count, 0) AS symbol_count,
+        COALESCE(c.chunk_count, 0) AS chunk_count
+    FROM batches AS b
+    LEFT JOIN (
+        SELECT batch_id, COUNT(*) AS file_count
+        FROM files
+        GROUP BY batch_id
+    ) AS f ON f.batch_id = b.id
+    LEFT JOIN (
+        SELECT last_seen_batch AS batch_id, COUNT(*) AS symbol_count
+        FROM symbols
+        GROUP BY last_seen_batch
+    ) AS s ON s.batch_id = b.id
+    LEFT JOIN (
+        SELECT last_seen_batch AS batch_id, COUNT(*) AS chunk_count
+        FROM chunk_slices
+        GROUP BY last_seen_batch
+    ) AS c ON c.batch_id = b.id
+    ORDER BY b.generated_at DESC, b.id DESC
+    LIMIT ?
+"""
+
+
+def _parse_generated_at(value: object) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        timestamp = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
+
+
+def _format_generated_at(value: datetime | None) -> str:
+    if value is None:
+        return "unknown"
+    return _format_timestamp(value)
+
+
+def _load_batch_summaries(
+    context: ParserCLIContext,
+    *,
+    source: str,
+    limit: int,
+) -> tuple[tuple[_BatchSummary, ...], str | None]:
+    db_path = context.paths.source_database_path(source)
+    if not db_path.exists():
+        context.logger.debug("parser-batches-db-missing", source=source)
+        return (), None
+
+    uri = f"{db_path.resolve(strict=False).as_uri()}?mode=ro"
+    try:
+        connection = sqlite3.connect(uri, uri=True)
+    except sqlite3.OperationalError as exc:
+        context.logger.error(
+            "parser-batches-open-error",
+            source=source,
+            error=str(exc),
+        )
+        return (), f"Failed to open database for {source}: {exc}"
+
+    try:
+        connection.row_factory = sqlite3.Row
+        cursor = connection.execute(_BATCH_SUMMARY_QUERY, (limit,))
+        rows = cursor.fetchall()
+    except sqlite3.OperationalError as exc:
+        context.logger.error(
+            "parser-batches-query-error",
+            source=source,
+            error=str(exc),
+        )
+        connection.close()
+        return (), f"Failed to query batches for {source}: {exc}"
+
+    connection.close()
+
+    summaries = [
+        _BatchSummary(
+            batch_id=str(row["batch_id"]),
+            ref=(row["ref"] if row["ref"] is not None else None),
+            generated_at=_parse_generated_at(row["generated_at"]),
+            notes=(row["notes"] if row["notes"] else None),
+            file_count=int(row["file_count"] or 0),
+            symbol_count=int(row["symbol_count"] or 0),
+            chunk_count=int(row["chunk_count"] or 0),
+        )
+        for row in rows
+    ]
+    return tuple(summaries), None
+
+
+def _determine_batch_status(
+    summary: _BatchSummary,
+    state: ParserManifestState,
+) -> HealthStatus:
+    if summary.batch_id == (state.last_batch_id or ""):
+        return _coerce_health_status(state.last_run_status)
+    return HealthStatus.UNKNOWN
+
+
+def _display_batches_for_source(
+    *,
+    name: str,
+    summaries: Sequence[_BatchSummary],
+    limit: int,
+    state: ParserManifestState,
+) -> None:
+    typer.secho(
+        f"Parser batches for {name} (showing up to {limit})",
+        fg=typer.colors.CYAN,
+        bold=True,
+    )
+
+    if not summaries:
+        typer.echo("  No batches recorded.")
+        typer.echo("")
+        return
+
+    for summary in summaries:
+        status = _determine_batch_status(summary, state)
+        status_color = {
+            HealthStatus.OK: typer.colors.GREEN,
+            HealthStatus.DEGRADED: typer.colors.YELLOW,
+            HealthStatus.ERROR: typer.colors.RED,
+            HealthStatus.UNKNOWN: typer.colors.BLUE,
+        }.get(status, typer.colors.WHITE)
+
+        timestamp = _format_generated_at(summary.generated_at)
+        batch_ref = summary.ref or _shorten_batch_id(summary.batch_id)
+        latest_suffix = (
+            " · latest" if summary.batch_id == (state.last_batch_id or "") else ""
+        )
+        typer.secho(
+            (
+                f"  - {timestamp} · batch {_shorten_batch_id(summary.batch_id)} "
+                f"(ref={batch_ref}) · status={status.value}{latest_suffix}"
+            ),
+            fg=status_color,
+        )
+        typer.echo(
+            "    files: {files}  symbols: {symbols}  chunks: {chunks}".format(
+                files=summary.file_count,
+                symbols=summary.symbol_count,
+                chunks=summary.chunk_count,
+            )
+        )
+        if summary.notes:
+            typer.echo(f"    notes: {summary.notes}")
+
+    typer.echo("")
+
+
 def _emit_basic_info(
     *,
     state: ParserManifestState,
@@ -1773,8 +1948,70 @@ def batches_command(
     ),
 ) -> None:
     context = _require_context(ctx)
-    summary = f"source={source or '*'},limit={limit}"
-    _emit_unimplemented(context, command="batches", summary=summary)
+    sources, invalid = _resolve_info_sources(context, source)
+
+    if invalid:
+        for name in invalid:
+            typer.secho(f"Unknown source: {name}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    if not sources:
+        typer.secho(
+            "No sources configured; nothing to list.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+
+    exit_code = 0
+    listed_counts: dict[str, int] = {}
+
+    for name in sources:
+        try:
+            state = context.parser_service.load_manifest_state(name)
+        except Exception as exc:  # pragma: no cover - manifest failure path
+            typer.secho(
+                f"Failed to load parser manifest for {name}: {exc}",
+                fg=typer.colors.RED,
+            )
+            context.logger.error(
+                "parser-batches-manifest-error",
+                source=name,
+                error=str(exc),
+            )
+            exit_code = 1
+            continue
+
+        summaries, error = _load_batch_summaries(
+            context,
+            source=name,
+            limit=limit,
+        )
+
+        if error is not None:
+            typer.secho(error, fg=typer.colors.RED)
+            context.logger.error(
+                "parser-batches-load-error",
+                source=name,
+                error=error,
+            )
+            exit_code = 1
+            continue
+
+        listed_counts[name] = len(summaries)
+        _display_batches_for_source(
+            name=name,
+            summaries=summaries,
+            limit=limit,
+            state=state,
+        )
+
+    context.logger.info(
+        "parser-batches",
+        sources=sources,
+        limit=limit,
+        listed=listed_counts,
+    )
+    raise typer.Exit(code=exit_code)
 
 
 @_parser_app.command(
