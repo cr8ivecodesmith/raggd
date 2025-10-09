@@ -46,7 +46,7 @@
   - [x] Phase 5 — Persistence & recomposition support (see Phase 5 notes below).
   - [x] Phase 6 — CLI subcommand behaviors (see Phase 6 notes below).
   - [x] Phase 7 — Concurrency & telemetry hardening (see Phase 7 notes below).
-  - [ ] Phase 8 — Documentation & cleanup (see Phase 8 notes below).
+  - [x] Phase 8 — Documentation & cleanup (see Phase 8 notes below).
   - [ ] Phase 9 — Source health manifest alignment (see Phase 9 notes below).
 
 ### Phase 1 — CLI scaffolding & configuration
@@ -116,7 +116,7 @@
 - [x] Refresh user docs, runbooks, and FAQ entries to reflect parser workflows, calling out handler fallback behavior, recomposition guarantees, and health expectations.
 - [x] Update configuration samples and defaults to match the finalized `modules.parser.*` toggles, noting concurrency/lock metrics per `.agents/guides/engineering-guide.md` guidance.
 - [x] Prepare release notes and changelog entries summarizing parser CLI maturity, telemetry hooks, and health alignment ahead of the feature ship.
-- [ ] Audit the codebase for superseded helpers/tests introduced during earlier phases and remove them or fold them into maintained suites to prevent documentation drift.
+- [x] Audit the codebase for superseded helpers/tests introduced during earlier phases and remove them or fold them into maintained suites to prevent documentation drift.
 
 ### Phase 9 — Source health manifest alignment
 - [ ] Capture the reproduction for `raggd checkhealth` misreporting source errors after refresh by running `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd checkhealth` and archiving the current `.health.json`/logs for reference.
@@ -137,6 +137,17 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-10 12:15 PST
+**Summary**
+Retired the parser CLI placeholder helper to close out the Phase 8 cleanup.
+
+**Changes**
+- Dropped the unused `_emit_unimplemented` scaffolding from `src/raggd/cli/parser.py` so shipping commands no longer reference stale phase messaging.
+- Confirmed no tests or docs relied on the placeholder behavior while keeping the CLI surface unchanged.
+
+**Testing**
+- `UV_CACHE_DIR=$PWD/uv-cache RAGGD_WORKSPACE=$PWD/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync ruff check`
+
 ### 2025-10-09 23:54 PST
 **Summary**
 Captured parser release readiness with dedicated release notes and a changelog entry.

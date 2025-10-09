@@ -1285,26 +1285,6 @@ def _parse_single_source(
     )
 
 
-def _emit_unimplemented(
-    context: ParserCLIContext,
-    *,
-    command: str,
-    summary: str,
-) -> None:
-    message = (
-        f"`raggd parser {command}` is not available yet — "
-        "subcommand scaffolding landed in phase 1."
-    )
-    typer.secho(message, fg=typer.colors.YELLOW)
-    context.logger.warning(
-        "parser-command-unimplemented",
-        command=command,
-        summary=summary,
-        enabled=context.settings.enabled,
-    )
-    raise typer.Exit(code=1)
-
-
 def _format_setting_value(value: object) -> str:
     if isinstance(value, bool):
         return "yes" if value else "no"
