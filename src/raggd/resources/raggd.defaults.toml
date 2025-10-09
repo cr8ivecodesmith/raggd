@@ -56,6 +56,7 @@ general_max_tokens = 2000
 max_concurrency = "auto"
 fail_fast = false
 gitignore_behavior = "combined"
+# Database lock telemetry thresholds drive parser health alerts.
 lock_wait_warning_seconds = 5.0
 lock_wait_error_seconds = 30.0
 lock_contention_warning = 3

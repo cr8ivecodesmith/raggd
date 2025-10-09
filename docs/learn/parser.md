@@ -22,6 +22,26 @@ artifacts while surfacing health metrics alongside manifest metadata.
   verifying no other modules reference it. The command warns about follow-up
   vector index cleanup so the workspace stays consistent.
 
+## Configuration
+Parser toggles live under `[modules.parser]` in `raggd.toml` with packaged
+defaults shipped in `raggd.defaults.toml`. Update these fields when tuning
+token limits or concurrency:
+
+- `general_max_tokens` provides the default token cap for handlers; override a
+  specific handler under `[modules.parser.handlers.<name>]`.
+- `max_concurrency` governs how many sources parse in parallel. The default
+  `"auto"` defers to runtime heuristics documented in the engineering guide.
+- `fail_fast` switches between resilient runs (default) and exiting on the first
+  handler failure.
+- `gitignore_behavior` controls whether workspace ignore rules, repository
+  `.gitignore`, or both feed traversal.
+- `lock_wait_*` and `lock_contention_*` define the database lock thresholds that
+  trigger parser health alerts. Monitor these metrics via `raggd checkhealth`
+  before widening concurrency.
+- Handler tables inherit the enabling structure described in the
+  [workspace configuration guide](workspace.md). Disable a handler to force the
+  registry to fall back to text while keeping overrides close to the default.
+
 ## Handler selection and fallbacks
 Handlers are resolved through the parser registry using file extensions and
 shebang hints. Language-specific handlers (Markdown, Python, JavaScript/TypeScript,

@@ -115,17 +115,46 @@ layout remains the same. Source directories are created on demand when you run
 ## Module toggles
 
 Optional capabilities are grouped under the `[modules]` table in
-`raggd.toml`. Each module entry shares the same shape:
+`raggd.toml`. The parser module illustrates how toggles combine runtime flags
+with concurrency thresholds and handler switches:
 
 ```toml
-[modules.rag]
+[modules.parser]
 enabled = true
-extras = ["rag"]
+extras = ["parser"]
+general_max_tokens = 2000
+max_concurrency = "auto"
+fail_fast = false
+gitignore_behavior = "combined"
+lock_wait_warning_seconds = 5.0
+lock_wait_error_seconds = 30.0
+lock_contention_warning = 3
+lock_contention_error = 10
+
+[modules.parser.handlers]
+
+[modules.parser.handlers.text]
+enabled = true
+
+[modules.parser.handlers.markdown]
+enabled = true
 ```
 
 - `enabled`: Whether the feature should be activated.
-- `extras`: Optional dependency groups that must be installed (via `uv` extras)
-  for the module to load.
+- `extras`: Optional dependency groups installed via `uv` extras before the
+  module loads.
+- `general_max_tokens`: Default token cap for handlers that do not override the
+  limit.
+- `max_concurrency`: Number of sources parsed in parallel (`"auto"` defers to
+  runtime heuristics).
+- `fail_fast`: Stop parsing on the first handler failure when true; the default
+  keeps runs resilient.
+- `gitignore_behavior`: Controls how repository and workspace ignore rules are
+  combined during traversal.
+- `lock_wait_*` and `lock_contention_*`: Database lock thresholds that feed the
+  parser health alerts described in the parser runbook.
+- `[modules.parser.handlers.*]`: Per-handler toggles; disable a section to force
+  the registry to fall back to the text handler.
 
 You can enable or disable modules either by editing `raggd.toml`, running the
 CLI with `--enable-module` / `--disable-module`, or adding future automation
