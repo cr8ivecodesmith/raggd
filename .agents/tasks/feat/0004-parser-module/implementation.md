@@ -123,7 +123,7 @@
 - [x] Update `source_health_hook` (and related helpers) to read module-namespaced manifests (`modules.source.*`) while remaining backwards compatible with legacy top-level payloads and honoring custom `modules`/`source` keys from workspace DB settings.
 - [x] Extend regression coverage via `tests/source/test_hooks.py` and CLI integration tests so module-based manifests produced by `raggd source refresh --force` no longer trigger validation errors; include fixtures mirroring the `.tmp/parser-cli/workspace` sandbox.
 - [x] Document the fix and manual verification steps in the parser runbook, including rerunning `raggd source refresh demo --force` followed by `raggd checkhealth` inside the `.tmp` sandbox to confirm status transitions to `ok`.
-- [ ] Remove any temporary guards or tests masking this failure so the fix remains visible and we avoid code bloat once the alignment is in place.
+- [x] Remove any temporary guards or tests masking this failure so the fix remains visible and we avoid code bloat once the alignment is in place.
 
 ## Test Plan
 - **Unit**: handler chunking/token splitting, hashing utilities, manifest serialization, recomposition helpers, configuration parsing, CLI option validation.
@@ -137,6 +137,19 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-10 17:05 PST
+**Summary**
+Removed manual manifest fixtures so Phase 9 health fix stays enforced by tests.
+
+**Changes**
+- Replaced manual JSON manifest stubs in `tests/cli/test_checkhealth.py` with the
+  manifest service to persist module-aligned payloads.
+- Updated `tests/source/test_hooks.py` to write manifests via `ManifestService`,
+  eliminating the guard that hid module namespace drift.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/source/test_hooks.py tests/cli/test_checkhealth.py`
+
 ### 2025-10-10 16:30 PST
 **Summary**
 Documented the Phase 9 source health verification flow and stabilized the CLI

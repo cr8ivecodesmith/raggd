@@ -11,6 +11,7 @@ from raggd.core.config import AppConfig, load_config, load_packaged_defaults
 from raggd.core.paths import WorkspacePaths
 from raggd.modules import HealthStatus
 from raggd.modules.manifest.migrator import MODULES_VERSION
+from raggd.modules.manifest.service import ManifestService
 from raggd.source.hooks import _convert_status, source_health_hook
 from raggd.source.models import (
     SourceHealthSnapshot,
@@ -52,6 +53,23 @@ def _make_config(root: Path) -> AppConfig:
     return load_config(defaults=defaults, user_config=user_config)
 
 
+def _write_module_manifest(
+    paths: WorkspacePaths,
+    name: str,
+    manifest: SourceManifest,
+) -> None:
+    service = ManifestService(workspace=paths)
+
+    def _mutate(snapshot):
+        module = snapshot.ensure_module("source")
+        module.clear()
+        module.update(manifest.model_dump(mode="json"))
+        snapshot.data["modules_version"] = MODULES_VERSION
+
+    paths.source_manifest_path(name).parent.mkdir(parents=True, exist_ok=True)
+    service.write(name, mutate=_mutate)
+
+
 def test_source_health_hook_reports_manifest_status(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -75,18 +93,7 @@ def test_source_health_hook_reports_manifest_status(tmp_path: Path) -> None:
         ),
     )
 
-    manifest_path = paths.source_manifest_path("alpha")
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "modules": {
-            "source": manifest.model_dump(mode="json"),
-        },
-        "modules_version": MODULES_VERSION,
-    }
-    manifest_path.write_text(
-        json.dumps(payload, indent=2),
-        encoding="utf-8",
-    )
+    _write_module_manifest(paths, "alpha", manifest)
 
     config = _make_config(workspace)
     handle = _Handle(paths=paths, config=config)

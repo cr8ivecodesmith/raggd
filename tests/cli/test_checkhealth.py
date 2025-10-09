@@ -23,6 +23,7 @@ from raggd.health import HealthDocumentError
 from raggd.modules import ModuleDescriptor, ModuleRegistry
 from raggd.modules.db import DbLifecycleService
 from raggd.modules.manifest.migrator import MODULES_VERSION
+from raggd.modules.manifest.service import ManifestService
 from raggd.source import SourceConfigStore
 from raggd.source.models import (
     SourceHealthSnapshot,
@@ -59,16 +60,15 @@ def _write_manifest(
     )
     manifest_path = paths.source_manifest_path("demo")
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "modules": {
-            "source": manifest.model_dump(mode="json"),
-        },
-        "modules_version": MODULES_VERSION,
-    }
-    manifest_path.write_text(
-        json.dumps(payload, indent=2),
-        encoding="utf-8",
-    )
+    service = ManifestService(workspace=paths)
+
+    def _mutate(snapshot):
+        module = snapshot.ensure_module("source")
+        module.clear()
+        module.update(manifest.model_dump(mode="json"))
+        snapshot.data["modules_version"] = MODULES_VERSION
+
+    service.write("demo", mutate=_mutate)
 
 
 def _prepare_workspace(
