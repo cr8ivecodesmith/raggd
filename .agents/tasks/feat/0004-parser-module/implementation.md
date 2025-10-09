@@ -115,7 +115,7 @@
 ### Phase 8 — Documentation & cleanup
 - [x] Refresh user docs, runbooks, and FAQ entries to reflect parser workflows, calling out handler fallback behavior, recomposition guarantees, and health expectations.
 - [x] Update configuration samples and defaults to match the finalized `modules.parser.*` toggles, noting concurrency/lock metrics per `.agents/guides/engineering-guide.md` guidance.
-- [ ] Prepare release notes and changelog entries summarizing parser CLI maturity, telemetry hooks, and health alignment ahead of the feature ship.
+- [x] Prepare release notes and changelog entries summarizing parser CLI maturity, telemetry hooks, and health alignment ahead of the feature ship.
 - [ ] Audit the codebase for superseded helpers/tests introduced during earlier phases and remove them or fold them into maintained suites to prevent documentation drift.
 
 ### Phase 9 — Source health manifest alignment
@@ -137,6 +137,18 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-09 23:54 PST
+**Summary**
+Captured parser release readiness with dedicated release notes and a changelog entry.
+
+**Changes**
+- Added Phase 8 release notes under `docs/releases/` outlining CLI coverage, telemetry, and operations guidance.
+- Created a project `CHANGELOG.md` with parser CLI highlights and telemetry instrumentation details.
+- Linked the release notes from the documentation index for discoverability.
+
+**Testing**
+- Not run (docs and changelog updates only).
+
 ### 2025-10-09 23:43 PST
 **Summary**
 Closed Phase 8 configuration alignment by syncing defaults and docs.

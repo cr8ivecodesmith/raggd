@@ -13,3 +13,4 @@ experience, configuration model, and how to enable optional capabilities.
 - API and module documentation will grow under `docs/api/` as the project
   evolves.
 - Contribution and workflow guidance lives in `docs/contribute/`.
+- Release notes capture milestone summaries in `docs/releases/`.
