@@ -55,6 +55,15 @@ __all__ = [
     "ParserService",
 ]
 
+_DEFAULT_WORKSPACE_IGNORE_PATTERNS: tuple[str, ...] = (
+    "db.sqlite3",
+    "db.sqlite3-journal",
+    "db.sqlite3-shm",
+    "db.sqlite3-wal",
+    "manifest.json",
+    "manifest.json.*",
+)
+
 
 class ParserError(RuntimeError):
     """Base exception raised by :class:`ParserService`."""
@@ -144,7 +153,10 @@ class ParserService:
         self._token_encoder_factory = token_encoder_factory
         self._encoder_name = encoder_name
         self._hash_algorithm = hash_algorithm
-        self._workspace_patterns = tuple(workspace_ignore_patterns or ())
+        if workspace_ignore_patterns is None:
+            self._workspace_patterns = _DEFAULT_WORKSPACE_IGNORE_PATTERNS
+        else:
+            self._workspace_patterns = tuple(workspace_ignore_patterns)
         self._now = now or _default_now
         self._logger = logger or get_logger(
             __name__,

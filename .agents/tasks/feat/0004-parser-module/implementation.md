@@ -139,6 +139,19 @@ Wired parser telemetry into health alerts and documented the concurrency runbook
 **Testing**
 - `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/modules/parser/test_parser_health.py tests/cli/test_checkhealth.py`
 - `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run --no-sync ruff check`
+### 2025-10-08 10:50 PST
+**Summary**
+Addressed parser health regressions by skipping workspace-managed artifacts and normalizing chunk slice parts.
+
+**Changes**
+- Added default workspace ignore patterns when building traversal so parser runs no longer ingest `manifest.json*` backups or `db.sqlite3` storage files.
+- Normalized chunk slice `part_index`/`part_total` values within the persistence pipeline, recording the original handler order as `sequence_index` metadata for future consumers.
+- Extended parser service and persistence tests to cover the new ignore defaults and chunk index normalization expectations.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace RAGGD_LOG_LEVEL=debug uv run pytest --no-cov tests/modules/parser/test_parser_service.py tests/modules/parser/test_persistence.py tests/modules/parser/test_parser_health.py`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run raggd parser parse demo`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run raggd checkhealth`
 ### 2025-10-10 10:45 PST
 **Summary**
 Fixed pytest discovery after introducing the parser health tests so Phase 7 checks stay green locally.

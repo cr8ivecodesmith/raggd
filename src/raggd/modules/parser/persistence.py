@@ -491,7 +491,8 @@ class ChunkWritePipeline:
         file_path: str,
     ) -> list[ChunkSliceRow]:
         rows: list[ChunkSliceRow] = []
-        for chunk in parts:
+        part_total = len(parts) or 1
+        for normalized_index, chunk in enumerate(parts):
             chunk_handler = chunk.delegate or handler_name
             chunk_version = self._resolve_handler_version(
                 chunk_handler,
@@ -499,6 +500,14 @@ class ChunkWritePipeline:
                 handler_version=handler_version,
                 handler_versions=handler_versions,
             )
+            metadata = dict(chunk.metadata or {})
+            if (
+                "sequence_index" not in metadata
+                and chunk.part_index != normalized_index
+            ):
+                metadata["sequence_index"] = chunk.part_index
+            metadata["part_index"] = normalized_index
+            metadata["part_total"] = part_total
             row = self._build_chunk_row(
                 chunk=chunk,
                 batch_id=batch_id,
@@ -510,6 +519,9 @@ class ChunkWritePipeline:
                 last_seen_batch=last_seen_batch,
                 timestamp=timestamp,
                 file_path=file_path,
+                part_index=normalized_index,
+                part_total=part_total,
+                metadata=metadata,
             )
             rows.append(row)
         return rows
@@ -527,6 +539,9 @@ class ChunkWritePipeline:
         last_seen_batch: str,
         timestamp: datetime,
         file_path: str,
+        part_index: int,
+        part_total: int,
+        metadata: Mapping[str, Any],
     ) -> ChunkSliceRow:
         token_count = chunk.token_count
         if token_count is None:
@@ -534,14 +549,13 @@ class ChunkWritePipeline:
                 f"Chunk {chunk.chunk_id!r} emitted without token count."
             )
 
-        metadata = dict(chunk.metadata or {})
+        metadata = dict(metadata)
         symbol_id = self._lookup_symbol(chunk.parent_symbol_id, symbol_ids)
         parent_symbol_id = self._lookup_symbol(
             metadata.get("delegate_parent_symbol"),
             symbol_ids,
         )
 
-        part_total = _coerce_int(metadata.get("part_total")) or 1
         start_line = _coerce_int(metadata.get("start_line"))
         end_line = _coerce_int(metadata.get("end_line"))
 
@@ -560,7 +574,7 @@ class ChunkWritePipeline:
             file_path=file_path,
             start_offset=chunk.start_offset,
             end_offset=chunk.end_offset,
-            part_index=chunk.part_index,
+            part_index=part_index,
         )
 
         metadata_json = _metadata_json(metadata)
@@ -587,7 +601,7 @@ class ChunkWritePipeline:
             chunk_id=chunk.chunk_id,
             handler_name=chunk_handler,
             handler_version=chunk_version,
-            part_index=chunk.part_index,
+            part_index=part_index,
             part_total=part_total,
             start_line=start_line,
             end_line=end_line,
@@ -614,7 +628,7 @@ class ChunkWritePipeline:
                 file_path=file_path,
                 start_offset=chunk.start_offset,
                 end_offset=chunk.end_offset,
-                part_index=chunk.part_index,
+                part_index=part_index,
                 part_total=part_total,
                 token_count=token_count,
                 overflow_is_truncated=overflow_flag,

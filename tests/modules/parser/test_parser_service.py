@@ -158,6 +158,13 @@ def test_plan_source_collects_entries(tmp_path: Path) -> None:
     root = paths.source_dir("alpha")
     (root / "alpha.py").write_text("print('hello')\n", encoding="utf-8")
     (root / "README.txt").write_text("hello world\n", encoding="utf-8")
+    (root / "db.sqlite3").write_text("", encoding="utf-8")
+    (root / "db.sqlite3-wal").write_text("", encoding="utf-8")
+    (root / "manifest.json").write_text("{}\n", encoding="utf-8")
+    (root / "manifest.json.20250101T000000Z.bak").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
 
     plan = service.plan_source(source="alpha")
 

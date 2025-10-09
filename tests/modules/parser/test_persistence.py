@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 import sqlite3
 
 from raggd.core.paths import WorkspacePaths
@@ -310,8 +311,8 @@ def test_chunk_write_pipeline_persists_delegate_slices(tmp_path: Path) -> None:
 
         stored = connection.execute(
             "SELECT handler_name, handler_version, chunk_id, symbol_id, "
-            "parent_symbol_id, metadata_json, content_hash, content_norm_hash "
-            "FROM chunk_slices ORDER BY handler_name"
+            "parent_symbol_id, metadata_json, content_hash, content_norm_hash, "
+            "part_index, part_total FROM chunk_slices ORDER BY handler_name"
         ).fetchall()
 
         assert [row["handler_name"] for row in stored] == [
@@ -323,6 +324,8 @@ def test_chunk_write_pipeline_persists_delegate_slices(tmp_path: Path) -> None:
         assert markdown_row["parent_symbol_id"] is None
         assert len(markdown_row["content_hash"]) == 64
         assert len(markdown_row["content_norm_hash"]) == 64
+        assert markdown_row["part_index"] == 0
+        assert markdown_row["part_total"] == 1
 
         python_row = stored[1]
         assert python_row["symbol_id"] == inline_symbol_id
@@ -330,6 +333,10 @@ def test_chunk_write_pipeline_persists_delegate_slices(tmp_path: Path) -> None:
         metadata_json = python_row["metadata_json"]
         assert "delegate_parent_symbol" in metadata_json
         assert len(python_row["content_hash"]) == 64
+        assert python_row["part_index"] == 0
+        assert python_row["part_total"] == 1
+        metadata_payload = json.loads(metadata_json)
+        assert metadata_payload.get("sequence_index") == 1
 
         canonical = repository.fetch_for_file(
             connection,
