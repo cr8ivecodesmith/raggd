@@ -47,7 +47,7 @@
   - [x] Phase 6 — CLI subcommand behaviors (see Phase 6 notes below).
   - [x] Phase 7 — Concurrency & telemetry hardening (see Phase 7 notes below).
   - [x] Phase 8 — Documentation & cleanup (see Phase 8 notes below).
-  - [ ] Phase 9 — Source health manifest alignment (see Phase 9 notes below).
+  - [x] Phase 9 — Source health manifest alignment (see Phase 9 notes below).
 
 ### Phase 1 — CLI scaffolding & configuration
 - Add `raggd parser` Typer app, load settings, wire module descriptor while keeping tests green.

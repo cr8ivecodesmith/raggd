@@ -202,6 +202,20 @@ def test_internal_module_helpers_cover_branches() -> None:
     assert parser_toggle.enabled is False
     assert parser_toggle.general_max_tokens == "auto"
 
+
+def test_parser_module_settings_validates_thresholds() -> None:
+    with pytest.raises(ValueError):
+        ParserModuleSettings(
+            lock_wait_warning_seconds=5.0,
+            lock_wait_error_seconds=1.0,
+        )
+
+    with pytest.raises(ValueError):
+        ParserModuleSettings(
+            lock_contention_warning=2,
+            lock_contention_error=1,
+        )
+
     config = load_config(defaults={"modules": {"alpha": False}})
     pairs = list(iter_module_configs(config))
     assert pairs and pairs[0][0] == "alpha"
