@@ -45,7 +45,7 @@
   - [x] Phase 4 — Handler implementations (see Phase 4 notes below).
   - [x] Phase 5 — Persistence & recomposition support (see Phase 5 notes below).
   - [x] Phase 6 — CLI subcommand behaviors (see Phase 6 notes below).
-  - [ ] Phase 7 — Concurrency & telemetry hardening (see Phase 7 notes below).
+  - [x] Phase 7 — Concurrency & telemetry hardening (see Phase 7 notes below).
   - [ ] Phase 8 — Documentation & cleanup (see Phase 8 notes below).
   - [ ] Phase 9 — Source health manifest alignment (see Phase 9 notes below).
 
