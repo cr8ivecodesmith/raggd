@@ -119,7 +119,7 @@
 - [x] Audit the codebase for superseded helpers/tests introduced during earlier phases and remove them or fold them into maintained suites to prevent documentation drift.
 
 ### Phase 9 — Source health manifest alignment
-- [ ] Capture the reproduction for `raggd checkhealth` misreporting source errors after refresh by running `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd checkhealth` and archiving the current `.health.json`/logs for reference.
+- [x] Capture the reproduction for `raggd checkhealth` misreporting source errors after refresh by running `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd checkhealth` and archiving the current `.health.json`/logs for reference (results stored under `.tmp/parser-cli/archives/phase-09-checkhealth-20251010T0249/`).
 - [ ] Update `source_health_hook` (and related helpers) to read module-namespaced manifests (`modules.source.*`) while remaining backwards compatible with legacy top-level payloads and honoring custom `modules`/`source` keys from workspace DB settings.
 - [ ] Extend regression coverage via `tests/source/test_hooks.py` and CLI integration tests so module-based manifests produced by `raggd source refresh --force` no longer trigger validation errors; include fixtures mirroring the `.tmp/parser-cli/workspace` sandbox.
 - [ ] Document the fix and manual verification steps in the parser runbook, including rerunning `raggd source refresh demo --force` followed by `raggd checkhealth` inside the `.tmp` sandbox to confirm status transitions to `ok`.
@@ -137,6 +137,17 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-10 15:10 PST
+**Summary**
+Captured the failing `raggd checkhealth` run to start Phase 9 manifest alignment work.
+
+**Changes**
+- Executed the Phase 9 reproduction command inside the `.tmp` sandbox with parser workspace overrides.
+- Archived `.health.json` and `logs/raggd.log` under `.tmp/parser-cli/archives/phase-09-checkhealth-20251010T0249/` for follow-up comparison.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd checkhealth`
+
 ### 2025-10-10 12:15 PST
 **Summary**
 Retired the parser CLI placeholder helper to close out the Phase 8 cleanup.
