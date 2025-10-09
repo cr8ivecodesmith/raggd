@@ -6,22 +6,48 @@ regressions.
 
 ## Monitoring
 - Run `raggd checkhealth parser` to refresh `.health.json` and surface the
-  latest parser health reports. The hook records one entry per workspace source.
+  latest parser health reports. The hook records one entry per workspace source
+  and highlights persistent fallbacks, handler errors, and lock contention.
 - Inspect structured logs for `parser-handler-*`, `parser-stage-lock-wait`, and
-  `parser-session-*` events. These emit queue depth and lock metrics for
-  downstream dashboards.
+  `parser-session-*` events. These emit queue depth, fallback reasons, and lock
+  metrics for downstream dashboards.
+- Use `raggd parser info <source>` to review handler availability, fallback
+  notes, and configuration overrides alongside manifest health summaries.
 - Metrics and outcomes for the most recent run live in the source manifest under
   `modules.parser`. The `metrics` payload mirrors `ParserRunMetrics` fields.
+
+## Handler fallbacks
+- Fallbacks occur when a specialized handler is disabled, missing dependencies,
+  or marked unhealthy during registry resolution. The parser automatically
+  routes the file through the text handler so batches still complete.
+- Each fallback increments `metrics.fallbacks`, appends a note to
+  `modules.parser.last_run_notes`, and emits a `parser-handler-fallback` log
+  with the selected handler and reason (for example, `fallback:dependency`).
+- Confirm the optional dependencies are installed (`uv pip install .[parser]`)
+  and that handler toggles remain enabled in `raggd.toml`. Re-run the parser to
+  verify fallbacks disappear and the manifest warning count returns to zero.
 
 ## Telemetry
 - `lock_wait_seconds`: cumulative seconds spent waiting on the database lock
   during staging.
 - `lock_contention_events`: number of times lock waits exceeded the configured
   threshold.
+- `fallbacks`: number of files routed through a fallback handler during the run;
+  sustained non-zero values warrant dependency or configuration checks.
 - `queue_depth`: number of files in the staged plan (useful when correlating
   contention with workload size).
 - Handler counters (`handlers_invoked`, `handler_runtime_seconds`) highlight hot
-  paths when diagnosing slow runs.
+  paths when diagnosing slow runs or verifying that specialized handlers stayed
+  active.
+
+## Recomposition checks
+- Use the `ChunkRecomposer` helper from `raggd.modules.parser` when auditing a
+  batch. The helper stitches chunk slice parts back into complete chunks,
+  preserving delegate relationships for overflow segments.
+- Recomposition verifies that `part_index` ordering, token counts, and
+  `delegate_parent_chunk` metadata remained consistent across persistence and
+  retrieval steps. Include the check in post-migration smoke tests whenever the
+  parser schema changes.
 
 ## Alerts
 Health reports promote parser status when concurrency metrics exceed

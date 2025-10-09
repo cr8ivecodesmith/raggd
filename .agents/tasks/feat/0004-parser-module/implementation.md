@@ -113,7 +113,7 @@
 - [x] Alerting & runbooks: wire telemetry into existing monitoring hooks, update runbook entries in line with `.agents/guides/workflow.md`, and highlight alert thresholds for concurrency regressions.
 
 ### Phase 8 — Documentation & cleanup
-- [ ] Refresh user docs, runbooks, and FAQ entries to reflect parser workflows, calling out handler fallback behavior, recomposition guarantees, and health expectations.
+- [x] Refresh user docs, runbooks, and FAQ entries to reflect parser workflows, calling out handler fallback behavior, recomposition guarantees, and health expectations.
 - [ ] Update configuration samples and defaults to match the finalized `modules.parser.*` toggles, noting concurrency/lock metrics per `.agents/guides/engineering-guide.md` guidance.
 - [ ] Prepare release notes and changelog entries summarizing parser CLI maturity, telemetry hooks, and health alignment ahead of the feature ship.
 - [ ] Audit the codebase for superseded helpers/tests introduced during earlier phases and remove them or fold them into maintained suites to prevent documentation drift.
@@ -137,6 +137,17 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-09 12:32 PST
+**Summary**
+Documented parser workflows and fallbacks for Phase 8.
+
+**Changes**
+- Added `docs/learn/parser.md` covering parser commands, fallbacks, recomposition, and health signals.
+- Linked the parser guide from `docs/index.md` and expanded the parser runbook with fallback and recomposition guidance.
+
+**Testing**
+- Not run (docs only).
+
 ### 2025-10-09 00:23 PST
 **Summary**
 Wired parser telemetry into health alerts and documented the concurrency runbook.
