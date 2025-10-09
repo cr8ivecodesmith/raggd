@@ -10,6 +10,7 @@ import pytest
 from raggd.core.config import AppConfig, load_config, load_packaged_defaults
 from raggd.core.paths import WorkspacePaths
 from raggd.modules import HealthStatus
+from raggd.modules.manifest.migrator import MODULES_VERSION
 from raggd.source.hooks import _convert_status, source_health_hook
 from raggd.source.models import (
     SourceHealthSnapshot,
@@ -76,8 +77,14 @@ def test_source_health_hook_reports_manifest_status(tmp_path: Path) -> None:
 
     manifest_path = paths.source_manifest_path("alpha")
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "modules": {
+            "source": manifest.model_dump(mode="json"),
+        },
+        "modules_version": MODULES_VERSION,
+    }
     manifest_path.write_text(
-        json.dumps(manifest.model_dump(mode="json"), indent=2),
+        json.dumps(payload, indent=2),
         encoding="utf-8",
     )
 
@@ -162,6 +169,37 @@ def test_source_health_hook_handles_invalid_manifest(tmp_path: Path) -> None:
     report = reports[0]
     assert report.status is HealthStatus.ERROR
     assert "is invalid" in report.summary
+
+
+def test_source_health_hook_supports_legacy_manifest(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    paths = _make_paths(workspace)
+    paths.sources_dir.mkdir()
+    source_dir = paths.sources_dir / "alpha"
+    source_dir.mkdir()
+    (workspace / "data").mkdir()
+
+    manifest = SourceManifest(
+        name="alpha",
+        path=source_dir,
+        enabled=True,
+        target=workspace / "data",
+    )
+
+    manifest_path = paths.source_manifest_path("alpha")
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(manifest.model_dump(mode="json"), indent=2),
+        encoding="utf-8",
+    )
+
+    config = _make_config(workspace)
+    handle = _Handle(paths=paths, config=config)
+
+    [report] = source_health_hook(handle)
+    assert report.name == "alpha"
+    assert report.status is HealthStatus.UNKNOWN
 
 
 def test_convert_status_handles_none_and_unknown() -> None:

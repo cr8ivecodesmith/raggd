@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from raggd.core.paths import WorkspacePaths, resolve_workspace
 from raggd.health import HealthDocumentError
 from raggd.modules import ModuleDescriptor, ModuleRegistry
 from raggd.modules.db import DbLifecycleService
+from raggd.modules.manifest.migrator import MODULES_VERSION
 from raggd.source import SourceConfigStore
 from raggd.source.models import (
     SourceHealthSnapshot,
@@ -57,8 +59,14 @@ def _write_manifest(
     )
     manifest_path = paths.source_manifest_path("demo")
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "modules": {
+            "source": manifest.model_dump(mode="json"),
+        },
+        "modules_version": MODULES_VERSION,
+    }
     manifest_path.write_text(
-        json.dumps(manifest.model_dump(mode="json"), indent=2),
+        json.dumps(payload, indent=2),
         encoding="utf-8",
     )
 
@@ -424,5 +432,7 @@ def test_checkhealth_logs_carried_forward_modules(tmp_path: Path) -> None:
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 2
-    assert "source: error" in result.stdout
+    assert result.exit_code == 0
+    assert "source: ok" in result.stdout
+    collapsed = re.sub(r"[^a-z]+", "", result.stdout.lower())
+    assert "checkhealthcarriedforward" in collapsed

@@ -16,6 +16,25 @@ regressions.
 - Metrics and outcomes for the most recent run live in the source manifest under
   `modules.parser`. The `metrics` payload mirrors `ParserRunMetrics` fields.
 
+## Source health verification
+- Use the shared parser CLI sandbox (`.tmp/parser-cli/workspace`) whenever
+  validating manifest changes. Export the overrides expected by the test
+  harness: `UV_CACHE_DIR=.tmp/uv-cache`,
+  `RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace`, and
+  `RAGGD_LOG_LEVEL=debug`.
+- Regenerate the baseline manifest with
+  `uv run --no-sync raggd source refresh demo --force`. The command records a
+  module-namespaced payload under `modules.source`, preserving compatibility
+  with legacy flat manifests.
+- Immediately run `uv run --no-sync raggd checkhealth source` to confirm the
+  source module reports `ok` and that the `checkhealth-carried-forward` log
+  references previously persisted modules (`db`, `parser`, and any legacy
+  entries).
+- If the status remains degraded, inspect the workspace `.health.json` and
+  compare it against the archived repro logs in
+  `.tmp/parser-cli/archives/phase-09-checkhealth-20251010T0249/` to pinpoint
+  manifest drift.
+
 ## Handler fallbacks
 - Fallbacks occur when a specialized handler is disabled, missing dependencies,
   or marked unhealthy during registry resolution. The parser automatically

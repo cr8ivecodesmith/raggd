@@ -120,9 +120,9 @@
 
 ### Phase 9 — Source health manifest alignment
 - [x] Capture the reproduction for `raggd checkhealth` misreporting source errors after refresh by running `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd checkhealth` and archiving the current `.health.json`/logs for reference (results stored under `.tmp/parser-cli/archives/phase-09-checkhealth-20251010T0249/`).
-- [ ] Update `source_health_hook` (and related helpers) to read module-namespaced manifests (`modules.source.*`) while remaining backwards compatible with legacy top-level payloads and honoring custom `modules`/`source` keys from workspace DB settings.
-- [ ] Extend regression coverage via `tests/source/test_hooks.py` and CLI integration tests so module-based manifests produced by `raggd source refresh --force` no longer trigger validation errors; include fixtures mirroring the `.tmp/parser-cli/workspace` sandbox.
-- [ ] Document the fix and manual verification steps in the parser runbook, including rerunning `raggd source refresh demo --force` followed by `raggd checkhealth` inside the `.tmp` sandbox to confirm status transitions to `ok`.
+- [x] Update `source_health_hook` (and related helpers) to read module-namespaced manifests (`modules.source.*`) while remaining backwards compatible with legacy top-level payloads and honoring custom `modules`/`source` keys from workspace DB settings.
+- [x] Extend regression coverage via `tests/source/test_hooks.py` and CLI integration tests so module-based manifests produced by `raggd source refresh --force` no longer trigger validation errors; include fixtures mirroring the `.tmp/parser-cli/workspace` sandbox.
+- [x] Document the fix and manual verification steps in the parser runbook, including rerunning `raggd source refresh demo --force` followed by `raggd checkhealth` inside the `.tmp` sandbox to confirm status transitions to `ok`.
 - [ ] Remove any temporary guards or tests masking this failure so the fix remains visible and we avoid code bloat once the alignment is in place.
 
 ## Test Plan
@@ -137,6 +137,35 @@
 - **Runbooks / revert steps**: document migration rollback path (SQLite snapshot + migration down), handler dependency installation guidance, and vector sync follow-up when removing batches.
 
 ## History
+### 2025-10-10 16:30 PST
+**Summary**
+Documented the Phase 9 source health verification flow and stabilized the CLI
+carried-forward log assertion against wrapped output.
+
+**Changes**
+- Expanded `docs/contribute/parser-runbook.md` with the `.tmp` sandbox
+  verification steps covering `raggd source refresh demo --force` followed by
+  `raggd checkhealth`.
+- Relaxed `tests/cli/test_checkhealth.py::test_checkhealth_logs_carried_forward_modules`
+  to accept whitespace-wrapped log event names.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd source refresh demo --force`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd checkhealth`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd checkhealth source`
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/cli/test_checkhealth.py::test_checkhealth_logs_carried_forward_modules`
+
+### 2025-10-10 15:35 PST
+**Summary**
+Aligned the source health hook with module-based manifests and restored checkhealth success for parser workspaces.
+
+**Changes**
+- Swapped the hook to use the manifest service, honoring module namespace overrides and falling back to legacy fields when needed.
+- Added regression coverage for both module and legacy manifest layouts plus updated the `checkhealth` CLI tests to mirror the `.tmp/parser-cli` sandbox artifacts.
+
+**Testing**
+- `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync pytest --no-cov tests/source/test_hooks.py tests/cli/test_checkhealth.py`
+
 ### 2025-10-10 15:10 PST
 **Summary**
 Captured the failing `raggd checkhealth` run to start Phase 9 manifest alignment work.
