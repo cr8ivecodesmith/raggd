@@ -113,8 +113,10 @@
 - [x] Alerting & runbooks: wire telemetry into existing monitoring hooks, update runbook entries in line with `.agents/guides/workflow.md`, and highlight alert thresholds for concurrency regressions.
 
 ### Phase 8 — Documentation & cleanup
-- Update user docs/config samples, finalize release notes, and remove superseded code/tests.
-- Highlight handler fallback behavior and recomposition guarantees in docs for downstream consumers.
+- [ ] Refresh user docs, runbooks, and FAQ entries to reflect parser workflows, calling out handler fallback behavior, recomposition guarantees, and health expectations.
+- [ ] Update configuration samples and defaults to match the finalized `modules.parser.*` toggles, noting concurrency/lock metrics per `.agents/guides/engineering-guide.md` guidance.
+- [ ] Prepare release notes and changelog entries summarizing parser CLI maturity, telemetry hooks, and health alignment ahead of the feature ship.
+- [ ] Audit the codebase for superseded helpers/tests introduced during earlier phases and remove them or fold them into maintained suites to prevent documentation drift.
 
 ### Phase 9 — Source health manifest alignment
 - [ ] Capture the reproduction for `raggd checkhealth` misreporting source errors after refresh by running `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/parser-cli/workspace RAGGD_LOG_LEVEL=debug uv run --no-sync raggd checkhealth` and archiving the current `.health.json`/logs for reference.
