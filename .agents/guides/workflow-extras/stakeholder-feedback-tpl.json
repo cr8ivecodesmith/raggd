@@ -1,0 +1,64 @@
+{
+  "id": "stakeholder-feedback-<nn>",
+  "task": {
+    "id": "0005",
+    "slug": "vdb-module"
+  },
+  "doc": {
+    "type": "implementation", 
+    "path": ".agents/tasks/feat/0005-vdb-module/implementation.md"
+  },
+  "stakeholder": "<name-or-handle>",
+  "owner": "<doc-owner>",
+  "status": "approved-with-notes", 
+  "created_at": "YYYY-MM-DDThh:mm:ssZ",
+  "summary": "Concise one-liner of the feedback outcome.",
+  "decisions": {
+    "agreed": [
+      "Clear, confirmable decisions agreed by both parties."
+    ],
+    "adjusted": [
+      "Clarifications or tweaks to scope/UX/implementation."
+    ]
+  },
+  "constraints_reaffirmed": [
+    "Non-goals, boundaries, or exclusions restated."
+  ],
+  "config_packaging": [
+    "Key config/packaging expectations (flags, extras, defaults)."
+  ],
+  "open_items": [
+    {
+      "item": "Open question or pending decision.",
+      "owner": "<who>",
+      "due": "YYYY-MM-DD"
+    }
+  ],
+  "action_items": [
+    {
+      "action": "Concrete follow-up task",
+      "owner": "<who>",
+      "priority": "P1|P2|P3"
+    }
+  ],
+  "risks": [
+    {
+      "risk": "What could go wrong",
+      "mitigation": "How we plan to mitigate"
+    }
+  ],
+  "references": [
+    ".agents/tasks/feat/0005-vdb-module/spec.md",
+    ".agents/tasks/feat/0005-vdb-module/proposal.md"
+  ],
+  "change_reqs": [
+    {
+      "target": "implementation|spec|docs",
+      "type": "edit|add|clarify",
+      "details": "Specific wording or section to change/add",
+      "rationale": "Why this change improves alignment"
+    }
+  ],
+  "next_checkin": "YYYY-MM-DD"
+}
+

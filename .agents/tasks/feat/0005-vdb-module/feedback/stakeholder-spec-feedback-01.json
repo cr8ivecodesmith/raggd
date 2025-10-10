@@ -1,0 +1,87 @@
+{
+  "id": "stakeholder-spec-feedback-01",
+  "task": {
+    "id": "0005",
+    "slug": "vdb-module"
+  },
+  "doc": {
+    "type": "implementation",
+    "path": ".agents/tasks/feat/0005-vdb-module/implementation.md"
+  },
+  "stakeholder": "Stakeholder",
+  "owner": "Architect",
+  "status": "approved-with-notes",
+  "created_at": "2025-10-10T16:30:00Z",
+  "summary": "Alignment on VDB module scope, CLI, storage layout, provider abstraction, and health/visibility; approved with clarifications and follow-ups.",
+  "decisions": {
+    "agreed": [
+      "MVP commands: info, create, sync, reset with flags: --json, --missing-only, --recompute, --limit, --concurrency, --dry-run.",
+      "Strict binding: one VDB per <source>@<batch> and one embedding model; no rebind (use reset + create).",
+      "Deterministic storage: FAISS at <workspace>/sources/<source>/vectors/<vdb_name>/index.faiss plus <faiss_path>.meta.json.",
+      "Stable selector format: <source>:<vdb-name> exposed in info and used by the future query module.",
+      "Provider abstraction: OpenAI-first with batching, retries/backoff, token truncation; interface stable for local providers later.",
+      "Health/visibility: info --json and checkhealth cover index existence, dim mismatches, counts drift, staleness; include cost/token stubs.",
+      "Data model: embedding_models, vdbs, chunks(vdb_id…), vectors(vdb_id…); FAISS IDMap keyed by chunk_id; normalize vectors for cosine.",
+      "Security: read OPENAI_API_KEY by default; optional config override; never log secrets."
+    ],
+    "adjusted": [
+      "create may auto-register/validate embedding_models entries; document dimension enforcement and auto-create behavior.",
+      "Index rebuilds must be atomic (temp + swap) and concurrency-safe; --recompute overwrites deterministically.",
+      "Defaults live in raggd.defaults.toml with user overrides in raggd.toml; no CLI override for index path in MVP.",
+      "reset clears external index and VDB's chunks/vectors; --drop removes vdbs row; --force skips prompts."
+    ]
+  },
+  "constraints_reaffirmed": [
+    "No query/retrieval, reranking, hybrid search, or distributed backends in MVP.",
+    "No sync-on-parse; sync remains explicit.",
+    "No VDB rebind; no custom index paths in MVP."
+  ],
+  "config_packaging": [
+    "Add vdb extra: faiss-cpu, openai, tiktoken; plan query extra later; consider top-level rag extra aggregating both.",
+    "Config keys under modules.vdb: provider defaults, index_type, metric, batching/concurrency, normalize, max_input_tokens."
+  ],
+  "open_items": [
+    { "item": "Clarify explicit model registration vs. auto-create policy and error messaging for dim mismatches.", "owner": "Architect", "due": "2025-10-17" },
+    { "item": "Decide whether to persist a .health.json alongside sidecar metadata.", "owner": "Architect", "due": "2025-10-17" },
+    { "item": "Confirm default index type (e.g., faiss:hnsw) and concurrency=auto policy per provider caps.", "owner": "Architect", "due": "2025-10-17" }
+  ],
+  "action_items": [
+    { "action": "Finalize CLI flags/UX (latest alias resolution, dry-run clarity)", "owner": "Architect", "priority": "P1" },
+    { "action": "Implement provider interface + OpenAI adapter with backoff and truncation; enforce dim consistency", "owner": "Architect", "priority": "P1" },
+    { "action": "Wire chunk materialization, FAISS IDMap writing, and sidecar metadata updates", "owner": "Architect", "priority": "P1" },
+    { "action": "Integrate checkhealth; mirror concise status to source manifest", "owner": "Architect", "priority": "P2" },
+    { "action": "Add tests: happy paths, resumable --missing-only, dim mismatch, stale VDB detection, reset incl. --drop, atomic rebuild", "owner": "Architect", "priority": "P1" },
+    { "action": "Document operator setup (API keys, costs/limits), configuration, and boundaries with future query module", "owner": "Architect", "priority": "P2" }
+  ],
+  "risks": [
+    { "risk": "Provider rate limits and transient errors causing sync failures", "mitigation": "Exponential backoff with jitter; retries; batch sizing; concurrency=auto" },
+    { "risk": "Index corruption during rebuild or concurrent writes", "mitigation": "Atomic temp+swap; file locks; single-writer guard" },
+    { "risk": "Dimension mismatches between model, vectors, and index", "mitigation": "Strict dim validation pre-sync; fail-fast with clear remediation guidance" }
+  ],
+  "references": [
+    ".agents/tasks/feat/0005-vdb-module/spec.md",
+    ".agents/tasks/feat/0005-vdb-module/proposal.md"
+  ],
+  "change_reqs": [
+    {
+      "target": "implementation",
+      "type": "clarify",
+      "details": "Document model registration/auto-create behavior and dimension enforcement flow in the provider setup section.",
+      "rationale": "Reduces operator confusion and prevents silent dim mismatches."
+    },
+    {
+      "target": "implementation",
+      "type": "add",
+      "details": "Describe atomic index rebuild (temp path + swap) and concurrency controls.",
+      "rationale": "Ensures operability and data integrity in production use."
+    },
+    {
+      "target": "implementation",
+      "type": "edit",
+      "details": "Clarify defaults location (raggd.defaults.toml) vs. user overrides (raggd.toml) and lack of path override in MVP.",
+      "rationale": "Aligns expectations and keeps UX consistent."
+    }
+  ],
+  "next_checkin": "2025-10-17"
+}
+
