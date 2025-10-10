@@ -68,7 +68,7 @@
   - Inject config, logger, DB connection factory, provider registry, and `FaissIndex` adapter into `VdbService`.
   - Keep SQL inside repository helpers and keep FAISS isolated behind `faiss_index.py` for testability.
 - Stepwise checklist
-  - [ ] CLI: scaffold `raggd vdb` with `info/create/sync/reset` commands and shared context.
+  - [x] CLI: scaffold `raggd vdb` with `info/create/sync/reset` commands and shared context.
   - [ ] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
   - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
@@ -242,14 +242,26 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+### 2025-10-10 19:05 UTC
+**Summary**
+CLI scaffold completed
+**Changes**
+— Expanded `src/raggd/cli/vdb.py` to include `info`, `create`, `sync`, and `reset` commands with shared context and argument parsing per spec.
+— Added stub service protocol to enforce thin CLI and prepare for service wiring; unimplemented paths log consistent placeholder messaging.
+— CLI now enforces option guards (`--missing-only` vs `--recompute`) and standard logging patterns.
+— Checklist item “CLI scaffold” marked complete.
 ### 2025-10-10 18:45 UTC
+**Summary**
 Initial CLI scaffold landed
+**Changes**
 — Added `src/raggd/cli/vdb.py` with Typer group and `info` placeholder.
 — Registered sub-app in `src/raggd/cli/__init__.py` (`raggd vdb ...` now available).
 — Followed CLI patterns from `db.py`/`source.py` (context, logging, workspace resolution).
 — Next: flesh out `info --json` and wire service/models per plan.
 ### 2025-10-10 18:15 UTC
+**Summary**
 Architect feedback 02 approved and incorporated
+**Changes**
 — Clarified `create` idempotency and mismatch failure mode with remediation.
 — Added health remediation guidance requirement in health outputs.
 — Documented deterministic sidecar pathing and acceptance criteria mapping.

@@ -1,16 +1,12 @@
-"""Typer command group for vector database (VDB) operations.
-
-This CLI group manages VDB lifecycle bound to parser batches and embedding
-models. MVP subcommands include `info`, `create`, `sync`, and `reset`. The
-initial scaffold wires the group into the main CLI and prepares a context for
-subcommands to build on.
-"""
+"""Typer command group for vector database (VDB) operations."""
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, Sequence
 
 import typer
 
@@ -20,6 +16,95 @@ from raggd.core.paths import WorkspacePaths, resolve_workspace
 from raggd.source.config import SourceConfigError, SourceConfigStore
 
 
+class VdbService(Protocol):
+    """Protocol describing CLI-facing VDB service operations."""
+
+    def info(
+        self,
+        *,
+        source: str | None,
+        vdb: str | None,
+    ) -> Sequence[dict[str, object]]:
+        """Return VDB info records suitable for CLI presentation."""
+
+    def create(
+        self,
+        *,
+        selector: str,
+        name: str,
+        model: str,
+    ) -> None:
+        """Create a new VDB bound to the provided selector and model."""
+
+    def sync(
+        self,
+        *,
+        source: str,
+        vdb: str | None,
+        missing_only: bool,
+        recompute: bool,
+        limit: int | None,
+        concurrency: str | None,
+        dry_run: bool,
+    ) -> dict[str, object]:
+        """Synchronize vectors and return a summary payload."""
+
+    def reset(
+        self,
+        *,
+        source: str,
+        vdb: str | None,
+        drop: bool,
+        force: bool,
+    ) -> dict[str, object]:
+        """Reset vectors (and optionally drop the VDB) returning a summary."""
+
+
+@dataclass(slots=True)
+class _StubVdbService:
+    """Temporary stub until the real VDB service is implemented."""
+
+    def info(
+        self,
+        *,
+        source: str | None,
+        vdb: str | None,
+    ) -> Sequence[dict[str, object]]:
+        raise NotImplementedError("vdb info service not implemented")
+
+    def create(
+        self,
+        *,
+        selector: str,
+        name: str,
+        model: str,
+    ) -> None:
+        raise NotImplementedError("vdb create service not implemented")
+
+    def sync(
+        self,
+        *,
+        source: str,
+        vdb: str | None,
+        missing_only: bool,
+        recompute: bool,
+        limit: int | None,
+        concurrency: str | None,
+        dry_run: bool,
+    ) -> dict[str, object]:
+        raise NotImplementedError("vdb sync service not implemented")
+
+    def reset(
+        self,
+        *,
+        source: str,
+        vdb: str | None,
+        drop: bool,
+        force: bool,
+    ) -> dict[str, object]:
+        raise NotImplementedError("vdb reset service not implemented")
+
+
 @dataclass(slots=True)
 class VdbCLIContext:
     """Shared context carried across `raggd vdb` commands."""
@@ -27,15 +112,16 @@ class VdbCLIContext:
     paths: WorkspacePaths
     config: AppConfig
     store: SourceConfigStore
+    service: VdbService
     logger: Logger
 
 
 _vdb_app = typer.Typer(
     name="vdb",
     help=(
-        "Manage per-source vector databases (create/sync/info/reset).\n\n"
-        "Note: This is an initial scaffold; subcommands will be completed in"
-        " subsequent steps as per the implementation plan."
+        "Manage per-source vector databases: create, sync, info, and reset.\n\n"
+        "This command group is scaffolded; underlying service wiring will be"
+        " completed in subsequent implementation steps."
     ),
     no_args_is_help=True,
     invoke_without_command=False,
@@ -60,6 +146,34 @@ def _require_context(ctx: typer.Context) -> VdbCLIContext:
         )
         raise typer.Exit(code=1)
     return context
+
+
+def _build_vdb_service(*, logger: Logger) -> VdbService:
+    """Return a VDB service instance.
+
+    The concrete service will be provided in later steps. For now, return a
+    stub that raises `NotImplementedError` so we can surface clear CLI output.
+    """
+
+    logger.debug("vdb-service-stub")
+    return _StubVdbService()
+
+
+def _handle_not_implemented(action: str, *, logger: Logger) -> None:
+    message = (
+        f"VDB {action} is not implemented yet; CLI scaffold is in place."
+    )
+    typer.secho(message, fg=typer.colors.YELLOW)
+    logger.warning("vdb-action-not-implemented", action=action)
+
+
+def _handle_service_failure(action: str, error: Exception, *, logger: Logger) -> None:
+    typer.secho(
+        f"VDB {action} failed: {error}",
+        fg=typer.colors.RED,
+    )
+    logger.error("vdb-action-failed", action=action, error=str(error))
+    raise typer.Exit(code=1) from error
 
 
 @_vdb_app.callback()
@@ -118,10 +232,13 @@ def configure_vdb_commands(
 
     logger = get_logger(__name__, command="vdb")
 
+    service = _build_vdb_service(logger=logger.bind(component="service"))
+
     ctx.obj = VdbCLIContext(
         paths=paths,
         config=config,
         store=store,
+        service=service,
         logger=logger,
     )
 
@@ -129,9 +246,9 @@ def configure_vdb_commands(
 @_vdb_app.command(
     "info",
     help=(
-        "Display VDB status for a source (scaffold placeholder).\n\n"
-        "This placeholder will be replaced with the full implementation that "
-        "emits a structured JSON summary as per the spec."
+        "Display VDB status for the provided source (or all)."
+        " JSON output will match the schema outlined in the spec once the"
+        " service is implemented."
     ),
 )
 def info_vdb(
@@ -139,7 +256,7 @@ def info_vdb(
     source: str | None = typer.Argument(
         None,
         metavar="[SOURCE]",
-        help="Optional source name to filter info (defaults to all).",
+        help="Optional source name to filter results (defaults to all).",
     ),
     vdb: str | None = typer.Option(
         None,
@@ -150,38 +267,279 @@ def info_vdb(
     json_output: bool = typer.Option(
         False,
         "--json",
-        help="Emit machine-readable JSON output (not implemented yet).",
+        help="Emit machine-readable JSON output.",
     ),
 ) -> None:
-    """Report basic status while the full feature is under construction."""
+    """Report VDB information via the service, handling stub responses."""
 
     context = _require_context(ctx)
-    note = (
-        "VDB info is not implemented yet; CLI scaffold is in place."
-    )
+    try:
+        records = context.service.info(source=source, vdb=vdb)
+    except NotImplementedError as exc:
+        _handle_not_implemented("info", logger=context.logger)
+        context.logger.debug(
+            "vdb-info-not-implemented",
+            source=source,
+            vdb=vdb,
+            error=str(exc),
+        )
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        _handle_service_failure("info", exc, logger=context.logger)
+        return
+
     if json_output:
-        # Keep output stable and machine-friendly even during scaffold.
-        typer.echo(
-            {
-                "status": "not-implemented",
-                "message": note,
-                "source": source,
-                "vdb": vdb,
-            }
+        typer.echo(json.dumps(list(records), indent=2, sort_keys=True))
+        context.logger.info(
+            "vdb-info",
+            source=source,
+            vdb=vdb,
+            json=True,
+            count=len(records),
         )
+        return
+
+    if not records:
+        typer.secho("No VDBs found.", fg=typer.colors.YELLOW)
     else:
-        target = source or "all configured sources"
-        typer.secho(
-            f"VDB info for {target}",
-            fg=typer.colors.CYAN,
-            bold=True,
-        )
-        typer.secho(note, fg=typer.colors.YELLOW)
+        for record in records:
+            name = record.get("selector") or record.get("name")
+            typer.secho(
+                f"VDB {name}",
+                fg=typer.colors.CYAN,
+                bold=True,
+            )
+            for key, value in sorted(record.items()):
+                typer.echo(f"  {key}: {value}")
+
     context.logger.info(
-        "vdb-info-skeleton",
+        "vdb-info",
         source=source,
         vdb=vdb,
-        json=json_output,
+        json=False,
+        count=len(records),
+    )
+
+
+@_vdb_app.command(
+    "create",
+    help="Create a VDB bound to a parser batch and embedding model.",
+)
+def create_vdb(
+    ctx: typer.Context,
+    selector: str = typer.Argument(
+        ...,
+        metavar="SOURCE@BATCH",
+        help="Source and batch selector (supports `latest`).",
+    ),
+    name: str = typer.Argument(
+        ...,
+        metavar="NAME",
+        help="Human-friendly VDB name.",
+    ),
+    model: str = typer.Option(
+        ...,
+        "--model",
+        "-m",
+        metavar="PROVIDER:MODEL",
+        help="Embedding model identifier (provider:name or provider:id).",
+    ),
+) -> None:
+    """Delegate VDB creation to the service and report status."""
+
+    context = _require_context(ctx)
+    try:
+        context.service.create(selector=selector, name=name, model=model)
+    except NotImplementedError as exc:
+        _handle_not_implemented("create", logger=context.logger)
+        context.logger.debug(
+            "vdb-create-not-implemented",
+            selector=selector,
+            name=name,
+            model=model,
+            error=str(exc),
+        )
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        _handle_service_failure("create", exc, logger=context.logger)
+        return
+
+    typer.secho(
+        f"Created VDB {name} for {selector} using model {model}",
+        fg=typer.colors.GREEN,
+    )
+    context.logger.info(
+        "vdb-create",
+        selector=selector,
+        name=name,
+        model=model,
+    )
+
+
+@_vdb_app.command(
+    "sync",
+    help="Materialize chunks, generate embeddings, and update the FAISS index.",
+)
+def sync_vdb(
+    ctx: typer.Context,
+    source: str = typer.Argument(
+        ...,
+        metavar="SOURCE",
+        help="Source name to synchronize.",
+    ),
+    vdb: str | None = typer.Option(
+        None,
+        "--vdb",
+        metavar="NAME",
+        help="Optional VDB name to target (defaults to all for the source).",
+    ),
+    missing_only: bool = typer.Option(
+        False,
+        "--missing-only",
+        help="Only embed chunks without vectors.",
+    ),
+    recompute: bool = typer.Option(
+        False,
+        "--recompute",
+        help="Rebuild embeddings and index atomically.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        "-n",
+        min=1,
+        help="Optional limit on chunks to process.",
+    ),
+    concurrency: str | None = typer.Option(
+        None,
+        "--concurrency",
+        "-c",
+        help="Override concurrency (integer or 'auto').",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Plan actions without performing writes.",
+    ),
+) -> None:
+    """Invoke the service sync operation and report the outcome."""
+
+    if missing_only and recompute:
+        raise typer.BadParameter(
+            "--missing-only and --recompute are mutually exclusive",
+            param_hint="--missing-only/--recompute",
+        )
+
+    context = _require_context(ctx)
+    try:
+        summary = context.service.sync(
+            source=source,
+            vdb=vdb,
+            missing_only=missing_only,
+            recompute=recompute,
+            limit=limit,
+            concurrency=concurrency,
+            dry_run=dry_run,
+        )
+    except NotImplementedError as exc:
+        _handle_not_implemented("sync", logger=context.logger)
+        context.logger.debug(
+            "vdb-sync-not-implemented",
+            source=source,
+            vdb=vdb,
+            missing_only=missing_only,
+            recompute=recompute,
+            limit=limit,
+            concurrency=concurrency,
+            dry_run=dry_run,
+            error=str(exc),
+        )
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        _handle_service_failure("sync", exc, logger=context.logger)
+        return
+
+    typer.secho("VDB sync complete", fg=typer.colors.GREEN, bold=True)
+    for key, value in sorted(summary.items()):
+        typer.echo(f"  {key}: {value}")
+
+    context.logger.info(
+        "vdb-sync",
+        source=source,
+        vdb=vdb,
+        missing_only=missing_only,
+        recompute=recompute,
+        limit=limit,
+        concurrency=concurrency,
+        dry_run=dry_run,
+        summary=summary,
+    )
+
+
+@_vdb_app.command(
+    "reset",
+    help="Remove vector artifacts and optionally drop the VDB entry.",
+)
+def reset_vdb(
+    ctx: typer.Context,
+    source: str = typer.Argument(
+        ...,
+        metavar="SOURCE",
+        help="Source name containing the VDB(s).",
+    ),
+    vdb: str | None = typer.Option(
+        None,
+        "--vdb",
+        metavar="NAME",
+        help="Optional VDB name to reset (defaults to all for the source).",
+    ),
+    drop: bool = typer.Option(
+        False,
+        "--drop",
+        help="Remove the VDB record after clearing artifacts.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Bypass interactive confirmation prompts.",
+    ),
+) -> None:
+    """Call the service reset operation and present a summary."""
+
+    context = _require_context(ctx)
+    try:
+        summary = context.service.reset(
+            source=source,
+            vdb=vdb,
+            drop=drop,
+            force=force,
+        )
+    except NotImplementedError as exc:
+        _handle_not_implemented("reset", logger=context.logger)
+        context.logger.debug(
+            "vdb-reset-not-implemented",
+            source=source,
+            vdb=vdb,
+            drop=drop,
+            force=force,
+            error=str(exc),
+        )
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        _handle_service_failure("reset", exc, logger=context.logger)
+        return
+
+    typer.secho("VDB reset complete", fg=typer.colors.GREEN, bold=True)
+    for key, value in sorted(summary.items()):
+        typer.echo(f"  {key}: {value}")
+
+    context.logger.info(
+        "vdb-reset",
+        source=source,
+        vdb=vdb,
+        drop=drop,
+        force=force,
+        summary=summary,
     )
 
 
@@ -192,4 +550,3 @@ def create_vdb_app() -> "typer.Typer":
 
 
 __all__ = ["create_vdb_app"]
-
