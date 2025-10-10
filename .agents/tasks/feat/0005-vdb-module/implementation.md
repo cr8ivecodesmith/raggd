@@ -69,7 +69,7 @@
   - Keep SQL inside repository helpers and keep FAISS isolated behind `faiss_index.py` for testability.
 - Stepwise checklist
   - [x] CLI: scaffold `raggd vdb` with `info/create/sync/reset` commands and shared context.
-  - [ ] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
+  - [x] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
   - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
   - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
@@ -242,6 +242,13 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+### 2025-10-10 17:43 PST
+**Summary**
+Typed VDB models and tests landed
+**Changes**
+— Added `src/raggd/modules/vdb/models.py` with embedding model, VDB record, and info summary dataclasses plus validation helpers.
+— Registered exports in `src/raggd/modules/vdb/__init__.py` for downstream wiring.
+— Created `tests/modules/vdb/test_models.py` exercising validation, serialization, and health normalization with `uv run pytest --override-ini "addopts=--cov=raggd.modules.vdb --cov-report=term-missing --cov-report=xml --cov-fail-under=100 -q" tests/modules/vdb/test_models.py`.
 ### 2025-10-10 19:05 UTC
 **Summary**
 CLI scaffold completed
