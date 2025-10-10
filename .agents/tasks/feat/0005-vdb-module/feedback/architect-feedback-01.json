@@ -1,81 +1,85 @@
 {
   "id": "architect-feedback-01",
-  "task": {
-    "id": "0005",
-    "slug": "vdb-module"
-  },
-  "doc": {
-    "type": "implementation",
-    "path": ".agents/tasks/feat/0005-vdb-module/implementation.md"
-  },
-  "architect": "<name-or-handle>",
+  "task": { "id": "0005", "slug": "vdb-module" },
+  "doc": { "type": "implementation", "path": ".agents/tasks/feat/0005-vdb-module/implementation.md" },
+  "architect": "Architect",
   "owner": "Engineer",
   "status": "approved-with-notes",
-  "created_at": "YYYY-MM-DDThh:mm:ssZ",
-  "summary": "Concise one-liner stating the review outcome and any headline notes.",
+  "created_at": "2025-10-10T17:30:00Z",
+  "summary": "Implementation aligns with spec; approved with notes on sidecar schema, CLI UX specifics, atomic rebuild ordering, and health output shape.",
 
   "review": {
     "architecture": {
       "alignment": [
-        "Implementation aligns with spec goals (commands, binding, storage paths)."
+        "Module boundaries, provider abstraction, FAISS adapter, and health integration match the spec.",
+        "Deterministic index path derivation and per-VDB binding affirmed."
       ],
       "gaps": [
-        "<Any missing pieces vs. spec (e.g., atomic rebuild details)>"
+        "Sidecar metadata schema not defined; include model, dim, metric, index_type, counts, built_at, checksum.",
+        "Explicit CLI create syntax <source>@<batch> <name> --model ... not frozen; document help/usage.",
+        "Atomic swap ordering between index writes and vectors table updates needs failure-mode detail."
       ],
       "decisions_confirmed": [
-        "One VDB per <source>@<batch> and one embedding model; no rebind.",
-        "Deterministic FAISS path + sidecar metadata file."
+        "One VDB per <source>@<batch> and one embedding model; rebind requires reset.",
+        "FAISS IDMap keyed by chunk_id; SQLite remains authoritative for metadata.",
+        "Cosine metric with vector normalization as the default."
       ],
       "anti_patterns": [
-        "<Note any layering violations, tight coupling, or global state uses>"
+        "None observed; avoid coupling CLI to service internals; keep providers behind a stable interface."
       ]
     },
     "interfaces_and_contracts": {
       "cli": [
         "Commands: info, create, sync, reset; flags: --json, --missing-only, --recompute, --limit, --concurrency, --dry-run.",
-        "Selector format <source>:<vdb-name> surfaced in info."
+        "Document selector <source>:<vdb-name> in info output; confirm create accepts <source>@<batch>.",
+        "Freeze info --json schema (ids, counts, dim, faiss_path, last_sync, health notes)."
       ],
       "providers": [
-        "OpenAI-first provider abstraction with batching, retries, and token handling.",
-        "Dimension enforcement strategy defined at create/sync."
+        "OpenAI-first provider with batching, retries/backoff (jitter), and token handling.",
+        "Enforce dimension at create/sync; define concurrency=auto mapping to provider caps."
       ],
       "persistence": [
-        "SQLite authoritative: embedding_models, vdbs, chunks, vectors; FAISS stores payloads keyed by chunk_id."
+        "SQLite authoritative: embedding_models, vdbs, chunks, vectors; FAISS stores only payloads keyed by chunk_id.",
+        "Deterministic faiss_path under sources/<source>/vectors/<vdb_name>/; sidecar metadata required."
       ],
       "health": [
-        "checkhealth hooks for index presence, dim mismatch, counts drift, staleness, orphans."
+        "checkhealth hooks for index presence, dim mismatches, counts drift, staleness, orphans; info --json mirrors concise status."
       ]
     },
     "data_model": {
       "tables": [
-        "embedding_models(dim, provider, name)",
-        "vdbs(source_id, batch_id, embedding_model_id, name, faiss_path)",
-        "chunks(vdb_id, symbol_id, header_md, body_text, token_count)",
-        "vectors(chunk_id, vdb_id, dim)"
+        "embedding_models(id, provider, name, dim)",
+        "vdbs(id, source_id, batch_id, embedding_model_id, name, faiss_path)",
+        "chunks(id, vdb_id, symbol_id, header_md, body_text, token_count)",
+        "vectors(id, chunk_id, vdb_id, dim)"
       ],
       "invariants": [
-        "VDB.dim == embedding_model.dim == FAISS.index_dim",
-        "FAISS IDMap external id == chunk_id"
+        "VDB.dim == embedding_models.dim == FAISS.index_dim",
+        "FAISS IDMap external id == chunk_id",
+        "vectors.vdb_id matches vdbs.id; vectors.dim matches embedding_models.dim"
       ]
     },
     "operability": {
       "observability": [
-        "info --json includes counts and health notes; last sync timestamp recorded."
+        "info --json includes ids, counts, dim, faiss_path, last sync, and health notes; consider token/cost summary fields."
       ],
       "locking_concurrency": [
-        "Single-writer file lock; atomic temp+swap on --recompute."
+        "Single-writer file lock; atomic temp+swap on --recompute; provider-level backoff/retries with bounded concurrency."
       ],
       "config": [
-        "modules.vdb.* defaults in raggd.defaults.toml; user overrides in raggd.toml; OPENAI_API_KEY required."
+        "modules.vdb.* defaults in raggd.defaults.toml; overrides in raggd.toml; OPENAI_API_KEY required for OpenAI provider."
       ]
     },
     "testing": {
       "coverage_expectations": [
-        "Happy paths, --missing-only resumability, dim mismatch fail-fast, stale VDB detection, reset (--drop), atomic rebuild."
+        "Happy paths, --missing-only resumability, dim mismatch fail-fast, stale VDB detection, reset (--drop), atomic rebuild.",
+        "Dry-run produces no DB or filesystem writes; info --json schema stable."
       ],
       "scenarios": [
-        "Provider rate-limit retries/backoff",
-        "Vector normalization for cosine"
+        "Provider rate-limit/backoff behavior and retry limits",
+        "Vector normalization for cosine and invariants enforcement",
+        "concurrency=auto selection respects provider caps",
+        "Atomic swap rollback leaves DB and index consistent"
       ]
     }
   },
@@ -89,30 +93,54 @@
   "risks": [
     { "risk": "Provider rate limits/timeouts", "mitigation": "Exponential backoff, jitter, batch sizing, concurrency=auto" },
     { "risk": "Index corruption on rebuild", "mitigation": "Atomic temp+swap; single-writer file locks" },
-    { "risk": "Dim mismatch across model/DB/index", "mitigation": "Pre-sync validation and fail-fast guidance" }
+    { "risk": "Dim mismatch across model/DB/index", "mitigation": "Pre-sync validation and fail-fast guidance" },
+    { "risk": "Model dim/version drift over time", "mitigation": "Pin model ids; persist dim in DB; fail on mismatch" }
   ],
 
   "change_reqs": [
     {
       "target": "implementation",
-      "type": "clarify|add|edit",
-      "details": "<Specific section to adjust (e.g., model registration and dim enforcement flow)>",
-      "rationale": "<Why this improves alignment and operability>",
-      "acceptance": "<Concrete acceptance criteria for the change>"
+      "type": "clarify",
+      "details": "Define sidecar metadata schema (fields: model_id, provider, dim, metric, index_type, vector_count, built_at, checksum/version) and include an example.",
+      "rationale": "Enables reliable operability checks and future migrations.",
+      "acceptance": "Documentation includes schema and sample; sync writes/updates sidecar; tests assert presence and key fields."
+    },
+    {
+      "target": "implementation",
+      "type": "add",
+      "details": "Freeze CLI UX: document exact create syntax <source>@<batch> <name> --model ..., and publish info --json output schema.",
+      "rationale": "Prevents churn in downstream tooling and clarifies operator usage.",
+      "acceptance": "CLI help shows finalized syntax; docs updated; tests cover parser of selectors and flags; schema captured in docs."
+    },
+    {
+      "target": "implementation",
+      "type": "add",
+      "details": "Document atomic rebuild ordering and failure handling so vectors and index remain consistent.",
+      "rationale": "Reduces corruption risk and simplifies recovery.",
+      "acceptance": "On simulated crash during --recompute, no partial index is exposed; DB remains consistent; test added."
+    },
+    {
+      "target": "implementation",
+      "type": "edit",
+      "details": "Specify concurrency=auto mapping to provider caps and expose config keys (modules.vdb.*) with defaults.",
+      "rationale": "Predictable throughput and safer defaults under rate limits.",
+      "acceptance": "Docs list keys and defaults; provider enforces caps; tests exercise boundary conditions."
     }
   ],
 
   "acceptance_criteria": [
     "CLI commands and flags match spec; help text documents constraints.",
     "Provider interface enforces dimension and batching policy.",
-    "FAISS index persisted with IDMap keyed by chunk_id; sidecar metadata present.",
+    "FAISS index persisted with IDMap keyed by chunk_id; sidecar metadata present (dim, model, metric, built_at).",
     "checkhealth surfaces drift, staleness, and mismatches; info --json mirrors key status."
   ],
 
   "action_items": [
     { "action": "Finalize provider dim enforcement and error messages", "owner": "Engineer", "priority": "P1" },
     { "action": "Implement atomic rebuild with temp+swap and locking", "owner": "Engineer", "priority": "P1" },
-    { "action": "Add tests for --missing-only, dim mismatch, stale detection", "owner": "Engineer", "priority": "P1" },
+    { "action": "Define and persist sidecar metadata schema; add tests", "owner": "Engineer", "priority": "P1" },
+    { "action": "Freeze CLI UX and info --json schema; add help/docs", "owner": "Engineer", "priority": "P1" },
+    { "action": "Add tests for --missing-only, dim mismatch, stale detection, dry-run no-writes", "owner": "Engineer", "priority": "P1" },
     { "action": "Document defaults vs. overrides and lack of custom paths in MVP", "owner": "Engineer", "priority": "P2" }
   ],
 
@@ -123,6 +151,6 @@
     ".agents/guides/engineering-guide.md"
   ],
 
-  "next_checkin": "YYYY-MM-DD"
+  "next_checkin": "2025-10-17"
 }
 
