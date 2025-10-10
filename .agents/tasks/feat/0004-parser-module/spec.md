@@ -111,7 +111,24 @@ Establish a `raggd parser` command group that owns parsing workflows end-to-end.
 2. Recomposing delegated chunks: prototype or at least outline reader utilities that can stitch delegated child chunks back to their parent groups using the new metadata so downstream modules do not lose structure.
 3. Batch removal gap: highlight in docs/CLI help that `parser remove` leaves vector indexes in place until future `raggd vdb sync <source>` tooling exists; track user feedback in case we need interim scripts.
 
+## Definition of Done
+- [x] `raggd parser` command group exposes `parse`, `info`, `batches`, and `remove` commands with scope filters, `.gitignore` enforcement, fail-fast toggles, manifest updates, and concurrency controls matching the spec.
+- [x] Handler registry resolves extensions and shebangs to language-aware handlers with default text fallback, dependency-aware enablement, and configuration toggles.
+- [x] Python, JavaScript/TypeScript, Markdown, HTML, CSS, and text handlers emit normalized file/symbol/chunk payloads with stable hashes, token counts, delegated chunk linkage, and deterministic chunk keys for splits.
+- [x] Traversal, hashing, and caching reuse unchanged artifacts, enforce deterministic processing queues per source, and guard database access via source-scoped locking when `max_concurrency > 1`.
+- [x] Database migrations create the decoupled `chunk_slices` schema with parent/part metadata, maintain `last_seen_batch`, and ensure batch removal updates manifests while warning about downstream vector cleanup.
+- [x] Parser metadata persists under `modules.parser`, including run telemetry, handler warnings, dependency gaps, and health statuses surfaced through the module registry and CLI `info`.
+- [x] Configuration defaults cover handler toggles, token caps, `max_concurrency`, `fail_fast`, and `gitignore` behavior, with overrides persisted and rendered through CLI help and docs.
+- [x] Automated tests span handler extraction, hashing/splitting logic, database migrations, and CLI flows (`parse`/`info`/`batches`/`remove`) with coverage for degraded handler fallbacks and failure exit codes; manual smoke notes recorded.
+- [x] Developer documentation and packaging updates describe parser workflows, handler extras, schema changes, and operational runbooks; optional dependency groups validated in `pyproject.toml`.
+
 ## History
+### 2025-10-10 14:02 PST
+**Summary** — Restored Definition of Done checklist
+**Changes**
+- Added DoD section covering CLI, handler, schema, telemetry, configuration, testing, and documentation commitments.
+- Clarified completion expectations without changing existing scope items.
+
 ### 2025-10-06 01:05 PST
 **Summary** - Incorporated schema decoupling and CLI follow-up decisions
 **Changes**
