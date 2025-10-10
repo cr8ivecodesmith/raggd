@@ -30,11 +30,11 @@
 
 ## Impact Analysis
 ### Affected behaviors & tests
-- `vdb create` — validates batch/model, derives `faiss_path`, inserts `vdbs` row; no vectors created.
+- `vdb create` — validates batch/model, derives `faiss_path`, inserts `vdbs` row; no vectors created. Idempotent: re-running with the same `<source>@<batch>` and `embedding_model` results in a no-op. If a VDB with the same `name` exists but points to a different batch/model, fail-fast with a clear remediation message (use `reset --drop` or choose a new name).
 - `vdb sync` — materializes `chunks`, generates embeddings, writes FAISS IDMap keyed by `chunk_id`, and records `vectors` rows.
 - `vdb info` — reports selector, batch/model/dim, counts, `faiss_path`, last sync, and health notes; `--json` for machine output.
 - `vdb reset` — deletes FAISS artifacts and clears `vectors`/`chunks`; optional `--drop` removes `vdbs` row.
-- Health integration — contributes checks for missing index, dim mismatches, counts drift, stale relative to latest batch, orphaned refs.
+- Health integration — contributes checks for missing index, dim mismatches, counts drift, stale relative to latest batch, and orphaned refs. Each health finding should include concise remediation guidance alongside `{ code, level, message }` (e.g., suggest `sync --recompute` on dim drift).
 ### Affected source files
 - Create:
   - `src/raggd/cli/vdb.py` — Typer command group and CLI orchestration.
@@ -132,7 +132,7 @@
 - Commands: `info`, `create`, `sync`, `reset`.
 - Create: `raggd vdb create <source>@<batch> <name> --model <provider:model|id>`
   - Example: `raggd vdb create docs@latest base --model openai:text-embedding-3-small`
-  - Notes: resolves `latest`; validates model/dimension; writes only `vdbs`.
+  - Notes: resolves `latest`; validates model/dimension; writes only `vdbs`. Idempotent when the target VDB already exists with the same batch/model. Mismatches fail fast with remediation guidance.
 - Sync: `raggd vdb sync <source> [--vdb <name>] [--missing-only|--recompute] [--limit N] [--concurrency N|auto] [--dry-run]`
   - `--missing-only`: embed only rows without vectors.
   - `--recompute`: rebuild embeddings and index atomically (see above).
@@ -198,6 +198,7 @@ Example:
   - `create`: not written.
   - `sync --missing-only`: update `vector_count`, `built_at`, `checksum` after writes.
   - `sync --recompute`: sidecar written in temp dir; moved alongside on swap.
+  - Deterministic pathing: `faiss_path` and sidecar location are derived deterministically from `<workspace>/sources/<source>/vectors/<vdb_name>/`.
   - Health reads sidecar to validate `dim`, counts, and detect drift via `checksum`.
 
 ## Concurrency & Config
@@ -218,9 +219,18 @@ Example:
   - `modules.vdb.retry.max_retries` (default: `5`)
 - Env: `OPENAI_API_KEY` required when `provider=openai` (never logged).
 
+## Acceptance Criteria Mapping
+- Info `--json` emits the documented schema, including `selector`, ids, counts, dim, paths, timestamps, and health entries.
+- `create` is idempotent; `sync` supports `--missing-only` and `--recompute` with atomic behavior; `reset` clears `vectors/chunks` and optionally drops the `vdbs` row.
+- Dimension compatibility is enforced across provider, DB, and FAISS index with fail-fast errors.
+- `faiss_path` is deterministic; sidecar is written/updated during `sync` and includes a checksum.
+
 ## Error Handling
 - Raise typed exceptions for CLI-friendly messages: `VdbCreateError`, `VdbSyncError`, `VdbResetError`, `VdbInfoError`.
 - Include remediation tips on common failures (e.g., mismatched dims → suggest `reset --recompute`).
+
+## Documentation & Help Sync
+- Keep CLI `--help` strings in `src/raggd/cli/vdb.py` synchronized with `docs/learn/vdb.md` and examples in this implementation. Update both when flags/UX change.
 
 ## Deliverables & Files
 - Core module and CLI files listed under Impact Analysis; tests under `tests/cli/test_vdb.py` and `tests/modules/vdb/*`.
@@ -232,6 +242,12 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+### 2025-10-10 18:15 UTC
+Architect feedback 02 approved and incorporated
+— Clarified `create` idempotency and mismatch failure mode with remediation.
+— Added health remediation guidance requirement in health outputs.
+— Documented deterministic sidecar pathing and acceptance criteria mapping.
+— Noted CLI help and docs synchronization requirement.
 ### 2025-10-10 00:00 UTC
 **Summary**
 Drafted implementation plan aligning with guides and schema
