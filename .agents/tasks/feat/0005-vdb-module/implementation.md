@@ -242,6 +242,12 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+### 2025-10-10 18:45 UTC
+Initial CLI scaffold landed
+— Added `src/raggd/cli/vdb.py` with Typer group and `info` placeholder.
+— Registered sub-app in `src/raggd/cli/__init__.py` (`raggd vdb ...` now available).
+— Followed CLI patterns from `db.py`/`source.py` (context, logging, workspace resolution).
+— Next: flesh out `info --json` and wire service/models per plan.
 ### 2025-10-10 18:15 UTC
 Architect feedback 02 approved and incorporated
 — Clarified `create` idempotency and mismatch failure mode with remediation.

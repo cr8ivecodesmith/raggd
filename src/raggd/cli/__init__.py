@@ -24,6 +24,7 @@ from raggd.cli.checkhealth import register_checkhealth_command
 from raggd.cli.db import create_db_app
 from raggd.cli.init import init_workspace
 from raggd.cli.parser import create_parser_app
+from raggd.cli.vdb import create_vdb_app
 from raggd.cli.source import create_source_app
 from raggd.modules.db import db_health_hook
 from raggd.modules.parser import parser_health_hook
@@ -286,6 +287,7 @@ def create_app() -> "typer.Typer":
     app.add_typer(create_source_app(), name="source")
     app.add_typer(create_db_app(), name="db")
     app.add_typer(create_parser_app(), name="parser")
+    app.add_typer(create_vdb_app(), name="vdb")
 
     registry = ModuleRegistry(_DEFAULT_MODULE_DESCRIPTORS)
     register_checkhealth_command(app, registry=registry)
