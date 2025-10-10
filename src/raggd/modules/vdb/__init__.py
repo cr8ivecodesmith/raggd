@@ -9,6 +9,19 @@ from .models import (
     VdbInfoCounts,
     VdbInfoSummary,
 )
+from .providers import (
+    EmbedRequestOptions,
+    EmbeddingMatrix,
+    EmbeddingProviderCaps,
+    EmbeddingProviderModel,
+    EmbeddingVector,
+    EmbeddingsProvider,
+    ProviderFactory,
+    ProviderInitContext,
+    ProviderNotRegisteredError,
+    ProviderRegistry,
+    ProviderRegistryError,
+)
 
 __all__ = [
     "EmbeddingModel",
@@ -16,4 +29,15 @@ __all__ = [
     "VdbHealthEntry",
     "VdbInfoCounts",
     "VdbInfoSummary",
+    "EmbedRequestOptions",
+    "EmbeddingMatrix",
+    "EmbeddingProviderCaps",
+    "EmbeddingProviderModel",
+    "EmbeddingVector",
+    "EmbeddingsProvider",
+    "ProviderFactory",
+    "ProviderInitContext",
+    "ProviderNotRegisteredError",
+    "ProviderRegistry",
+    "ProviderRegistryError",
 ]

@@ -74,7 +74,7 @@
   - [x] CLI: scaffold `raggd vdb` with `info/create/sync/reset` commands and shared context.
   - [x] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
   - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
-    - [ ] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
+    - [x] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
     - [ ] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [ ] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [ ] Outline provider-focused unit/contract tests leveraging stub provider seams.
@@ -249,6 +249,14 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+### 2025-10-11 08:15 UTC
+**Summary**
+Provider protocol seam locked in
+**Changes**
+— Added provider interfaces, capability metadata, and registry scaffolding in `src/raggd/modules/vdb/providers/__init__.py`.
+— Exported provider abstractions via `src/raggd/modules/vdb/__init__.py` for downstream wiring.
+— Added provider registry unit tests in `tests/modules/vdb/test_providers.py` covering validation, factory wiring, and snapshot immutability.
+— Marked provider protocol checklist item complete in this implementation plan.
 ### 2025-10-10 09:56 UTC
 **Summary**
 Provider design consolidated and checklist expanded
