@@ -64,6 +64,9 @@
   - Follow façade/service pattern: `VdbService` coordinates DB access, provider calls, and FAISS operations; CLI remains thin.
   - Provider abstraction defines `embed_texts(texts: list[str], model: str, *, max_batch: int, timeout: float) -> list[list[float]]` and surfaces `dim` and `caps` (max tokens/batch, concurrency hints). A registry resolves providers by key (`openai:<name>`), keeping the contract stable for future providers.
   - FAISS layer wraps an `IndexIDMap` over `IndexFlatIP` (cosine via normalized vectors) or `IndexFlatL2` based on metric; sidecar metadata persists `dim`, `metric`, `built_at`, and `vdb_id`.
+  - Provider implementation details: define `EmbeddingsProvider` `Protocol` plus capability/model info dataclasses, load providers via keyed factories for DI seams, and ensure provider outputs stay immutable for testability.
+  - OpenAI provider specifics: wrap the 1.x SDK, normalize text with `tiktoken`, batch respecting provider caps, implement exponential backoff with jitter, map HTTP/client errors to typed `Vdb*Error`s, and lock embedding dims into SQLite on first success when unknown.
+  - Auto concurrency + logging: compute `min(cpu_count, provider_caps.max_parallel_requests, config_override or 8)` with floor 1, emit the resolved concurrency via structured logs, and surface provider throttle warnings for operability.
 - DI & boundaries
   - Inject config, logger, DB connection factory, provider registry, and `FaissIndex` adapter into `VdbService`.
   - Keep SQL inside repository helpers and keep FAISS isolated behind `faiss_index.py` for testability.
@@ -71,6 +74,10 @@
   - [x] CLI: scaffold `raggd vdb` with `info/create/sync/reset` commands and shared context.
   - [x] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
   - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
+    - [ ] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
+    - [ ] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
+    - [ ] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
+    - [ ] Outline provider-focused unit/contract tests leveraging stub provider seams.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
   - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
   - [ ] Health: wire `vdb` checks into `checkhealth`.
@@ -78,11 +85,11 @@
 
 ## Test Plan
 - Unit tests
-  - Provider batching, retries, and dim reporting using a stub provider.
+  - Provider batching, retries, dim reporting, error translation, and auto concurrency resolution using stubbed provider caps and fake OpenAI responses.
   - FAISS adapter: add/update vectors, atomic rebuild, metadata read/write, and locking behavior (use temp dirs in `.tmp/`).
   - Service logic: idempotency for `create`, `sync --missing-only`, and conflict detection.
 - Contract tests
-  - Provider protocol: ensure any provider conforms to interface and error contracts.
+  - Provider protocol: ensure any provider conforms to interface and error contracts, including capability reporting and dim persistence expectations.
 - Integration/CLI tests
   - `raggd vdb create/sync/info/reset` end-to-end with a temporary workspace and seeded DB (fixtures).
   - Health aggregator includes vdb checks and flags mismatches/stale status.
@@ -242,6 +249,13 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+### 2025-10-10 09:56 UTC
+**Summary**
+Provider design consolidated and checklist expanded
+**Changes**
+— Broke provider checklist into seam-first subitems and marked provider step complete.
+— Expanded solution plan with provider protocol specifics, OpenAI behavior, and concurrency heuristics aligned with guide docs.
+— Updated test expectations to cover provider capability contracts and error translation.
 ### 2025-10-10 17:43 PST
 **Summary**
 Typed VDB models and tests landed
