@@ -83,7 +83,11 @@
     - [x] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
     - [x] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
     - [x] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
-  - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
+  - [ ] Service: implement `VdbService` flows for each CLI command.
+    - [ ] `create`: validate config + uniqueness, derive vectors path, insert VDB row, and seed metadata.
+    - [ ] `sync`: materialize chunks, batch embed, persist vectors + metadata, and refresh progress stats.
+    - [ ] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
+    - [ ] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
   - [ ] Health: wire `vdb` checks into `checkhealth`.
   - [ ] Docs: update CLI help and add user guide.
 
