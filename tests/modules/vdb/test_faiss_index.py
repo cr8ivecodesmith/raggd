@@ -28,22 +28,28 @@ if faiss is not None and np is not None:
     from raggd.modules.vdb import (
         FaissIndex,
         FaissIndexError,
+        FaissIndexLoadError,
         FaissIndexLockTimeoutError,
         FaissIndexMetric,
         FaissIndexRemoveError,
+        FaissIndexValidationError,
         index_lock_path,
         index_writer_lock,
+        load_index_artifacts,
         persist_index_artifacts,
         sidecar_path_for_index,
     )
 else:  # pragma: no cover - tests skipped when dependencies missing
     FaissIndex = None  # type: ignore[assignment]
     FaissIndexError = None  # type: ignore[assignment]
+    FaissIndexLoadError = None  # type: ignore[assignment]
     FaissIndexLockTimeoutError = None  # type: ignore[assignment]
     FaissIndexMetric = None  # type: ignore[assignment]
     FaissIndexRemoveError = None  # type: ignore[assignment]
+    FaissIndexValidationError = None  # type: ignore[assignment]
     index_lock_path = None  # type: ignore[assignment]
     index_writer_lock = None  # type: ignore[assignment]
+    load_index_artifacts = None  # type: ignore[assignment]
     persist_index_artifacts = None  # type: ignore[assignment]
     sidecar_path_for_index = None  # type: ignore[assignment]
 
@@ -323,3 +329,197 @@ def test_index_lock_path_appends_suffix(tmp_path) -> None:
     index_path = tmp_path / "foo" / "index.faiss"
     expected = tmp_path / "foo" / "index.faiss.lock"
     assert index_lock_path(index_path) == expected  # type: ignore[union-attr]
+
+
+@skip_if_missing
+def test_load_index_artifacts_roundtrip(tmp_path) -> None:
+    index = FaissIndex.create(
+        dim=3,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    vectors = np.eye(3, dtype="float32")
+    index.add(ids=[1, 2, 3], vectors=vectors)
+
+    built_at = datetime(2025, 1, 5, tzinfo=timezone.utc)
+    index_path = tmp_path / "index.faiss"
+    persist_index_artifacts(  # type: ignore[union-attr]
+        index,
+        index_path=index_path,
+        provider="openai",
+        model_id=9,
+        model_name="text-embedding-3-small",
+        index_type="IDMap,Flat",
+        built_at=built_at,
+        vdb_id=77,
+    )
+
+    loaded_index, sidecar = load_index_artifacts(  # type: ignore[union-attr]
+        index_path=index_path,
+    )
+
+    assert loaded_index.size == index.size
+    assert loaded_index.dim == index.dim
+    assert sidecar.metric == "cosine"
+    assert sidecar.vector_count == index.size
+    assert sidecar.built_at == built_at
+
+
+@skip_if_missing
+def test_load_index_artifacts_raises_when_expected_dim_differs(
+    tmp_path,
+) -> None:
+    index = FaissIndex.create(
+        dim=2,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    index.add(ids=[10], vectors=[[1.0, 0.0]])
+
+    index_path = tmp_path / "index.faiss"
+    persist_index_artifacts(  # type: ignore[union-attr]
+        index,
+        index_path=index_path,
+        provider="openai",
+        model_id=3,
+        model_name="text-embedding-3-small",
+        index_type="IDMap,Flat",
+        built_at=datetime.now(timezone.utc),
+        vdb_id=11,
+    )
+
+    with pytest.raises(FaissIndexValidationError) as excinfo:  # type: ignore[union-attr]
+        load_index_artifacts(  # type: ignore[union-attr]
+            index_path=index_path,
+            expected_dim=128,
+        )
+
+    assert excinfo.value.field == "dim"
+
+
+@skip_if_missing
+def test_load_index_artifacts_raises_for_metric_mismatch(tmp_path) -> None:
+    index = FaissIndex.create(
+        dim=2,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    index.add(ids=[10], vectors=[[1.0, 0.0]])
+
+    index_path = tmp_path / "index.faiss"
+    persist_index_artifacts(  # type: ignore[union-attr]
+        index,
+        index_path=index_path,
+        provider="openai",
+        model_id=3,
+        model_name="text-embedding-3-small",
+        index_type="IDMap,Flat",
+        built_at=datetime.now(timezone.utc),
+        vdb_id=11,
+    )
+
+    with pytest.raises(FaissIndexValidationError) as excinfo:  # type: ignore[union-attr]
+        load_index_artifacts(  # type: ignore[union-attr]
+            index_path=index_path,
+            expected_metric="l2",
+        )
+
+    assert excinfo.value.field == "metric"
+
+
+@skip_if_missing
+def test_load_index_artifacts_detects_sidecar_dim_mismatch(tmp_path) -> None:
+    index = FaissIndex.create(
+        dim=2,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    index.add(ids=[5], vectors=[[1.0, 0.0]])
+
+    index_path = tmp_path / "index.faiss"
+    persist_index_artifacts(  # type: ignore[union-attr]
+        index,
+        index_path=index_path,
+        provider="openai",
+        model_id=3,
+        model_name="text-embedding-3-small",
+        index_type="IDMap,Flat",
+        built_at=datetime.now(timezone.utc),
+        vdb_id=11,
+    )
+    sidecar_path = sidecar_path_for_index(index_path)  # type: ignore[union-attr]
+    sidecar_json = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar_json["dim"] = 4
+    sidecar_path.write_text(
+        json.dumps(sidecar_json, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FaissIndexValidationError) as excinfo:  # type: ignore[union-attr]
+        load_index_artifacts(index_path=index_path)  # type: ignore[union-attr]
+
+    assert excinfo.value.field == "dim"
+
+
+@skip_if_missing
+def test_load_index_artifacts_detects_checksum_mismatch(tmp_path) -> None:
+    index = FaissIndex.create(
+        dim=2,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    index.add(ids=[5], vectors=[[1.0, 0.0]])
+
+    index_path = tmp_path / "index.faiss"
+    persist_index_artifacts(  # type: ignore[union-attr]
+        index,
+        index_path=index_path,
+        provider="openai",
+        model_id=3,
+        model_name="text-embedding-3-small",
+        index_type="IDMap,Flat",
+        built_at=datetime.now(timezone.utc),
+        vdb_id=11,
+    )
+
+    sidecar_path = sidecar_path_for_index(index_path)  # type: ignore[union-attr]
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    payload["checksum"] = "0" * 64
+    payload_text = json.dumps(payload, indent=2) + "\n"
+    sidecar_path.write_text(payload_text, encoding="utf-8")
+
+    with pytest.raises(FaissIndexValidationError) as excinfo:  # type: ignore[union-attr]
+        load_index_artifacts(index_path=index_path)  # type: ignore[union-attr]
+
+    assert excinfo.value.field == "checksum"
+
+
+@skip_if_missing
+def test_load_index_artifacts_missing_sidecar_raises_load_error(
+    tmp_path,
+) -> None:
+    index = FaissIndex.create(
+        dim=2,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    index.add(ids=[7], vectors=[[1.0, 0.0]])
+
+    index_path = tmp_path / "index.faiss"
+    persist_index_artifacts(  # type: ignore[union-attr]
+        index,
+        index_path=index_path,
+        provider="openai",
+        model_id=3,
+        model_name="text-embedding-3-small",
+        index_type="IDMap,Flat",
+        built_at=datetime.now(timezone.utc),
+        vdb_id=11,
+    )
+    sidecar_path = sidecar_path_for_index(index_path)  # type: ignore[union-attr]
+    sidecar_path.unlink()
+
+    with pytest.raises(FaissIndexLoadError) as excinfo:  # type: ignore[union-attr]
+        load_index_artifacts(index_path=index_path)  # type: ignore[union-attr]
+
+    assert "Sidecar metadata" in str(excinfo.value)

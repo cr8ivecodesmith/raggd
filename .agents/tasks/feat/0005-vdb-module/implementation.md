@@ -82,7 +82,7 @@
     - [x] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
     - [x] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
     - [x] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
-    - [ ] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
+    - [x] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
   - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
   - [ ] Health: wire `vdb` checks into `checkhealth`.
   - [ ] Docs: update CLI help and add user guide.
@@ -253,6 +253,15 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-13 15:40 UTC
+**Summary**
+FAISS index load/validation flow with typed errors and coverage
+**Changes**
+— Added sidecar parsing helpers, checksum/dimension validation, and `load_index_artifacts` orchestration in `src/raggd/modules/vdb/faiss_index.py` with new error types.
+— Exported the loader and errors via `src/raggd/modules/vdb/__init__.py` and extended `tests/modules/vdb/test_faiss_index.py` to cover round-trip success plus checksum, dimension, metric, and missing-sidecar failures.
+— Marked the FAISS load/validation checklist item complete in this implementation plan.
+— Ran `UV_CACHE_DIR=$PWD/.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/test-workspace uv run pytest --no-cov tests/modules/vdb/test_faiss_index.py` and `UV_CACHE_DIR=$PWD/.tmp/uv-cache uv run ruff check`.
 
 ### 2025-10-13 12:05 UTC
 **Summary**
