@@ -94,6 +94,9 @@
     - [ ] Compare DB vectors to chunk sources to surface count drift and orphaned references.
     - [ ] Expose actionable statuses in `checkhealth` output with remediation hints.
   - [ ] Docs: update CLI help and add user guide.
+    - [ ] Refresh `raggd vdb` CLI help text with new flags, preconditions, and result fields.
+    - [ ] Extend the user guide with create/sync/info/reset walkthroughs plus example outputs.
+    - [ ] Document troubleshooting guidance for health warnings and reset-driven recovery flows.
 
 ## Test Plan
 - Unit tests
