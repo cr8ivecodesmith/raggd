@@ -167,7 +167,12 @@ def _handle_not_implemented(action: str, *, logger: Logger) -> None:
     logger.warning("vdb-action-not-implemented", action=action)
 
 
-def _handle_service_failure(action: str, error: Exception, *, logger: Logger) -> None:
+def _handle_service_failure(
+    action: str,
+    error: Exception,
+    *,
+    logger: Logger,
+) -> None:
     typer.secho(
         f"VDB {action} failed: {error}",
         fg=typer.colors.RED,
@@ -193,7 +198,8 @@ def configure_vdb_commands(
         "--log-level",
         "-l",
         help=(
-            "Override log level for vdb commands (defaults to config log_level)."
+            "Override log level for vdb commands "
+            "(defaults to config log_level)."
         ),
     ),
 ) -> None:

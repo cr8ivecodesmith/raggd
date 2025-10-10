@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Sequence
 
 from pydantic import ValidationError
@@ -10,7 +11,11 @@ from pydantic import ValidationError
 from raggd.modules import HealthReport, HealthStatus, WorkspaceHandle
 from raggd.modules.manifest.helpers import manifest_settings_from_config
 from raggd.modules.manifest.migrator import SOURCE_MODULE_KEY
-from raggd.modules.manifest.service import ManifestError, ManifestReadError, ManifestService
+from raggd.modules.manifest.service import (
+    ManifestError,
+    ManifestReadError,
+    ManifestService,
+)
 from raggd.source.models import (
     SourceHealthStatus,
     SourceManifest,
@@ -127,7 +132,7 @@ def _load_manifest(
     service: ManifestService,
     source: str,
     module_key: str,
-    manifest_path: "Path",
+    manifest_path: Path,
     config: WorkspaceSourceConfig,
 ) -> SourceManifest:
     snapshot = service.load(source)
