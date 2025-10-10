@@ -78,7 +78,7 @@
     - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [x] Outline provider-focused unit/contract tests leveraging stub provider seams.
-  - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
+  - [x] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
     - [x] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
     - [x] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
     - [x] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
