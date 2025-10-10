@@ -6,7 +6,11 @@ from .faiss_index import (
     FaissIndex,
     FaissIndexError,
     FaissIndexMetric,
+    FaissIndexPersistenceError,
     FaissIndexRemoveError,
+    FaissIndexSidecar,
+    persist_index_artifacts,
+    sidecar_path_for_index,
 )
 from .models import (
     EmbeddingModel,
@@ -34,7 +38,11 @@ __all__ = [
     "FaissIndex",
     "FaissIndexError",
     "FaissIndexMetric",
+    "FaissIndexPersistenceError",
     "FaissIndexRemoveError",
+    "FaissIndexSidecar",
+    "persist_index_artifacts",
+    "sidecar_path_for_index",
     "EmbeddingModel",
     "Vdb",
     "VdbHealthEntry",

@@ -79,8 +79,8 @@
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [x] Outline provider-focused unit/contract tests leveraging stub provider seams.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
-  - [x] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
-    - [ ] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
+    - [x] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
+    - [x] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
     - [ ] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
     - [ ] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
   - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
@@ -253,6 +253,14 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-12 14:30 UTC
+**Summary**
+FAISS index artifacts persisted with sidecar metadata and tests
+**Changes**
+— Added atomic persistence helpers and sidecar serialization in `src/raggd/modules/vdb/faiss_index.py`.
+— Extended `tests/modules/vdb/test_faiss_index.py` to validate artifact writes and path derivation.
+— Ran `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-faiss-persist uv run pytest --no-cov tests/modules/vdb/test_faiss_index.py` and `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`.
 
 ### 2025-10-12 09:45 UTC
 **Summary**

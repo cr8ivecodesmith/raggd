@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import tempfile
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 
@@ -21,6 +27,10 @@ __all__ = [
     "FaissIndexError",
     "FaissIndexMetric",
     "FaissIndexRemoveError",
+    "FaissIndexPersistenceError",
+    "FaissIndexSidecar",
+    "persist_index_artifacts",
+    "sidecar_path_for_index",
 ]
 
 
@@ -30,6 +40,10 @@ class FaissIndexError(RuntimeError):
 
 class FaissIndexRemoveError(FaissIndexError):
     """Raised when removal fails (e.g., ids not present)."""
+
+
+class FaissIndexPersistenceError(FaissIndexError):
+    """Raised when index artifacts cannot be persisted."""
 
 
 @dataclass(frozen=True)
@@ -167,6 +181,99 @@ class FaissIndex:
         return vectors
 
 
+@dataclass(frozen=True, slots=True)
+class FaissIndexSidecar:
+    """Structured payload persisted alongside the FAISS index file."""
+
+    version: int
+    provider: str
+    model_id: int
+    model_name: str
+    dim: int
+    metric: str
+    index_type: str
+    vector_count: int
+    built_at: datetime
+    checksum: str
+    vdb_id: int
+
+    def to_json(self) -> str:
+        """Serialize metadata to a formatted JSON string."""
+
+        payload = {
+            "version": self.version,
+            "provider": self.provider,
+            "model_id": self.model_id,
+            "model_name": self.model_name,
+            "dim": self.dim,
+            "metric": self.metric,
+            "index_type": self.index_type,
+            "vector_count": self.vector_count,
+            "built_at": _format_timestamp(self.built_at),
+            "checksum": self.checksum,
+            "vdb_id": self.vdb_id,
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
+def persist_index_artifacts(
+    index: FaissIndex,
+    *,
+    index_path: Path,
+    provider: str,
+    model_id: int,
+    model_name: str,
+    index_type: str,
+    built_at: datetime,
+    vdb_id: int,
+    version: int = 1,
+) -> FaissIndexSidecar:
+    """Persist the FAISS index and sidecar metadata atomically."""
+
+    index_bytes = index.to_bytes()
+    checksum = hashlib.sha256(index_bytes).hexdigest()
+    sidecar = FaissIndexSidecar(
+        version=version,
+        provider=provider,
+        model_id=model_id,
+        model_name=model_name,
+        dim=index.dim,
+        metric=index.metric.name,
+        index_type=index_type,
+        vector_count=index.size,
+        built_at=built_at,
+        checksum=checksum,
+        vdb_id=vdb_id,
+    )
+
+    sidecar_path = sidecar_path_for_index(index_path)
+    directory = index_path.parent
+    directory.mkdir(parents=True, exist_ok=True)
+
+    try:
+        _atomic_write_bytes(index_path, index_bytes)
+        _atomic_write_text(sidecar_path, sidecar.to_json())
+    except OSError as exc:
+        # Avoid mismatched artifacts when sidecar writing fails after the index
+        # is persisted.
+        if index_path.exists():
+            try:
+                index_path.unlink()
+            except OSError:
+                pass
+        raise FaissIndexPersistenceError(
+            f"Failed to persist FAISS index artifacts under {directory}: {exc}"
+        ) from exc
+
+    return sidecar
+
+
+def sidecar_path_for_index(index_path: Path) -> Path:
+    """Derive the sidecar metadata path from the FAISS index path."""
+
+    return index_path.with_name(f"{index_path.name}.meta.json")
+
+
 def _build_index(
     *,
     dim: int,
@@ -196,6 +303,60 @@ def _ids_to_array(ids: Iterable[int]) -> np.ndarray:
         dtype="int64",
         count=-1,
     )
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=".faiss-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(data)
+            temp_path = Path(handle.name)
+        os.replace(temp_path, path)
+    except OSError:
+        if temp_path is not None:
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        raise
+
+
+def _atomic_write_text(path: Path, data: str) -> None:
+    temp_path: Path | None = None
+    encoded = data.encode("utf-8")
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=".faiss-",
+            suffix=".json.tmp",
+            delete=False,
+        ) as handle:
+            handle.write(encoded)
+            temp_path = Path(handle.name)
+        os.replace(temp_path, path)
+    except OSError:
+        if temp_path is not None:
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        raise
+
+
+def _format_timestamp(value: datetime) -> str:
+    timestamp = value
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    else:
+        timestamp = timestamp.astimezone(timezone.utc)
+    return timestamp.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _vectors_to_array(

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import datetime, timezone
+
 import pytest
 
 try:  # pragma: no cover - exercised via pytest skip path
@@ -26,12 +30,16 @@ if faiss is not None and np is not None:
         FaissIndexError,
         FaissIndexMetric,
         FaissIndexRemoveError,
+        persist_index_artifacts,
+        sidecar_path_for_index,
     )
 else:  # pragma: no cover - tests skipped when dependencies missing
     FaissIndex = None  # type: ignore[assignment]
     FaissIndexError = None  # type: ignore[assignment]
     FaissIndexMetric = None  # type: ignore[assignment]
     FaissIndexRemoveError = None  # type: ignore[assignment]
+    persist_index_artifacts = None  # type: ignore[assignment]
+    sidecar_path_for_index = None  # type: ignore[assignment]
 
 
 @skip_if_missing
@@ -149,3 +157,60 @@ def test_remove_ignores_empty_iterables() -> None:
     index.add(ids=[1], vectors=[[1.0, 0.0]])
     index.remove([])
     assert index.size == 1
+
+
+@skip_if_missing
+def test_persist_index_artifacts_writes_index_and_sidecar(tmp_path) -> None:
+    index = FaissIndex.create(
+        dim=3,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    vectors = np.eye(3, dtype="float32")
+    index.add(ids=[101, 102, 103], vectors=vectors)
+
+    built_at = datetime(2025, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    index_path = tmp_path / "index.faiss"
+    metadata = persist_index_artifacts(  # type: ignore[union-attr]
+        index,
+        index_path=index_path,
+        provider="openai",
+        model_id=7,
+        model_name="text-embedding-3-small",
+        index_type="IDMap,Flat",
+        built_at=built_at,
+        vdb_id=42,
+    )
+
+    assert index_path.exists()
+    payload = index_path.read_bytes()
+    assert payload  # ensure non-empty write
+
+    expected_checksum = hashlib.sha256(payload).hexdigest()
+    assert metadata.checksum == expected_checksum
+    assert metadata.vector_count == index.size
+    assert metadata.metric == "cosine"
+
+    sidecar_path = sidecar_path_for_index(index_path)  # type: ignore[union-attr]
+    assert sidecar_path.exists()
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert sidecar["dim"] == 3
+    assert sidecar["metric"] == "cosine"
+    assert sidecar["vector_count"] == 3
+    assert sidecar["vdb_id"] == 42
+    assert sidecar["checksum"] == expected_checksum
+    assert sidecar["built_at"] == "2025-01-02T03:04:05Z"
+
+    temp_artifacts = [
+        candidate
+        for candidate in tmp_path.iterdir()
+        if candidate.name.startswith(".faiss-")
+    ]
+    assert temp_artifacts == []
+
+
+@skip_if_missing
+def test_sidecar_path_for_index_appends_suffix(tmp_path) -> None:
+    index_path = tmp_path / "foo" / "index.faiss"
+    expected = tmp_path / "foo" / "index.faiss.meta.json"
+    assert sidecar_path_for_index(index_path) == expected  # type: ignore[union-attr]
