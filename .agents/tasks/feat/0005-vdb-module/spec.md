@@ -3,6 +3,10 @@
 ## Summary
 Introduce a first-class `raggd vdb` command group that manages per-source vector databases bound to parser batches and embedding models. The module materializes chunks from parsed artifacts, generates embeddings via a provider abstraction (OpenAI-first), and builds/maintains an external FAISS index. Metadata is persisted in the existing schema tables (`embedding_models`, `vdbs`, `chunks`, `vectors`), while the FAISS index stores only vector payloads. The module aligns UX with the parser’s guidance (“run `raggd vdb sync <source>`”) and exposes clear management operations without query/search concerns (owned by a future `query` module).
 
+## Status
+- Approved with stakeholder sign-off (stakeholder-spec-feedback-02) on 2025-10-10.
+- Feedback reference: `.agents/tasks/feat/0005-vdb-module/feedback/stakeholder-spec-feedback-02.json`.
+
 ## Goals
 - Deliver `raggd vdb <command>` with MVP subcommands: `info`, `create`, `sync`, `reset`.
 - Bind each VDB to exactly one parser `batch_id` and one `embedding_model_id`; enforce dimension compatibility.
@@ -71,9 +75,12 @@ Introduce a first-class `raggd vdb` command group that manages per-source vector
 - [ ] Packaging: `vdb` extra declared; module registered and toggle respected.
 
 ## Open Items
-- Clarify explicit model registration vs. auto-create policy and error messaging for dimension mismatches.
-- Decide whether to persist a `.health.json` alongside sidecar metadata.
-- Confirm default index type (e.g., `faiss:hnsw`) and `--concurrency auto` policy per provider caps.
+- Clarify explicit model registration vs. auto-create policy and error messaging for dimension mismatches. Owner: Architect. Due: 2025-10-17.
+- Decide whether to persist a `.health.json` alongside sidecar metadata. Owner: Architect. Due: 2025-10-17.
+- Confirm default index type (e.g., `faiss:hnsw`) and `--concurrency auto` policy per provider caps. Owner: Architect. Due: 2025-10-17.
+
+## Next Check-in
+- 2025-10-17
 
 ## Ownership
 - Owner: @matt
@@ -83,7 +90,10 @@ Introduce a first-class `raggd vdb` command group that manages per-source vector
 ## Links
 - Proposal: .agents/tasks/feat/0005-vdb-module/proposal.md
 - Reference (db module spec): .agents/tasks/feat/0003-db-module/spec.md
+- Stakeholder Feedback (sign-off): .agents/tasks/feat/0005-vdb-module/feedback/stakeholder-spec-feedback-02.json
 
 ## History
 ### 2025-10-10 16:00 PST
 - Drafted VDB module spec from proposal, aligned with workflow templates and existing module conventions.
+### 2025-10-10 17:00 UTC
+- Stakeholder approval and sign-off recorded; spec aligned to clarifications on model registration/dimension enforcement, atomic rebuild + concurrency safety, defaults vs overrides, and fixed index path in MVP.
