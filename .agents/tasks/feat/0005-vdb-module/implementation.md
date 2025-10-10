@@ -81,7 +81,7 @@
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
     - [x] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
     - [x] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
-    - [ ] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
+    - [x] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
     - [ ] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
   - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
   - [ ] Health: wire `vdb` checks into `checkhealth`.
@@ -253,6 +253,14 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-13 12:05 UTC
+**Summary**
+FAISS index writes guarded with filesystem locks
+**Changes**
+— Added lock acquisition helpers, timeout errors, and lock-aware persistence paths in `src/raggd/modules/vdb/faiss_index.py` with exports in `src/raggd/modules/vdb/__init__.py`.
+— Expanded `tests/modules/vdb/test_faiss_index.py` to cover lock release, pre-acquired lock handling, timeout behavior, and path derivation.
+— Ran `TMPDIR=$PWD/.tmp/tmpdir UV_CACHE_DIR=$PWD/.tmp/uv-cache PYTEST_ADDOPTS=--no-cov uv run pytest tests/modules/vdb/test_faiss_index.py` and `TMPDIR=$PWD/.tmp/tmpdir UV_CACHE_DIR=$PWD/.tmp/uv-cache uv run ruff check src/raggd/modules/vdb/faiss_index.py tests/modules/vdb/test_faiss_index.py`.
 
 ### 2025-10-12 14:30 UTC
 **Summary**

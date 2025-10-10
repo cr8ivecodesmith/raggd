@@ -28,16 +28,22 @@ if faiss is not None and np is not None:
     from raggd.modules.vdb import (
         FaissIndex,
         FaissIndexError,
+        FaissIndexLockTimeoutError,
         FaissIndexMetric,
         FaissIndexRemoveError,
+        index_lock_path,
+        index_writer_lock,
         persist_index_artifacts,
         sidecar_path_for_index,
     )
 else:  # pragma: no cover - tests skipped when dependencies missing
     FaissIndex = None  # type: ignore[assignment]
     FaissIndexError = None  # type: ignore[assignment]
+    FaissIndexLockTimeoutError = None  # type: ignore[assignment]
     FaissIndexMetric = None  # type: ignore[assignment]
     FaissIndexRemoveError = None  # type: ignore[assignment]
+    index_lock_path = None  # type: ignore[assignment]
+    index_writer_lock = None  # type: ignore[assignment]
     persist_index_artifacts = None  # type: ignore[assignment]
     sidecar_path_for_index = None  # type: ignore[assignment]
 
@@ -210,7 +216,110 @@ def test_persist_index_artifacts_writes_index_and_sidecar(tmp_path) -> None:
 
 
 @skip_if_missing
+def test_persist_index_artifacts_releases_lock(tmp_path) -> None:
+    index = FaissIndex.create(
+        dim=2,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    index.add(ids=[1], vectors=[[1.0, 0.0]])
+
+    built_at = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    index_path = tmp_path / "index.faiss"
+
+    persist_index_artifacts(  # type: ignore[union-attr]
+        index,
+        index_path=index_path,
+        provider="openai",
+        model_id=1,
+        model_name="text-embedding-3-small",
+        index_type="IDMap,Flat",
+        built_at=built_at,
+        vdb_id=7,
+        lock_timeout=0.1,
+        lock_poll_interval=0.01,
+    )
+
+    lock_path = index_lock_path(index_path)  # type: ignore[union-attr]
+    assert not lock_path.exists()
+
+
+@skip_if_missing
+def test_persist_index_artifacts_times_out_when_lock_held(tmp_path) -> None:
+    index = FaissIndex.create(
+        dim=2,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    index.add(ids=[1], vectors=[[1.0, 0.0]])
+
+    built_at = datetime(2025, 1, 2, tzinfo=timezone.utc)
+    index_path = tmp_path / "index.faiss"
+
+    with index_writer_lock(  # type: ignore[union-attr]
+        index_path,
+        timeout=0.1,
+        poll_interval=0.01,
+    ):
+        with pytest.raises(FaissIndexLockTimeoutError):  # type: ignore[union-attr]
+            persist_index_artifacts(
+                index,
+                index_path=index_path,
+                provider="openai",
+                model_id=1,
+                model_name="text-embedding-3-small",
+                index_type="IDMap,Flat",
+                built_at=built_at,
+                vdb_id=7,
+                lock_timeout=0.05,
+                lock_poll_interval=0.01,
+            )
+
+
+@skip_if_missing
+def test_persist_index_artifacts_accepts_preacquired_lock(tmp_path) -> None:
+    index = FaissIndex.create(
+        dim=2,
+        metric="cosine",
+        index_type="IDMap,Flat",
+    )  # type: ignore[union-attr]
+    index.add(ids=[1], vectors=[[1.0, 0.0]])
+
+    built_at = datetime(2025, 1, 3, tzinfo=timezone.utc)
+    index_path = tmp_path / "index.faiss"
+
+    with index_writer_lock(  # type: ignore[union-attr]
+        index_path,
+        timeout=0.1,
+        poll_interval=0.01,
+    ) as lock:
+        lock_path = index_lock_path(index_path)  # type: ignore[union-attr]
+        assert lock_path.exists()
+        persist_index_artifacts(
+            index,
+            index_path=index_path,
+            provider="openai",
+            model_id=1,
+            model_name="text-embedding-3-small",
+            index_type="IDMap,Flat",
+            built_at=built_at,
+            vdb_id=7,
+            lock=lock,
+        )
+        assert lock_path.exists()
+
+    assert not index_lock_path(index_path).exists()  # type: ignore[union-attr]
+
+
+@skip_if_missing
 def test_sidecar_path_for_index_appends_suffix(tmp_path) -> None:
     index_path = tmp_path / "foo" / "index.faiss"
     expected = tmp_path / "foo" / "index.faiss.meta.json"
     assert sidecar_path_for_index(index_path) == expected  # type: ignore[union-attr]
+
+
+@skip_if_missing
+def test_index_lock_path_appends_suffix(tmp_path) -> None:
+    index_path = tmp_path / "foo" / "index.faiss"
+    expected = tmp_path / "foo" / "index.faiss.lock"
+    assert index_lock_path(index_path) == expected  # type: ignore[union-attr]

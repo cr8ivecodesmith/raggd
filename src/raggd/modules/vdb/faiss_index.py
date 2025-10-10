@@ -6,12 +6,13 @@ import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+from contextlib import contextmanager
 
 try:  # pragma: no cover - import guard exercised in tests via functionality
     import faiss
@@ -21,14 +22,24 @@ except ImportError as exc:  # pragma: no cover - bubble missing optional extra
     )
     raise ImportError(message) from exc
 
+from raggd.modules.manifest.locks import (
+    FileLock,
+    ManifestLockError,
+    ManifestLockTimeoutError,
+)
+
 
 __all__ = [
     "FaissIndex",
     "FaissIndexError",
+    "FaissIndexLockError",
+    "FaissIndexLockTimeoutError",
     "FaissIndexMetric",
     "FaissIndexRemoveError",
     "FaissIndexPersistenceError",
     "FaissIndexSidecar",
+    "index_lock_path",
+    "index_writer_lock",
     "persist_index_artifacts",
     "sidecar_path_for_index",
 ]
@@ -44,6 +55,27 @@ class FaissIndexRemoveError(FaissIndexError):
 
 class FaissIndexPersistenceError(FaissIndexError):
     """Raised when index artifacts cannot be persisted."""
+
+
+class FaissIndexLockError(FaissIndexError):
+    """Raised when acquiring or releasing an index lock fails."""
+
+    def __init__(
+        self,
+        *,
+        index_path: Path,
+        lock_path: Path,
+        message: str,
+        cause: Exception | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.index_path = index_path
+        self.lock_path = lock_path
+        self.__cause__ = cause
+
+
+class FaissIndexLockTimeoutError(FaissIndexLockError):
+    """Raised when acquiring an index lock times out."""
 
 
 @dataclass(frozen=True)
@@ -216,6 +248,36 @@ class FaissIndexSidecar:
         return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
 
+_DEFAULT_LOCK_TIMEOUT = 30.0
+_DEFAULT_LOCK_POLL_INTERVAL = 0.1
+
+
+def index_lock_path(index_path: Path) -> Path:
+    """Return the filesystem lock path for ``index_path``."""
+
+    return index_path.with_name(f"{index_path.name}.lock")
+
+
+@contextmanager
+def index_writer_lock(
+    index_path: Path,
+    *,
+    timeout: float = _DEFAULT_LOCK_TIMEOUT,
+    poll_interval: float = _DEFAULT_LOCK_POLL_INTERVAL,
+) -> Iterator[FileLock]:
+    """Serialize writes to the FAISS index file for ``index_path``."""
+
+    lock = _acquire_index_lock(
+        index_path=index_path,
+        timeout=timeout,
+        poll_interval=poll_interval,
+    )
+    try:
+        yield lock
+    finally:
+        _release_index_lock(lock=lock, index_path=index_path)
+
+
 def persist_index_artifacts(
     index: FaissIndex,
     *,
@@ -227,43 +289,62 @@ def persist_index_artifacts(
     built_at: datetime,
     vdb_id: int,
     version: int = 1,
+    lock: FileLock | None = None,
+    lock_timeout: float = _DEFAULT_LOCK_TIMEOUT,
+    lock_poll_interval: float = _DEFAULT_LOCK_POLL_INTERVAL,
 ) -> FaissIndexSidecar:
     """Persist the FAISS index and sidecar metadata atomically."""
 
-    index_bytes = index.to_bytes()
-    checksum = hashlib.sha256(index_bytes).hexdigest()
-    sidecar = FaissIndexSidecar(
-        version=version,
-        provider=provider,
-        model_id=model_id,
-        model_name=model_name,
-        dim=index.dim,
-        metric=index.metric.name,
-        index_type=index_type,
-        vector_count=index.size,
-        built_at=built_at,
-        checksum=checksum,
-        vdb_id=vdb_id,
-    )
-
-    sidecar_path = sidecar_path_for_index(index_path)
-    directory = index_path.parent
-    directory.mkdir(parents=True, exist_ok=True)
+    active_lock = lock
+    release_lock = False
+    if active_lock is None:
+        active_lock = _acquire_index_lock(
+            index_path=index_path,
+            timeout=lock_timeout,
+            poll_interval=lock_poll_interval,
+        )
+        release_lock = True
 
     try:
-        _atomic_write_bytes(index_path, index_bytes)
-        _atomic_write_text(sidecar_path, sidecar.to_json())
-    except OSError as exc:
-        # Avoid mismatched artifacts when sidecar writing fails after the index
-        # is persisted.
-        if index_path.exists():
-            try:
-                index_path.unlink()
-            except OSError:
-                pass
-        raise FaissIndexPersistenceError(
-            f"Failed to persist FAISS index artifacts under {directory}: {exc}"
-        ) from exc
+        index_bytes = index.to_bytes()
+        checksum = hashlib.sha256(index_bytes).hexdigest()
+        sidecar = FaissIndexSidecar(
+            version=version,
+            provider=provider,
+            model_id=model_id,
+            model_name=model_name,
+            dim=index.dim,
+            metric=index.metric.name,
+            index_type=index_type,
+            vector_count=index.size,
+            built_at=built_at,
+            checksum=checksum,
+            vdb_id=vdb_id,
+        )
+
+        sidecar_path = sidecar_path_for_index(index_path)
+        directory = index_path.parent
+        directory.mkdir(parents=True, exist_ok=True)
+
+        try:
+            _atomic_write_bytes(index_path, index_bytes)
+            _atomic_write_text(sidecar_path, sidecar.to_json())
+        except OSError as exc:
+            # Avoid mismatched artifacts when sidecar writing fails after the
+            # index is persisted.
+            if index_path.exists():
+                try:
+                    index_path.unlink()
+                except OSError:
+                    pass
+            message = (
+                "Failed to persist FAISS index artifacts under "
+                f"{directory}: {exc}"
+            )
+            raise FaissIndexPersistenceError(message) from exc
+    finally:
+        if release_lock and active_lock is not None:
+            _release_index_lock(lock=active_lock, index_path=index_path)
 
     return sidecar
 
@@ -348,6 +429,50 @@ def _atomic_write_text(path: Path, data: str) -> None:
             except OSError:
                 pass
         raise
+
+
+def _acquire_index_lock(
+    *,
+    index_path: Path,
+    timeout: float,
+    poll_interval: float,
+) -> FileLock:
+    lock_path = index_lock_path(index_path)
+    lock = FileLock(
+        path=lock_path,
+        timeout=timeout,
+        poll_interval=poll_interval,
+    )
+    try:
+        lock.acquire()
+    except ManifestLockTimeoutError as exc:
+        raise FaissIndexLockTimeoutError(
+            index_path=index_path,
+            lock_path=lock_path,
+            message=f"Timed out acquiring index lock at {lock_path}",
+            cause=exc,
+        ) from exc
+    except ManifestLockError as exc:
+        raise FaissIndexLockError(
+            index_path=index_path,
+            lock_path=lock_path,
+            message=f"Failed acquiring index lock at {lock_path}: {exc}",
+            cause=exc,
+        ) from exc
+    return lock
+
+
+def _release_index_lock(*, lock: FileLock, index_path: Path) -> None:
+    try:
+        lock.release()
+    except ManifestLockError as exc:
+        lock_path = lock.path
+        raise FaissIndexLockError(
+            index_path=index_path,
+            lock_path=lock_path,
+            message=f"Failed releasing index lock at {lock_path}: {exc}",
+            cause=exc,
+        ) from exc
 
 
 def _format_timestamp(value: datetime) -> str:
