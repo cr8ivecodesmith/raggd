@@ -73,7 +73,7 @@
 - Stepwise checklist
   - [x] CLI: scaffold `raggd vdb` with `info/create/sync/reset` commands and shared context.
   - [x] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
-  - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
+  - [x] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
     - [x] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
     - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
