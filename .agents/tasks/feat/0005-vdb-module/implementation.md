@@ -75,7 +75,7 @@
   - [x] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
   - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
     - [x] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
-    - [ ] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
+    - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [ ] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [ ] Outline provider-focused unit/contract tests leveraging stub provider seams.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
@@ -249,6 +249,16 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-10 10:30 UTC
+**Summary**
+OpenAI provider documentation landed
+**Changes**
+— Added contributor runbook covering batching, retries, dim resolution, token estimation, and error mapping in `docs/contribute/openai-embeddings-provider.md`.
+— Linked the runbook from `docs/contribute/index.md`.
+— Ran `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-doc-sandbox uv run pytest --no-cov tests/modules/vdb/test_providers.py` and `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-doc-sandbox uv run ruff check`.
+— Marked the provider documentation checklist item complete in this implementation plan.
+
 ### 2025-10-11 08:15 UTC
 **Summary**
 Provider protocol seam locked in

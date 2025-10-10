@@ -3,3 +3,4 @@
 Use these guides when operating the CLI in production or diagnosing failures.
 
 - [Parser module runbook](parser-runbook.md)
+- [OpenAI embeddings provider](openai-embeddings-provider.md)
