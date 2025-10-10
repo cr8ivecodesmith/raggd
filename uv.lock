@@ -2094,6 +2094,7 @@ parser = [
 ]
 rag = [
     { name = "faiss-cpu" },
+    { name = "numpy" },
     { name = "openai" },
     { name = "rapidfuzz" },
     { name = "tiktoken" },
@@ -2148,6 +2149,7 @@ modules = [
     { name = "libcst" },
     { name = "markdown-it-py" },
     { name = "mcp" },
+    { name = "numpy" },
     { name = "onnxruntime" },
     { name = "openai" },
     { name = "rapidfuzz" },
@@ -2167,6 +2169,7 @@ parser = [
 ]
 rag = [
     { name = "faiss-cpu" },
+    { name = "numpy" },
     { name = "openai" },
     { name = "rapidfuzz" },
     { name = "tiktoken" },
@@ -2188,6 +2191,7 @@ requires-dist = [
     { name = "libcst", marker = "extra == 'parser'", specifier = ">=1.4" },
     { name = "markdown-it-py", marker = "extra == 'parser'", specifier = ">=3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1" },
+    { name = "numpy", marker = "extra == 'rag'" },
     { name = "onnxruntime", marker = "extra == 'local-embeddings'", specifier = ">=1.17" },
     { name = "openai", marker = "extra == 'rag'", specifier = ">=1" },
     { name = "platformdirs", specifier = ">=3.11" },
@@ -2254,6 +2258,7 @@ modules = [
     { name = "libcst", specifier = ">=1.4" },
     { name = "markdown-it-py", specifier = ">=3" },
     { name = "mcp", specifier = ">=1" },
+    { name = "numpy" },
     { name = "onnxruntime", specifier = ">=1.17" },
     { name = "openai", specifier = ">=1" },
     { name = "rapidfuzz", specifier = ">=3" },
@@ -2273,6 +2278,7 @@ parser = [
 ]
 rag = [
     { name = "faiss-cpu", specifier = ">=1.8" },
+    { name = "numpy" },
     { name = "openai", specifier = ">=1" },
     { name = "rapidfuzz", specifier = ">=3" },
     { name = "tiktoken", specifier = ">=0.7" },

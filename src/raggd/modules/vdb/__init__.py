@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from .faiss_index import (
+    FaissIndex,
+    FaissIndexError,
+    FaissIndexMetric,
+    FaissIndexRemoveError,
+)
 from .models import (
     EmbeddingModel,
     Vdb,
@@ -25,6 +31,10 @@ from .providers import (
 )
 
 __all__ = [
+    "FaissIndex",
+    "FaissIndexError",
+    "FaissIndexMetric",
+    "FaissIndexRemoveError",
     "EmbeddingModel",
     "Vdb",
     "VdbHealthEntry",

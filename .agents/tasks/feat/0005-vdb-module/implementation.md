@@ -79,7 +79,7 @@
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [x] Outline provider-focused unit/contract tests leveraging stub provider seams.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
-    - [ ] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
+  - [x] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
     - [ ] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
     - [ ] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
     - [ ] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
@@ -253,6 +253,14 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-12 09:45 UTC
+**Summary**
+FAISS index adapter implemented with coverage scaffolding
+**Changes**
+— Added `src/raggd/modules/vdb/faiss_index.py` encapsulating `IndexIDMap` setup plus add/remove/search/reconstruct helpers and error types.
+— Exported adapter symbols via `src/raggd/modules/vdb/__init__.py` and created `tests/modules/vdb/test_faiss_index.py` with skip guards when `faiss`/`numpy` extras are absent.
+— Ran `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-faiss uv run pytest --no-cov tests/modules/vdb/test_faiss_index.py` (skipped when extras unavailable) and `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check` for lint coverage.
 
 ### 2025-10-11 18:50 UTC
 **Summary**
