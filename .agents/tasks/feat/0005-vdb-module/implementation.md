@@ -77,7 +77,7 @@
     - [x] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
     - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
-    - [ ] Outline provider-focused unit/contract tests leveraging stub provider seams.
+    - [x] Outline provider-focused unit/contract tests leveraging stub provider seams.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
   - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
   - [ ] Health: wire `vdb` checks into `checkhealth`.
@@ -249,6 +249,14 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-11 18:50 UTC
+**Summary**
+Provider contract tests scaffolded via stub provider
+**Changes**
+— Added `_RecordingStubProvider` contract tests in `tests/modules/vdb/test_provider_contracts.py` covering batching limits, token ceilings, and dimensional output checks.
+— Ran `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-provider-contract uv run pytest --no-cov tests/modules/vdb/test_provider_contracts.py` and `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`.
+— Checked off the provider test outline subitem in this implementation plan.
 
 ### 2025-10-11 16:20 UTC
 **Summary**
