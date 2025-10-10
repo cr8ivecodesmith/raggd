@@ -89,6 +89,10 @@
     - [ ] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
     - [ ] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
   - [ ] Health: wire `vdb` checks into `checkhealth`.
+    - [ ] Register the `vdb` health module with the central aggregator and ensure CLI commands load it.
+    - [ ] Validate FAISS artifacts: detect missing index files, mismatched metadata, and stale build timestamps.
+    - [ ] Compare DB vectors to chunk sources to surface count drift and orphaned references.
+    - [ ] Expose actionable statuses in `checkhealth` output with remediation hints.
   - [ ] Docs: update CLI help and add user guide.
 
 ## Test Plan
