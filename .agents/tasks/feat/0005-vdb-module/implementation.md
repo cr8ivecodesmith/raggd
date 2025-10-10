@@ -79,6 +79,10 @@
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [x] Outline provider-focused unit/contract tests leveraging stub provider seams.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
+    - [ ] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
+    - [ ] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
+    - [ ] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
+    - [ ] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
   - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
   - [ ] Health: wire `vdb` checks into `checkhealth`.
   - [ ] Docs: update CLI help and add user guide.
