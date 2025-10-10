@@ -116,12 +116,107 @@
   - `vectors(chunk_id, vdb_id, dim)` — records presence/shape for external vectors.
 - FAISS index
   - Uses `IndexIDMap` so vector payloads are stored externally keyed by `chunk_id`.
-  - Sidecar `<faiss_path>.meta.json` stores `vdb_id`, `dim`, `metric`, `built_at`, and optional provider/model identifiers.
+  - Sidecar `<faiss_path>.meta.json` — see Sidecar Metadata for required fields and behavior.
 
 ## Concurrency & Atomicity
 - Single-writer guard via file lock on the vectors directory; retries with backoff if lock is held.
-- `--recompute` writes to `index.faiss.tmp` and swaps on success; only then update `vectors`/sidecar.
+- `--recompute` ordering (no partial index exposure):
+  1. Build new index and sidecar in a temp dir.
+  2. Begin DB transaction: replace `vectors` for the VDB; commit.
+  3. Atomically swap temp index dir into place; write final sidecar alongside.
+  4. Release lock.
 - `--missing-only` honors existing `vectors` rows and the FAISS index size; cross-checks for drift and repairs as needed.
+
+## Interfaces & Contracts
+### CLI UX (frozen)
+- Commands: `info`, `create`, `sync`, `reset`.
+- Create: `raggd vdb create <source>@<batch> <name> --model <provider:model|id>`
+  - Example: `raggd vdb create docs@latest base --model openai:text-embedding-3-small`
+  - Notes: resolves `latest`; validates model/dimension; writes only `vdbs`.
+- Sync: `raggd vdb sync <source> [--vdb <name>] [--missing-only|--recompute] [--limit N] [--concurrency N|auto] [--dry-run]`
+  - `--missing-only`: embed only rows without vectors.
+  - `--recompute`: rebuild embeddings and index atomically (see above).
+  - `--concurrency`: integer or `auto` (see Concurrency & Config).
+  - `--dry-run`: plan only; no DB/filesystem writes.
+- Info: `raggd vdb info [<source>] [--vdb <name>] [--json]`
+  - Lists VDBs; with `--json` prints schema below.
+- Reset: `raggd vdb reset <source> [--vdb <name>] [--drop] [--force]`
+  - Clears external artifacts and `vectors`/`chunks`; `--drop` removes `vdbs`.
+
+### Info --json schema (stable)
+- Per VDB object: `id`, `source_id`, `selector` (`<source>:<vdb-name>`), `name`, `batch_id`,
+  `embedding_model` (`{ id, provider, name, dim }`), `metric`, `index_type`,
+  `counts` (`{ chunks, vectors, index }`), `faiss_path`, `sidecar_path`,
+  `built_at`, `last_sync_at`, `stale_relative_to_latest`, `health` (`[{ code, level, message }]`).
+
+Example:
+```
+{
+  "id": 42,
+  "source_id": 7,
+  "selector": "docs:base",
+  "name": "base",
+  "batch_id": 13,
+  "embedding_model": { "id": 3, "provider": "openai", "name": "text-embedding-3-small", "dim": 1536 },
+  "metric": "cosine",
+  "index_type": "IDMap,Flat",
+  "counts": { "chunks": 1200, "vectors": 1200, "index": 1200 },
+  "faiss_path": "/workspace/sources/docs/vectors/base/index.faiss",
+  "sidecar_path": "/workspace/sources/docs/vectors/base/index.faiss.meta.json",
+  "built_at": "2025-10-10T17:20:35Z",
+  "last_sync_at": "2025-10-10T17:20:35Z",
+  "stale_relative_to_latest": false,
+  "health": [ { "code": "ok", "level": "info", "message": "healthy" } ]
+}
+```
+
+## Sidecar Metadata (required)
+- Path: `<faiss_path>.meta.json`.
+- Purpose: file-adjacent metadata enabling health checks and safe migrations.
+- Fields:
+  - `version` (int), `provider` (str), `model_id` (int), `model_name` (str),
+    `dim` (int), `metric` (str), `index_type` (str), `vector_count` (int),
+    `built_at` (ISO-8601), `checksum` (hex SHA-256 of index bytes).
+
+Example:
+```
+{
+  "version": 1,
+  "provider": "openai",
+  "model_id": 3,
+  "model_name": "text-embedding-3-small",
+  "dim": 1536,
+  "metric": "cosine",
+  "index_type": "IDMap,Flat",
+  "vector_count": 1200,
+  "built_at": "2025-10-10T17:20:35Z",
+  "checksum": "1f1d4c...e9a"
+}
+```
+
+- Lifecycle:
+  - `create`: not written.
+  - `sync --missing-only`: update `vector_count`, `built_at`, `checksum` after writes.
+  - `sync --recompute`: sidecar written in temp dir; moved alongside on swap.
+  - Health reads sidecar to validate `dim`, counts, and detect drift via `checksum`.
+
+## Concurrency & Config
+- Auto concurrency:
+  - Provider exposes `{ max_batch_size, max_parallel_requests }`.
+  - `auto = min(cpu_count, max_parallel_requests, 8)` with floor 1.
+  - Backoff with jitter on 429/5xx; batch size respects provider caps and token limits.
+- Config keys (`raggd.defaults.toml` → override in `raggd.toml`):
+  - `modules.vdb.provider` (default: `"openai"`)
+  - `modules.vdb.model` (default: `"text-embedding-3-small"`)
+  - `modules.vdb.metric` (default: `"cosine"`)
+  - `modules.vdb.index_type` (default: `"IDMap,Flat"`)
+  - `modules.vdb.batch_size` (default: `auto`)
+  - `modules.vdb.concurrency` (default: `auto`)
+  - `modules.vdb.paths.base` (default: `<workspace>/sources/<source>/vectors/<vdb_name>/`)
+  - `modules.vdb.retry.initial_backoff_ms` (default: `500`)
+  - `modules.vdb.retry.max_backoff_ms` (default: `5000`)
+  - `modules.vdb.retry.max_retries` (default: `5`)
+- Env: `OPENAI_API_KEY` required when `provider=openai` (never logged).
 
 ## Error Handling
 - Raise typed exceptions for CLI-friendly messages: `VdbCreateError`, `VdbSyncError`, `VdbResetError`, `VdbInfoError`.
@@ -143,4 +238,3 @@ Drafted implementation plan aligning with guides and schema
 **Changes**
 - Added implementation doc covering architecture, CLI, provider abstraction, FAISS adapter, tests, and operability
 - Outlined deliverables, health integration, and open questions
-
