@@ -1,0 +1,52 @@
+{
+  "id": "stakeholder-spec-feedback-02",
+  "task": { "id": "0005", "slug": "vdb-module" },
+  "doc": { "type": "spec", "path": ".agents/tasks/feat/0005-vdb-module/spec.md" },
+  "stakeholder": "Stakeholder",
+  "owner": "Architect",
+  "status": "approved",
+  "sign_off": true,
+  "created_at": "2025-10-10T17:00:00Z",
+  "summary": "Spec aligns with prior stakeholder feedback; approving with sign-off. Requested clarifications (model registration/dim enforcement, atomic rebuild/concurrency safety, defaults vs overrides, fixed index path) are incorporated. Open items remain appropriately tracked for implementation.",
+  "verification": {
+    "agreed_addressed": [
+      "MVP commands and flags: info, create, sync, reset; --json, --missing-only, --recompute, --limit, --concurrency, --dry-run.",
+      "Strict binding of one VDB to <source>@<batch> and a single embedding model; no rebind (reset + create).",
+      "Deterministic storage layout and sidecar metadata at <faiss_path>.meta.json.",
+      "Stable selector <source>:<vdb-name> surfaced in info --json for future query module.",
+      "Provider abstraction (OpenAI-first) with batching, backoff/retries, truncation, and stable interface for local providers later.",
+      "Health/visibility via info --json and checkhealth, including index existence, dim mismatches, counts drift, staleness; telemetry includes token/cost estimates.",
+      "Data model wiring: embedding_models, vdbs, chunks(vdb_id…), vectors(vdb_id…); FAISS IDMap keyed by chunk_id; cosine normalization policy.",
+      "Security posture: env-first credentials, key masking, minimal persistence of provider data."
+    ],
+    "adjusted_addressed": [
+      "Create behavior clarifies embedding_models validation/auto-create and dimension enforcement, with fail-fast on conflicts.",
+      "Sync --recompute specifies atomic temp+swap and single-writer/file-locking for concurrency safety.",
+      "Defaults in raggd.defaults.toml, user overrides in raggd.toml; no CLI override for index path in MVP.",
+      "Reset semantics: delete external index; clear vectors/chunks; --drop removes vdbs row; --force suppresses prompts."
+    ],
+    "constraints_respected": [
+      "No query/retrieval or hybrid search in MVP.",
+      "No sync-on-parse; explicit operator-triggered sync.",
+      "No VDB rebind; no custom index paths in MVP.",
+      "FAISS (CPU) single-tenant local files only for MVP."
+    ],
+    "config_packaging": {
+      "vdb_extra": ["faiss-cpu", "openai", "tiktoken"],
+      "future_extras": ["query", "rag (umbrella)"]
+    }
+  },
+  "notes": [
+    "Behavior section covers latest alias resolution in create and dry-run semantics in sync.",
+    "Health integration includes staleness vs latest parser batch and orphan checks; mirrors status to source manifest.",
+    "Telemetry includes structured --json output with counts, ids, tokens, and cost estimates where available.",
+    "Definition of Done lists tests for stale detection, dim mismatch, resumable sync, reset, and atomic rebuild behavior."
+  ],
+  "open_items_ack": [
+    { "item": "Clarify explicit model registration vs. auto-create policy and error messaging for dim mismatches.", "owner": "Architect", "due": "2025-10-17" },
+    { "item": "Decide whether to persist a .health.json alongside sidecar metadata.", "owner": "Architect", "due": "2025-10-17" },
+    { "item": "Confirm default index type and concurrency=auto policy per provider caps.", "owner": "Architect", "due": "2025-10-17" }
+  ],
+  "next_checkin": "2025-10-17"
+}
+
