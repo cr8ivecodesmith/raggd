@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Callable, Mapping, Protocol, Sequence, runtime_checkable
@@ -20,7 +21,10 @@ __all__ = [
     "ProviderRegistry",
     "ProviderRegistryError",
     "ProviderNotRegisteredError",
+    "resolve_sync_concurrency",
 ]
+
+DEFAULT_AUTO_CONCURRENCY = 8
 
 # Embedding vector aliases keep typing concise across provider implementations.
 EmbeddingVector = tuple[float, ...]
@@ -115,6 +119,104 @@ class EmbeddingsProvider(Protocol):
         options: EmbedRequestOptions,
     ) -> EmbeddingMatrix:
         """Embed ``texts`` using ``model`` honoring ``options`` constraints."""
+
+
+def _parse_limit(
+    value: int | str | None,
+    *,
+    fallback: int,
+    field_name: str,
+) -> tuple[int, str]:
+    """Normalize concurrency limit inputs returning a value and mode."""
+
+    if value is None:
+        return fallback, "default"
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            message = f"{field_name} cannot be blank"
+            raise ValueError(message)
+        lowered = stripped.lower()
+        if lowered == "auto":
+            return fallback, "auto"
+        try:
+            parsed = int(stripped)
+        except ValueError as exc:
+            message = (
+                f"{field_name} must be a positive integer or 'auto' "
+                f"(got {value!r})."
+            )
+            raise ValueError(message) from exc
+        if parsed < 1:
+            raise ValueError(
+                f"{field_name} must be >= 1 when provided as an integer."
+            )
+        return parsed, "fixed"
+    if value < 1:
+        raise ValueError(
+            f"{field_name} must be >= 1 when provided as an integer."
+        )
+    return int(value), "fixed"
+
+
+def resolve_sync_concurrency(
+    *,
+    requested: int | str | None,
+    provider_caps: EmbeddingProviderCaps,
+    config_value: int | str | None,
+    logger: Logger,
+    default_limit: int = DEFAULT_AUTO_CONCURRENCY,
+) -> int:
+    """Resolve VDB sync concurrency honoring provider caps and settings."""
+
+    config_limit, config_mode = _parse_limit(
+        config_value,
+        fallback=default_limit,
+        field_name="config.modules.vdb.max_concurrency",
+    )
+
+    if requested is None:
+        base_limit = config_limit
+        base_source = "config"
+        base_mode = config_mode
+        requested_raw: int | str | None = config_value
+    else:
+        base_limit, base_mode = _parse_limit(
+            requested,
+            fallback=config_limit,
+            field_name="--concurrency",
+        )
+        base_source = "override"
+        requested_raw = requested
+
+    cpu_limit = max(1, os.cpu_count() or 1)
+    provider_limit = max(1, provider_caps.max_parallel_requests)
+    resolved = max(1, min(base_limit, provider_limit, cpu_limit))
+
+    limiters: list[str] = []
+    if resolved == cpu_limit:
+        limiters.append("cpu")
+    if resolved == provider_limit:
+        limiters.append("provider")
+    if resolved == base_limit:
+        limiters.append("config" if base_source == "config" else "override")
+
+    logger.info(
+        "vdb-concurrency-resolved",
+        resolved=resolved,
+        requested=requested_raw,
+        config_value=config_value,
+        mode=f"{base_source}-{base_mode}",
+        cpu_limit=cpu_limit,
+        provider_limit=provider_limit,
+        config_limit=config_limit,
+        base_limit=base_limit,
+        limiters=tuple(sorted(set(limiters))),
+        clamped=resolved < base_limit,
+        default_limit=default_limit,
+    )
+
+    return resolved
 
 
 @dataclass(frozen=True, slots=True)

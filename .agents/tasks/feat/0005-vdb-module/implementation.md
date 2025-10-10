@@ -76,7 +76,7 @@
   - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
     - [x] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
     - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
-    - [ ] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
+    - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [ ] Outline provider-focused unit/contract tests leveraging stub provider seams.
   - [ ] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
   - [ ] Service: implement `create` (validate, derive path, insert), `sync` (materialize chunks, embed, persist), `info` (stats + health), `reset` (purge artifacts and rows).
@@ -249,6 +249,15 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-11 16:20 UTC
+**Summary**
+Auto concurrency heuristic and logging implemented
+**Changes**
+— Introduced VDB module settings defaults (including concurrency controls) in `src/raggd/core/config.py` and `src/raggd/resources/raggd.defaults.toml` with supporting config tests.
+— Added `resolve_sync_concurrency` helper with structured logging in `src/raggd/modules/vdb/providers/__init__.py` and exported via `src/raggd/modules/vdb/__init__.py`.
+— Extended `tests/core/test_config.py` and `tests/modules/vdb/test_providers.py` to cover VDB settings validation and concurrency resolution behavior.
+— Ran `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-concurrency uv run pytest --no-cov tests/core/test_config.py tests/modules/vdb/test_providers.py` and `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`.
 
 ### 2025-10-10 10:30 UTC
 **Summary**

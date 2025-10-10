@@ -21,6 +21,7 @@ from .providers import (
     ProviderNotRegisteredError,
     ProviderRegistry,
     ProviderRegistryError,
+    resolve_sync_concurrency,
 )
 
 __all__ = [
@@ -40,4 +41,5 @@ __all__ = [
     "ProviderNotRegisteredError",
     "ProviderRegistry",
     "ProviderRegistryError",
+    "resolve_sync_concurrency",
 ]

@@ -4,6 +4,7 @@ from typing import Mapping, Sequence
 
 import pytest
 from structlog import get_logger
+from structlog.testing import capture_logs
 
 from raggd.modules.vdb import (
     EmbedRequestOptions,
@@ -14,6 +15,7 @@ from raggd.modules.vdb import (
     ProviderNotRegisteredError,
     ProviderRegistry,
     ProviderRegistryError,
+    resolve_sync_concurrency,
 )
 
 
@@ -131,3 +133,85 @@ def test_provider_registry_snapshot_is_immutable_and_detached() -> None:
     registry.unregister("stub")
     assert "stub" not in registry.snapshot()
     assert "stub" in snapshot
+
+
+def test_resolve_sync_concurrency_auto(monkeypatch: pytest.MonkeyPatch) -> None:
+    caps = EmbeddingProviderCaps(
+        max_batch_size=32,
+        max_parallel_requests=3,
+    )
+    logger = get_logger("test", component="vdb-concurrency")
+    monkeypatch.setattr(
+        "raggd.modules.vdb.providers.os.cpu_count",
+        lambda: 6,
+    )
+
+    with capture_logs() as captured:
+        resolved = resolve_sync_concurrency(
+            requested="auto",
+            provider_caps=caps,
+            config_value="auto",
+            logger=logger,
+        )
+
+    assert resolved == 3
+    events = [
+        event
+        for event in captured
+        if event["event"] == "vdb-concurrency-resolved"
+    ]
+    assert events
+    event = events[0]
+    assert event["mode"] == "override-auto"
+    assert event["limiters"] == ("provider",)
+    assert event["clamped"] is True
+
+
+def test_resolve_sync_concurrency_override_fixed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    caps = EmbeddingProviderCaps(
+        max_batch_size=16,
+        max_parallel_requests=10,
+    )
+    logger = get_logger("test", component="vdb-concurrency")
+    monkeypatch.setattr(
+        "raggd.modules.vdb.providers.os.cpu_count",
+        lambda: 4,
+    )
+
+    with capture_logs() as captured:
+        resolved = resolve_sync_concurrency(
+            requested="8",
+            provider_caps=caps,
+            config_value=6,
+            logger=logger,
+        )
+
+    assert resolved == 4
+    events = [
+        event
+        for event in captured
+        if event["event"] == "vdb-concurrency-resolved"
+    ]
+    assert events
+    event = events[0]
+    assert event["mode"] == "override-fixed"
+    assert "cpu" in event["limiters"]
+    assert event["clamped"] is True
+
+
+def test_resolve_sync_concurrency_rejects_invalid_override() -> None:
+    caps = EmbeddingProviderCaps(
+        max_batch_size=16,
+        max_parallel_requests=2,
+    )
+    logger = get_logger("test", component="vdb-concurrency")
+
+    with pytest.raises(ValueError):
+        resolve_sync_concurrency(
+            requested="fast",
+            provider_caps=caps,
+            config_value="auto",
+            logger=logger,
+        )

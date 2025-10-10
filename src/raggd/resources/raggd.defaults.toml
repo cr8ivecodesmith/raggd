@@ -85,6 +85,16 @@ enabled = true
 [modules.parser.handlers.css]
 enabled = true
 
+[modules.vdb]
+enabled = true
+extras = ["vdb"]
+provider = "openai"
+model = "text-embedding-3-small"
+metric = "cosine"
+index_type = "IDMap,Flat"
+batch_size = "auto"
+max_concurrency = "auto"
+
 [modules.rag]
 enabled = false
 extras = ["rag"]

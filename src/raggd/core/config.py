@@ -222,9 +222,12 @@ class ModuleToggle(BaseModel):
 
 
 PARSER_MODULE_KEY = "parser"
+VDB_MODULE_KEY = "vdb"
 
 ParserTokenLimit = int | Literal["auto"] | None
 ParserConcurrencyValue = int | Literal["auto"]
+VdbBatchSizeValue = int | Literal["auto"]
+VdbConcurrencyValue = int | Literal["auto"]
 
 
 class ParserGitignoreBehavior(StrEnum):
@@ -434,6 +437,95 @@ class ParserModuleSettings(ModuleToggle):
         return self
 
 
+class VdbModuleSettings(ModuleToggle):
+    """Toggle carrying VDB module configuration values."""
+
+    extras: tuple[str, ...] = Field(
+        default=("vdb",),
+        description="Optional dependency extras required for the VDB module.",
+    )
+    provider: str = Field(
+        default="openai",
+        description="Default embedding provider key for sync operations.",
+    )
+    model: str = Field(
+        default="text-embedding-3-small",
+        description="Default embedding model identifier for the provider.",
+    )
+    metric: str = Field(
+        default="cosine",
+        description="Similarity metric applied when composing FAISS indexes.",
+    )
+    index_type: str = Field(
+        default="IDMap,Flat",
+        description="FAISS index type descriptor consumed by the adapter.",
+    )
+    batch_size: VdbBatchSizeValue = Field(
+        default="auto",
+        description="Embedding batch size or 'auto' to defer to provider caps.",
+    )
+    max_concurrency: VdbConcurrencyValue = Field(
+        default="auto",
+        description=(
+            "Worker pool size for VDB sync operations or 'auto' for heuristics."
+        ),
+    )
+
+    model_config = {
+        "frozen": True,
+        "str_strip_whitespace": True,
+    }
+
+    @field_validator("provider", "model", "metric", "index_type")
+    @classmethod
+    def _normalize_non_empty(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("VDB configuration strings cannot be blank.")
+        return normalized
+
+    @field_validator("batch_size")
+    @classmethod
+    def _validate_batch_size(
+        cls,
+        value: VdbBatchSizeValue,
+    ) -> VdbBatchSizeValue:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized != "auto":
+                raise ValueError(
+                    "VDB batch_size must be a positive integer or 'auto'.",
+                )
+            return "auto"
+        if value < 1:
+            raise ValueError("VDB batch_size must be >= 1 when provided.")
+        return value
+
+    @field_validator("max_concurrency")
+    @classmethod
+    def _validate_max_concurrency(
+        cls,
+        value: VdbConcurrencyValue,
+    ) -> VdbConcurrencyValue:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized != "auto":
+                raise ValueError(
+                    (
+                        "VDB max_concurrency must be a positive integer "
+                        "or 'auto'."
+                    ),
+                )
+            return "auto"
+        if value < 1:
+            raise ValueError(
+                (
+                    "VDB max_concurrency must be >= 1 when provided as an "
+                    "integer."
+                ),
+            )
+        return value
+
 class AppConfig(BaseModel):
     """Root configuration for the :mod:`raggd` application."""
 
@@ -490,6 +582,17 @@ class AppConfig(BaseModel):
         if toggle is not None:
             return ParserModuleSettings(**toggle.model_dump())
         return ParserModuleSettings()
+
+    @property
+    def vdb(self) -> VdbModuleSettings:
+        """Return VDB module settings, falling back to defaults."""
+
+        toggle = self.modules.get(VDB_MODULE_KEY)
+        if isinstance(toggle, VdbModuleSettings):
+            return toggle
+        if toggle is not None:
+            return VdbModuleSettings(**toggle.model_dump())
+        return VdbModuleSettings()
 
     def iter_workspace_sources(
         self,
@@ -575,6 +678,21 @@ def _coerce_parser_module(value: Any) -> ParserModuleSettings:
     raise TypeError(f"Unsupported parser module value: {value!r}")
 
 
+def _coerce_vdb_module(value: Any) -> VdbModuleSettings:
+    """Convert inputs to :class:`VdbModuleSettings`."""
+
+    if isinstance(value, VdbModuleSettings):
+        return value
+    if isinstance(value, ModuleToggle):
+        payload = value.model_dump()
+        return VdbModuleSettings(**payload)
+    if isinstance(value, MappingABC):
+        return VdbModuleSettings(**value)
+    if isinstance(value, bool):
+        return VdbModuleSettings(enabled=bool(value))
+    raise TypeError(f"Unsupported vdb module value: {value!r}")
+
+
 def _normalize_modules(
     raw: Mapping[str, Any] | None,
 ) -> dict[str, ModuleToggle]:
@@ -587,6 +705,8 @@ def _normalize_modules(
     for name, value in raw.items():
         if name == PARSER_MODULE_KEY:
             modules[name] = _coerce_parser_module(value)
+        elif name == VDB_MODULE_KEY:
+            modules[name] = _coerce_vdb_module(value)
         else:
             modules[name] = _coerce_toggle(value)
     return modules
@@ -605,6 +725,8 @@ def _apply_module_overrides(
     for name, override in overrides.items():
         if name == PARSER_MODULE_KEY:
             override_toggle = _coerce_parser_module(override)
+        elif name == VDB_MODULE_KEY:
+            override_toggle = _coerce_vdb_module(override)
         else:
             override_toggle = _coerce_toggle(override)
         current = updated.get(name)
@@ -621,6 +743,8 @@ def _apply_module_overrides(
         target_cls: type[ModuleToggle]
         if name == PARSER_MODULE_KEY:
             target_cls = ParserModuleSettings
+        elif name == VDB_MODULE_KEY:
+            target_cls = VdbModuleSettings
         else:
             target_cls = ModuleToggle
         updated[name] = target_cls(**data)
@@ -655,6 +779,19 @@ def _render_module_entry(toggle: ModuleToggle) -> tomlkit.table:
         if toggle.handlers:
             handlers_table = _build_parser_handlers_table(toggle)
             entry.add("handlers", handlers_table)
+        return entry
+
+    if isinstance(toggle, VdbModuleSettings):
+        entry = tomlkit.table()
+        entry["enabled"] = toggle.enabled
+        if toggle.extras:
+            entry["extras"] = list(toggle.extras)
+        entry["provider"] = toggle.provider
+        entry["model"] = toggle.model
+        entry["metric"] = toggle.metric
+        entry["index_type"] = toggle.index_type
+        entry["batch_size"] = toggle.batch_size
+        entry["max_concurrency"] = toggle.max_concurrency
         return entry
 
     entry = tomlkit.table()
@@ -827,6 +964,8 @@ __all__ = [
     "ParserHandlerSettings",
     "ParserModuleSettings",
     "PARSER_MODULE_KEY",
+    "VdbModuleSettings",
+    "VDB_MODULE_KEY",
     "DEFAULTS_RESOURCE_NAME",
     "iter_module_configs",
     "iter_workspace_sources",

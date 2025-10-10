@@ -16,9 +16,12 @@ from raggd.core.config import (
     ParserGitignoreBehavior,
     ParserHandlerSettings,
     PARSER_MODULE_KEY,
+    VdbModuleSettings,
+    VDB_MODULE_KEY,
     WorkspaceSettings,
     _apply_module_overrides,
     _coerce_parser_module,
+    _coerce_vdb_module,
     _coerce_toggle,
     _normalize_token_cap,
     _normalize_modules,
@@ -167,6 +170,16 @@ def test_load_packaged_defaults_resource() -> None:
     assert handlers["text"]["enabled"] is True
     assert "max_tokens" not in handlers["text"]
 
+    vdb_defaults = modules["vdb"]
+    assert vdb_defaults["enabled"] is True
+    assert vdb_defaults["extras"] == ["vdb"]
+    assert vdb_defaults["provider"] == "openai"
+    assert vdb_defaults["model"] == "text-embedding-3-small"
+    assert vdb_defaults["metric"] == "cosine"
+    assert vdb_defaults["index_type"] == "IDMap,Flat"
+    assert vdb_defaults["batch_size"] == "auto"
+    assert vdb_defaults["max_concurrency"] == "auto"
+
 
 def test_internal_module_helpers_cover_branches() -> None:
     toggle = _coerce_toggle(True)
@@ -201,6 +214,22 @@ def test_internal_module_helpers_cover_branches() -> None:
     assert isinstance(parser_toggle, ParserModuleSettings)
     assert parser_toggle.enabled is False
     assert parser_toggle.general_max_tokens == "auto"
+
+    vdb_toggle = _coerce_vdb_module(True)
+    assert isinstance(vdb_toggle, VdbModuleSettings)
+    assert vdb_toggle.enabled is True
+
+    vdb_base = _normalize_modules({VDB_MODULE_KEY: {"enabled": True}})
+    assert isinstance(vdb_base[VDB_MODULE_KEY], VdbModuleSettings)
+
+    vdb_overrides = _apply_module_overrides(
+        vdb_base,
+        {VDB_MODULE_KEY: {"enabled": False, "max_concurrency": 4}},
+    )
+    vdb_settings = vdb_overrides[VDB_MODULE_KEY]
+    assert isinstance(vdb_settings, VdbModuleSettings)
+    assert vdb_settings.enabled is False
+    assert vdb_settings.max_concurrency == 4
 
 
 def test_parser_module_settings_validates_thresholds() -> None:
@@ -330,6 +359,14 @@ def test_render_user_config_serializes_parser_settings() -> None:
     assert parser_section["gitignore_behavior"] == "combined"
     assert "max_tokens" not in parser_section["handlers"]["markdown"]
 
+    vdb_section = parsed["modules"]["vdb"]
+    assert vdb_section["provider"] == "openai"
+    assert vdb_section["model"] == "text-embedding-3-small"
+    assert vdb_section["metric"] == "cosine"
+    assert vdb_section["index_type"] == "IDMap,Flat"
+    assert vdb_section["batch_size"] == "auto"
+    assert vdb_section["max_concurrency"] == "auto"
+
 
 def test_parser_settings_validation_errors() -> None:
     with pytest.raises(ValueError):
@@ -349,6 +386,23 @@ def test_parser_settings_validation_errors() -> None:
 
     with pytest.raises(ValueError):
         ParserModuleSettings._validate_max_concurrency(0)
+
+
+def test_vdb_settings_validation_errors() -> None:
+    with pytest.raises(ValueError):
+        VdbModuleSettings(batch_size=0)
+
+    with pytest.raises(ValueError):
+        VdbModuleSettings(batch_size="invalid")
+
+    with pytest.raises(ValueError):
+        VdbModuleSettings(max_concurrency=0)
+
+    with pytest.raises(ValueError):
+        VdbModuleSettings(max_concurrency="fast")
+
+    with pytest.raises(ValueError):
+        VdbModuleSettings(provider=" ")
 
 
 def test_parser_coercion_helpers() -> None:
@@ -387,6 +441,24 @@ def test_app_config_parser_property_converts_toggle() -> None:
     config.modules[PARSER_MODULE_KEY] = override
     same_settings = config.parser
     assert same_settings is override
+
+
+def test_app_config_vdb_property_converts_toggle() -> None:
+    config = load_config(defaults={})
+
+    default_settings = config.vdb
+    assert isinstance(default_settings, VdbModuleSettings)
+    assert default_settings.enabled is True
+
+    config.modules[VDB_MODULE_KEY] = ModuleToggle(enabled=False)
+
+    settings = config.vdb
+    assert isinstance(settings, VdbModuleSettings)
+    assert settings.enabled is False
+
+    override = VdbModuleSettings(enabled=True, max_concurrency=5)
+    config.modules[VDB_MODULE_KEY] = override
+    assert config.vdb is override
 
 
 def test_parser_normalize_token_cap_constraints() -> None:
