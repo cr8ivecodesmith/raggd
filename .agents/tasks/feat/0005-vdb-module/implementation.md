@@ -73,7 +73,7 @@
 - Stepwise checklist
   - [x] CLI: scaffold `raggd vdb` with `info/create/sync/reset` commands and shared context.
   - [x] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
-  - [x] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
+  - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
     - [x] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
     - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
@@ -92,7 +92,7 @@
     - [x] Register the `vdb` health module with the central aggregator and ensure CLI commands load it.
     - [x] Validate FAISS artifacts: detect missing index files, mismatched metadata, and stale build timestamps.
     - [x] Compare DB vectors to chunk sources to surface count drift and orphaned references.
-    - [ ] Expose actionable statuses in `checkhealth` output with remediation hints.
+    - [x] Expose actionable statuses in `checkhealth` output with remediation hints.
   - [ ] Docs: update CLI help and add user guide.
     - [ ] Refresh `raggd vdb` CLI help text with new flags, preconditions, and result fields.
     - [ ] Extend the user guide with create/sync/info/reset walkthroughs plus example outputs.
@@ -264,6 +264,16 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-11 15:44 UTC
+**Summary**
+Actionable VDB health statuses surfaced in checkhealth output
+**Changes**
+— Normalized VDB health entry levels and included status/code prefixes when building `checkhealth` summaries while preserving remediation actions.
+— Added coverage ensuring the health hook reports missing-index remediation guidance in `tests/modules/vdb/test_service.py`.
+**Tests**
+— `UV_CACHE_DIR=$PWD/.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-health-action uv run pytest --no-cov tests/modules/vdb/test_service.py`
+— `UV_CACHE_DIR=$PWD/.tmp/uv-cache uv run ruff check`
 
 ### 2025-10-13 14:45 UTC
 **Summary**

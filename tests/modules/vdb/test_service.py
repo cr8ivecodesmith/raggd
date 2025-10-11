@@ -372,6 +372,42 @@ def test_vdb_health_hook_reports_healthy_vdb(tmp_path: Path) -> None:
     assert "vectors=" in report.summary
 
 
+def test_vdb_health_hook_exposes_actionable_status(tmp_path: Path) -> None:
+    service, db_service, paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    batch_id = "batch-001"
+
+    _seed_batch(db_path, batch_id, batch_timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    faiss_path, sidecar_path, _lock_path = _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=batch_timestamp,
+    )
+
+    # Remove the FAISS index to trigger the missing-index health entry.
+    faiss_path.unlink()
+    assert sidecar_path.exists()
+
+    handle = SimpleNamespace(paths=paths, config=service.config)
+    reports = vdb_health_hook(handle)
+
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.status is HealthStatus.DEGRADED
+    assert report.summary is not None
+    assert "[warning] missing-index" in report.summary
+    assert any("--recompute" in action for action in report.actions)
+
+
 def test_sync_materializes_chunks_and_vectors(tmp_path: Path) -> None:
     pytest.importorskip("faiss")
     pytest.importorskip("numpy")

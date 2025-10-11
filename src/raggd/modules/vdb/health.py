@@ -83,6 +83,28 @@ def _entry_status(level: str) -> HealthStatus:
     return _LEVEL_TO_STATUS.get(level.strip().lower(), HealthStatus.UNKNOWN)
 
 
+def _canonical_level_label(
+    level: str,
+    status: HealthStatus,
+) -> str:
+    """Normalize free-form level strings for summary rendering."""
+
+    normalized = level.strip().lower()
+    if not normalized:
+        return status.value
+    if normalized in {"warn", "warning"}:
+        return "warning"
+    if normalized in {"error", "err", "critical"}:
+        return "error"
+    if normalized in {"info", "ok"}:
+        return "info"
+    if normalized in {"unknown"}:
+        return "unknown"
+    if normalized in {"degraded"}:
+        return "warning"
+    return normalized
+
+
 def _summaries_from_entries(
     entries: Sequence[Mapping[str, Any]],
 ) -> tuple[HealthStatus, str | None, tuple[str, ...]]:
@@ -95,12 +117,25 @@ def _summaries_from_entries(
     for entry in entries:
         level = str(entry.get("level", "unknown"))
         entry_status = _entry_status(level)
+        level_label = _canonical_level_label(level, entry_status)
         if _SEVERITY_ORDER[entry_status] > _SEVERITY_ORDER[status]:
             status = entry_status
 
+        code = str(entry.get("code", "")).strip()
         message = str(entry.get("message", "")).strip()
-        if message:
-            messages.append(message)
+        descriptor = f"[{level_label}]"
+
+        if code and message:
+            rendered = f"{descriptor} {code}: {message}"
+        elif code:
+            rendered = f"{descriptor} {code}"
+        elif message:
+            rendered = f"{descriptor} {message}"
+        else:
+            rendered = descriptor
+
+        if code or message:
+            messages.append(rendered)
 
         raw_actions = entry.get("actions", ())
         if isinstance(raw_actions, Sequence) and not isinstance(
