@@ -117,6 +117,33 @@ class _SyncStats:
 
 
 @dataclass(slots=True)
+class _ResetTarget:
+    """Context needed to purge DB rows and artifacts for a VDB."""
+
+    id: int
+    name: str
+    faiss_path: Path
+    sidecar_path: Path
+    lock_path: Path
+    directory: Path
+    vectors_count: int
+    chunks_count: int
+    index_exists: bool
+    sidecar_exists: bool
+    lock_exists: bool
+
+    @property
+    def has_artifacts(self) -> bool:
+        return (
+            self.vectors_count > 0
+            or self.chunks_count > 0
+            or self.index_exists
+            or self.sidecar_exists
+            or self.lock_exists
+        )
+
+
+@dataclass(slots=True)
 class VdbService:
     """Orchestrate VDB lifecycle operations for CLI consumers."""
 
@@ -334,7 +361,284 @@ class VdbService:
         drop: bool,
         force: bool,
     ) -> dict[str, object]:
-        raise NotImplementedError  # pragma: no cover - not implemented yet
+        normalized_source = self._normalize_identifier(
+            source,
+            field="Source",
+            error=VdbResetError,
+        )
+        normalized_vdb: str | None = None
+        if vdb is not None:
+            normalized_vdb = self._normalize_identifier(
+                vdb,
+                field="VDB name",
+                error=VdbResetError,
+            )
+
+        if normalized_source not in self.config.workspace_sources:
+            raise VdbResetError(
+                f"Source {normalized_source!r} is not configured in this "
+                "workspace."
+            )
+
+        db_path = self.workspace.source_database_path(normalized_source)
+        if not db_path.exists():
+            raise VdbResetError(
+                f"Source {normalized_source!r} has no database; "
+                "run `raggd vdb create` first."
+            )
+
+        processed_at = self._resolve_timestamp()
+
+        try:
+            with self.db_service.lock(normalized_source, action="vdb-reset"):
+                with sqlite3.connect(db_path) as connection:
+                    connection.row_factory = sqlite3.Row
+                    connection.execute("PRAGMA foreign_keys = ON")
+
+                    targets = self._prepare_reset_targets(
+                        connection=connection,
+                        source=normalized_source,
+                        vdb_name=normalized_vdb,
+                    )
+                    self._require_reset_confirmation(
+                        targets=targets,
+                        drop=drop,
+                        force=force,
+                    )
+                    summary = self._execute_reset(
+                        connection=connection,
+                        targets=targets,
+                        source=normalized_source,
+                        normalized_vdb=normalized_vdb,
+                        drop=drop,
+                        force=force,
+                        processed_at=processed_at,
+                    )
+                    return summary
+        except (DbLockError, DbLockTimeoutError) as exc:
+            raise VdbResetError(
+                "Failed to acquire database lock for source "
+                f"{normalized_source!r}: {exc}"
+            ) from exc
+        except sqlite3.DatabaseError as exc:
+            message = (
+                "SQLite error while resetting source "
+                f"{normalized_source!r}: {exc}"
+            )
+            raise VdbResetError(message) from exc
+
+    # ------------------------------------------------------------------
+    # Internal helpers - reset orchestration
+    # ------------------------------------------------------------------
+    def _prepare_reset_targets(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        source: str,
+        vdb_name: str | None,
+    ) -> tuple[_ResetTarget, ...]:
+        if vdb_name is not None:
+            row = connection.execute(
+                (
+                    "SELECT id, name, faiss_path "
+                    "FROM vdbs WHERE name = ?"
+                ),
+                (vdb_name,),
+            ).fetchone()
+            if row is None:
+                raise VdbResetError(
+                    f"VDB {vdb_name!r} was not found for source {source!r}."
+                )
+            rows = (row,)
+        else:
+            rows = connection.execute(
+                (
+                    "SELECT id, name, faiss_path FROM vdbs "
+                    "ORDER BY name"
+                )
+            ).fetchall()
+            if not rows:
+                raise VdbResetError(
+                    f"Source {source!r} has no VDBs; "
+                    "run `raggd vdb create` first."
+                )
+
+        targets: list[_ResetTarget] = []
+        for row in rows:
+            vdb_id = int(row["id"])
+            name = str(row["name"])
+            try:
+                faiss_path = self._resolve_faiss_path(row["faiss_path"])
+            except VdbSyncError as exc:  # pragma: no cover - defensive
+                raise VdbResetError(str(exc)) from exc
+
+            sidecar_path = faiss_path.with_name(f"{faiss_path.name}.meta.json")
+            lock_path = faiss_path.with_name(f"{faiss_path.name}.lock")
+            directory = faiss_path.parent
+
+            vectors_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM vectors WHERE vdb_id = ?",
+                    (vdb_id,),
+                ).fetchone()[0]
+            )
+            chunks_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM chunks WHERE vdb_id = ?",
+                    (vdb_id,),
+                ).fetchone()[0]
+            )
+
+            targets.append(
+                _ResetTarget(
+                    id=vdb_id,
+                    name=name,
+                    faiss_path=faiss_path,
+                    sidecar_path=sidecar_path,
+                    lock_path=lock_path,
+                    directory=directory,
+                    vectors_count=vectors_count,
+                    chunks_count=chunks_count,
+                    index_exists=faiss_path.exists(),
+                    sidecar_exists=sidecar_path.exists(),
+                    lock_exists=lock_path.exists(),
+                )
+            )
+
+        return tuple(targets)
+
+    def _require_reset_confirmation(
+        self,
+        *,
+        targets: Sequence[_ResetTarget],
+        drop: bool,
+        force: bool,
+    ) -> None:
+        if force:
+            return
+
+        names = ", ".join(sorted(target.name for target in targets))
+
+        if drop:
+            raise VdbResetError(
+                (
+                    "Reset with --drop will remove VDB record(s) "
+                    f"{names}; rerun with --force to confirm."
+                )
+            )
+
+        if any(target.has_artifacts for target in targets):
+            raise VdbResetError(
+                (
+                    "Resetting VDB(s) {names} will remove existing vectors "
+                    "or index artifacts; rerun with --force to proceed."
+                ).format(names=names)
+            )
+
+    def _execute_reset(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        targets: Sequence[_ResetTarget],
+        source: str,
+        normalized_vdb: str | None,
+        drop: bool,
+        force: bool,
+        processed_at: str,
+    ) -> dict[str, object]:
+        vdb_names: list[str] = []
+        dropped_vdbs: list[str] = []
+        total_vectors = 0
+        total_chunks = 0
+        indexes_removed = 0
+        sidecars_removed = 0
+        locks_removed = 0
+        directories_removed = 0
+
+        with connection:
+            for target in targets:
+                cursor = connection.execute(
+                    "DELETE FROM vectors WHERE vdb_id = ?",
+                    (target.id,),
+                )
+                total_vectors += self._rowcount(cursor)
+
+                cursor = connection.execute(
+                    "DELETE FROM chunks WHERE vdb_id = ?",
+                    (target.id,),
+                )
+                total_chunks += self._rowcount(cursor)
+
+                if drop:
+                    cursor = connection.execute(
+                        "DELETE FROM vdbs WHERE id = ?",
+                        (target.id,),
+                    )
+                    if self._rowcount(cursor):
+                        dropped_vdbs.append(target.name)
+
+                if self._remove_artifact(target.faiss_path):
+                    indexes_removed += 1
+                if self._remove_artifact(target.sidecar_path):
+                    sidecars_removed += 1
+                if self._remove_artifact(target.lock_path):
+                    locks_removed += 1
+                if self._remove_directory_if_empty(target.directory):
+                    directories_removed += 1
+
+                vdb_names.append(target.name)
+
+        summary: dict[str, object] = {
+            "source": source,
+            "vdbs": tuple(vdb_names),
+            "vectors_deleted": total_vectors,
+            "chunks_deleted": total_chunks,
+            "indexes_removed": indexes_removed,
+            "sidecars_removed": sidecars_removed,
+            "locks_removed": locks_removed,
+            "directories_removed": directories_removed,
+            "drop": drop,
+            "force": force,
+            "processed_at": processed_at,
+        }
+        if normalized_vdb is not None:
+            summary["target_vdb"] = normalized_vdb
+        if dropped_vdbs:
+            summary["dropped_vdbs"] = tuple(dropped_vdbs)
+        return summary
+
+    @staticmethod
+    def _rowcount(cursor: sqlite3.Cursor) -> int:
+        count = cursor.rowcount
+        if count is None or count < 0:
+            return 0
+        return int(count)
+
+    def _remove_artifact(self, path: Path) -> bool:
+        try:
+            path.unlink()
+            return True
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise VdbResetError(
+                f"Failed to remove artifact at {path}: {exc}"
+            ) from exc
+
+    def _remove_directory_if_empty(self, directory: Path) -> bool:
+        if not directory.exists() or not directory.is_dir():
+            return False
+        try:
+            next(directory.iterdir())
+        except StopIteration:
+            try:
+                directory.rmdir()
+                return True
+            except OSError as exc:
+                raise VdbResetError(
+                    f"Failed to remove directory {directory}: {exc}"
+                ) from exc
+        return False
 
     # ------------------------------------------------------------------
     # Internal helpers - info orchestration

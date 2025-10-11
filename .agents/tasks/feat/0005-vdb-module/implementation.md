@@ -87,7 +87,7 @@
     - [x] `create`: validate config + uniqueness, derive vectors path, insert VDB row, and seed metadata.
     - [x] `sync`: materialize chunks, batch embed, persist vectors + metadata, and refresh progress stats.
     - [x] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
-    - [ ] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
+    - [x] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
   - [ ] Health: wire `vdb` checks into `checkhealth`.
     - [ ] Register the `vdb` health module with the central aggregator and ensure CLI commands load it.
     - [ ] Validate FAISS artifacts: detect missing index files, mismatched metadata, and stale build timestamps.
@@ -264,6 +264,17 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-11 22:45 UTC
+**Summary**
+Reset workflow implemented across service and CLI with coverage
+**Changes**
+— Filled in `VdbService.reset` including safety checks, artifact cleanup, and detailed summaries.
+— Added service unit tests plus CLI integration tests covering force/drop behavior and artifact purging.
+— Updated CLI helper scaffolding to seed test data and replaced the reset stub expectations.
+**Tests**
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-reset-service uv run pytest --no-cov tests/modules/vdb/test_service.py`
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-reset-cli uv run pytest --no-cov tests/cli/test_vdb.py`
 
 ### 2025-10-11 18:05 UTC
 **Summary**

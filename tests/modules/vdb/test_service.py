@@ -24,7 +24,12 @@ from raggd.modules.vdb.providers import (
     ProviderInitContext,
     ProviderRegistry,
 )
-from raggd.modules.vdb.service import VdbCreateError, VdbInfoError, VdbService
+from raggd.modules.vdb.service import (
+    VdbCreateError,
+    VdbInfoError,
+    VdbResetError,
+    VdbService,
+)
 
 
 class _StubProvider:
@@ -129,6 +134,114 @@ def _seed_batch(db_path: Path, batch_id: str, generated_at: datetime) -> None:
             ),
             (batch_id, None, generated_at.isoformat(), None),
         )
+
+
+def _seed_vdb_artifacts(
+    db_path: Path,
+    *,
+    batch_id: str,
+    vdb_name: str,
+    timestamp: datetime,
+) -> tuple[Path, Path, Path]:
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        vdb_row = connection.execute(
+            (
+                "SELECT id, faiss_path, embedding_model_id "
+                "FROM vdbs WHERE name = ?"
+            ),
+            (vdb_name,),
+        ).fetchone()
+        assert vdb_row is not None
+        vdb_id = int(vdb_row["id"])
+        faiss_path = Path(vdb_row["faiss_path"])
+        embedding_model_id = int(vdb_row["embedding_model_id"])
+
+        file_id = connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (batch_id, "src/example.py", "python", "sha", 0, 16),
+        ).lastrowid
+
+        symbol_id = connection.execute(
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+                "end_line, symbol_sha, symbol_norm_sha, args_json, "
+                "returns_json, imports_json, deps_out_json, docstring, "
+                "summary, tokens, first_seen_batch, last_seen_batch) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                file_id,
+                "function",
+                "example:example",
+                1,
+                2,
+                "sym",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                16,
+                batch_id,
+                batch_id,
+            ),
+        ).lastrowid
+
+        chunk_cursor = connection.execute(
+            (
+                "INSERT INTO chunks (symbol_id, vdb_id, header_md, body_text, "
+                "token_count) VALUES (?, ?, ?, ?, ?)"
+            ),
+            (
+                symbol_id,
+                vdb_id,
+                "# example\n- File: `src/example.py`",
+                "def example():\n    return 42\n",
+                16,
+            ),
+        )
+
+        chunk_id = int(chunk_cursor.lastrowid)
+
+        connection.execute(
+            "INSERT INTO vectors (chunk_id, vdb_id, dim) VALUES (?, ?, ?)",
+            (chunk_id, vdb_id, 1536),
+        )
+        connection.commit()
+
+    faiss_path.parent.mkdir(parents=True, exist_ok=True)
+    faiss_path.write_bytes(b"FAKE")
+
+    sidecar_path = Path(f"{faiss_path}.meta.json")
+    sidecar_payload = {
+        "version": 1,
+        "provider": "stub",
+        "model_id": embedding_model_id,
+        "model_name": "model-a",
+        "dim": 1536,
+        "metric": "cosine",
+        "index_type": "IDMap,Flat",
+        "vector_count": 1,
+        "built_at": timestamp.isoformat(),
+        "checksum": "0" * 64,
+        "vdb_id": vdb_id,
+    }
+    sidecar_path.write_text(
+        json.dumps(sidecar_payload, indent=2),
+        encoding="utf-8",
+    )
+
+    lock_path = Path(f"{faiss_path}.lock")
+    lock_path.write_text("locked", encoding="utf-8")
+
+    return faiss_path, sidecar_path, lock_path
 
 
 def test_create_inserts_vdb_and_embedding_model(tmp_path: Path) -> None:
@@ -564,3 +677,204 @@ def test_info_missing_vdb_raises_when_source_specified(tmp_path: Path) -> None:
 
     with pytest.raises(VdbInfoError):
         service.info(source="demo", vdb="unknown")
+
+
+def test_reset_requires_force_when_artifacts_exist(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    faiss_path, sidecar_path, lock_path = _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=timestamp,
+    )
+
+    with pytest.raises(VdbResetError) as exc:
+        service.reset(
+            source="demo",
+            vdb="primary",
+            drop=False,
+            force=False,
+        )
+
+    message = str(exc.value)
+    assert "--force" in message
+    assert faiss_path.exists()
+    assert sidecar_path.exists()
+    assert lock_path.exists()
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        chunks = connection.execute(
+            (
+                "SELECT COUNT(*) FROM chunks "
+                "WHERE vdb_id = (SELECT id FROM vdbs WHERE name = ?)"
+            ),
+            ("primary",),
+        ).fetchone()[0]
+        vectors = connection.execute(
+            (
+                "SELECT COUNT(*) FROM vectors "
+                "WHERE vdb_id = (SELECT id FROM vdbs WHERE name = ?)"
+            ),
+            ("primary",),
+        ).fetchone()[0]
+    assert chunks == 1
+    assert vectors == 1
+
+
+def test_reset_clears_artifacts_and_rows(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+    faiss_path, sidecar_path, lock_path = _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=timestamp,
+    )
+
+    summary = service.reset(
+        source="demo",
+        vdb="primary",
+        drop=False,
+        force=True,
+    )
+
+    assert summary["source"] == "demo"
+    assert summary["vdbs"] == ("primary",)
+    assert summary["vectors_deleted"] == 1
+    assert summary["chunks_deleted"] == 1
+    assert summary["indexes_removed"] == 1
+    assert summary["sidecars_removed"] == 1
+    assert summary["locks_removed"] == 1
+    assert summary["directories_removed"] == 1
+    assert summary["drop"] is False
+    assert summary["force"] is True
+    assert summary["target_vdb"] == "primary"
+    assert "processed_at" in summary
+    assert "dropped_vdbs" not in summary
+
+    assert not faiss_path.exists()
+    assert not sidecar_path.exists()
+    assert not lock_path.exists()
+    assert not faiss_path.parent.exists()
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        vdb_exists = connection.execute(
+            "SELECT COUNT(*) FROM vdbs WHERE name = ?",
+            ("primary",),
+        ).fetchone()[0]
+        chunks = connection.execute(
+            (
+                "SELECT COUNT(*) FROM chunks "
+                "WHERE vdb_id = (SELECT id FROM vdbs WHERE name = ?)"
+            ),
+            ("primary",),
+        ).fetchone()[0]
+        vectors = connection.execute(
+            (
+                "SELECT COUNT(*) FROM vectors "
+                "WHERE vdb_id = (SELECT id FROM vdbs WHERE name = ?)"
+            ),
+            ("primary",),
+        ).fetchone()[0]
+    assert vdb_exists == 1
+    assert chunks == 0
+    assert vectors == 0
+
+
+def test_reset_drop_removes_vdb(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+    faiss_path, sidecar_path, lock_path = _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=timestamp,
+    )
+
+    with pytest.raises(VdbResetError):
+        service.reset(
+            source="demo",
+            vdb="primary",
+            drop=True,
+            force=False,
+        )
+
+    summary = service.reset(
+        source="demo",
+        vdb="primary",
+        drop=True,
+        force=True,
+    )
+
+    assert summary["drop"] is True
+    assert summary["dropped_vdbs"] == ("primary",)
+    assert summary["vdbs"] == ("primary",)
+    assert summary["force"] is True
+    assert summary["vectors_deleted"] == 1
+    assert summary["chunks_deleted"] == 1
+    assert summary["indexes_removed"] == 1
+    assert summary["sidecars_removed"] == 1
+    assert summary["locks_removed"] == 1
+    assert summary["directories_removed"] == 1
+
+    assert not faiss_path.exists()
+    assert not sidecar_path.exists()
+    assert not lock_path.exists()
+    assert not faiss_path.parent.exists()
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        count = connection.execute(
+            "SELECT COUNT(*) FROM vdbs WHERE name = ?",
+            ("primary",),
+        ).fetchone()[0]
+    assert count == 0
+
+
+def test_reset_missing_vdb_errors(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    _seed_batch(
+        db_path,
+        "batch-001",
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(VdbResetError):
+        service.reset(
+            source="demo",
+            vdb="missing",
+            drop=False,
+            force=True,
+        )
