@@ -5,7 +5,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Callable, Mapping, Protocol, Sequence, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Mapping,
+    Protocol,
+    Sequence,
+    runtime_checkable,
+)
 
 from raggd.core.logging import Logger
 
@@ -22,6 +29,10 @@ __all__ = [
     "ProviderRegistryError",
     "ProviderNotRegisteredError",
     "resolve_sync_concurrency",
+    "OpenAIEmbeddingsProvider",
+    "openai_provider_factory",
+    "register_builtin_providers",
+    "create_default_provider_registry",
 ]
 
 DEFAULT_AUTO_CONCURRENCY = 8
@@ -306,3 +317,52 @@ class ProviderRegistry:
         """Return an immutable view of registered provider factories."""
 
         return MappingProxyType(dict(self._factories))
+
+
+if TYPE_CHECKING:  # pragma: no cover - type checker imports only
+    from .openai import OpenAIEmbeddingsProvider, openai_provider_factory
+
+
+def __getattr__(name: str) -> object:
+    if name in {"OpenAIEmbeddingsProvider", "openai_provider_factory"}:
+        from .openai import (
+            OpenAIEmbeddingsProvider,
+            openai_provider_factory,
+        )
+
+        exports = {
+            "OpenAIEmbeddingsProvider": OpenAIEmbeddingsProvider,
+            "openai_provider_factory": openai_provider_factory,
+        }
+        return exports[name]
+
+    message = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(message)
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *__all__})
+
+
+def _load_openai_factory() -> ProviderFactory:
+    from .openai import openai_provider_factory
+
+    return openai_provider_factory
+
+
+def register_builtin_providers(
+    registry: ProviderRegistry,
+) -> ProviderRegistry:
+    """Register built-in embedding providers on ``registry``."""
+
+    if "openai" not in registry.snapshot():
+        registry.register("openai", _load_openai_factory())
+    return registry
+
+
+def create_default_provider_registry() -> ProviderRegistry:
+    """Return a provider registry populated with built-in providers."""
+
+    registry = ProviderRegistry()
+    register_builtin_providers(registry)
+    return registry

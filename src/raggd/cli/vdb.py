@@ -17,7 +17,7 @@ from raggd.modules.manifest import (
     ManifestService,
     manifest_settings_from_config,
 )
-from raggd.modules.vdb.providers import ProviderRegistry
+from raggd.modules.vdb.providers import create_default_provider_registry
 from raggd.modules.vdb.service import VdbService
 from raggd.source.config import SourceConfigError, SourceConfigStore
 
@@ -89,7 +89,7 @@ def _build_vdb_service(
         logger=logger.bind(component="db-service"),
     )
 
-    providers = ProviderRegistry()
+    providers = create_default_provider_registry()
 
     service = VdbService(
         workspace=paths,

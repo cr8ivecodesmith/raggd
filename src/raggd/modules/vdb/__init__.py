@@ -20,6 +20,16 @@ from .faiss_index import (
     sidecar_path_for_index,
 )
 from .health import vdb_health_hook
+from .errors import (
+    VdbProviderConfigurationError,
+    VdbProviderDimMismatchError,
+    VdbProviderError,
+    VdbProviderInputTooLargeError,
+    VdbProviderRateLimitError,
+    VdbProviderRequestError,
+    VdbProviderRetryExceededError,
+    VdbProviderRetryableError,
+)
 from .models import (
     EmbeddingModel,
     Vdb,
@@ -40,6 +50,9 @@ from .providers import (
     ProviderRegistry,
     ProviderRegistryError,
     resolve_sync_concurrency,
+    register_builtin_providers,
+    create_default_provider_registry,
+    OpenAIEmbeddingsProvider,
 )
 from .service import (
     VdbCreateError,
@@ -67,6 +80,14 @@ __all__ = [
     "persist_index_artifacts",
     "sidecar_path_for_index",
     "vdb_health_hook",
+    "VdbProviderError",
+    "VdbProviderConfigurationError",
+    "VdbProviderRequestError",
+    "VdbProviderRetryableError",
+    "VdbProviderRateLimitError",
+    "VdbProviderRetryExceededError",
+    "VdbProviderInputTooLargeError",
+    "VdbProviderDimMismatchError",
     "EmbeddingModel",
     "Vdb",
     "VdbHealthEntry",
@@ -84,6 +105,9 @@ __all__ = [
     "ProviderRegistry",
     "ProviderRegistryError",
     "resolve_sync_concurrency",
+    "register_builtin_providers",
+    "create_default_provider_registry",
+    "OpenAIEmbeddingsProvider",
     "VdbService",
     "VdbServiceError",
     "VdbCreateError",

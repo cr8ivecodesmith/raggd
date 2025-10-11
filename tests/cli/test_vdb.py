@@ -39,8 +39,7 @@ def runner() -> CliRunner:
 
 
 def test_vdb_cli_info_reports_no_vdbs(
-        workspace: Path,
-        runner: CliRunner
+    workspace: Path, runner: CliRunner
 ) -> None:
     """`raggd vdb info` should indicate when no VDBs exist."""
 

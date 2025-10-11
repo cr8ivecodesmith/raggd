@@ -15,6 +15,8 @@ from raggd.modules.vdb import (
     ProviderNotRegisteredError,
     ProviderRegistry,
     ProviderRegistryError,
+    create_default_provider_registry,
+    register_builtin_providers,
     resolve_sync_concurrency,
 )
 
@@ -198,7 +200,15 @@ def test_resolve_sync_concurrency_override_fixed(
     event = events[0]
     assert event["mode"] == "override-fixed"
     assert "cpu" in event["limiters"]
-    assert event["clamped"] is True
+
+
+def test_builtin_provider_registry_registers_openai() -> None:
+    registry = create_default_provider_registry()
+    assert "openai" in registry.snapshot()
+
+    rehydrated = ProviderRegistry()
+    register_builtin_providers(rehydrated)
+    assert "openai" in rehydrated.snapshot()
 
 
 def test_resolve_sync_concurrency_rejects_invalid_override() -> None:

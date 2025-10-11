@@ -12,7 +12,7 @@ from raggd.modules.manifest import (
     ManifestService,
     manifest_settings_from_config,
 )
-from raggd.modules.vdb.providers import ProviderRegistry
+from raggd.modules.vdb.providers import create_default_provider_registry
 from raggd.modules.vdb.service import VdbInfoError, VdbService
 
 __all__ = ["vdb_health_hook"]
@@ -183,10 +183,9 @@ def _build_report(payload: Mapping[str, Any]) -> HealthReport:
         summary_parts.append("healthy")
 
     summary_text = " — ".join(summary_parts) if summary_parts else None
-    last_refresh = (
-        _parse_timestamp(payload.get("last_sync_at"))
-        or _parse_timestamp(payload.get("built_at"))
-    )
+    last_refresh = _parse_timestamp(
+        payload.get("last_sync_at")
+    ) or _parse_timestamp(payload.get("built_at"))
 
     return HealthReport(
         name=name,
@@ -221,7 +220,7 @@ def _build_service(handle: WorkspaceHandle) -> VdbService:
         workspace=handle.paths,
         config=handle.config,
         db_service=db_service,
-        providers=ProviderRegistry(),
+        providers=create_default_provider_registry(),
         logger=logger.bind(component="service"),
     )
 

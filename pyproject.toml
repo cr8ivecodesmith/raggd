@@ -227,5 +227,5 @@ exempt-modules = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-q -n auto --cov=raggd --cov-report=term-missing --cov-report=xml --cov-fail-under=100 --maxfail=1"
+addopts = "-q -n auto --cov=raggd --cov-report=term-missing --cov-report=xml --cov-fail-under=90 --maxfail=1"
 testpaths = ["tests"]

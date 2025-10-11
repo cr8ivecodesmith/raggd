@@ -73,7 +73,7 @@
 - Stepwise checklist
   - [x] CLI: scaffold `raggd vdb` with `info/create/sync/reset` commands and shared context.
   - [x] Models: add typed views for `EmbeddingModel`, `Vdb`, and info summaries.
-  - [ ] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
+  - [x] Provider: implement OpenAI provider and registry; add `--concurrency auto` heuristic.
     - [x] Lock provider protocol + registry design in `providers/__init__.py` using seam-first DI per engineering guide.
     - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
@@ -264,6 +264,16 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-16 09:45 UTC
+**Summary**
+OpenAI embeddings provider implemented with registry wiring and coverage
+**Changes**
+— Added typed provider error hierarchy plus the OpenAI embeddings provider with batching, token estimation, and retry/backoff handling.
+— Registered the provider in default registries for the CLI and health hook, and added unit tests exercising provider batching, retries, and registry helpers.
+**Tests**
+— `UV_CACHE_DIR=$PWD/.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-provider-tests OPENAI_API_KEY=test-key uv run pytest --no-cov tests/modules/vdb/test_provider_openai.py tests/modules/vdb/test_providers.py`
+— `UV_CACHE_DIR=$PWD/.tmp/uv-cache uv run ruff check src/raggd/modules/vdb/errors.py src/raggd/modules/vdb/providers/openai.py tests/modules/vdb/test_provider_openai.py tests/modules/vdb/test_providers.py`
 
 ### 2025-10-11 15:44 UTC
 **Summary**

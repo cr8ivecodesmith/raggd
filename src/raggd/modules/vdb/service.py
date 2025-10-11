@@ -19,6 +19,7 @@ from raggd.modules.db import (
     DbLockError,
     DbLockTimeoutError,
 )
+from raggd.modules.vdb.errors import VdbProviderError
 from raggd.modules.vdb.models import (
     EmbeddingModel,
     Vdb,
@@ -442,10 +443,7 @@ class VdbService:
     ) -> tuple[_ResetTarget, ...]:
         if vdb_name is not None:
             row = connection.execute(
-                (
-                    "SELECT id, name, faiss_path "
-                    "FROM vdbs WHERE name = ?"
-                ),
+                ("SELECT id, name, faiss_path FROM vdbs WHERE name = ?"),
                 (vdb_name,),
             ).fetchone()
             if row is None:
@@ -455,10 +453,7 @@ class VdbService:
             rows = (row,)
         else:
             rows = connection.execute(
-                (
-                    "SELECT id, name, faiss_path FROM vdbs "
-                    "ORDER BY name"
-                )
+                ("SELECT id, name, faiss_path FROM vdbs ORDER BY name")
             ).fetchall()
             if not rows:
                 raise VdbResetError(
@@ -1191,8 +1186,7 @@ class VdbService:
 
         sidecar_provider = sidecar_meta.get("provider")
         if sidecar_provider and (
-            str(sidecar_provider).strip().lower()
-            != embedding_model.provider
+            str(sidecar_provider).strip().lower() != embedding_model.provider
         ):
             message = (
                 "Sidecar provider {provider!r} differs from embedding "
@@ -1212,8 +1206,7 @@ class VdbService:
 
         sidecar_model_name = sidecar_meta.get("model_name")
         if sidecar_model_name and (
-            str(sidecar_model_name).strip()
-            != embedding_model.name
+            str(sidecar_model_name).strip() != embedding_model.name
         ):
             message = (
                 "Sidecar model {name!r} differs from embedding model "
@@ -1283,10 +1276,7 @@ class VdbService:
         try:
             sidecar_vdb_id = int(sidecar_vdb_id)
         except (TypeError, ValueError):
-            message = (
-                "Sidecar vdb_id is invalid: "
-                f"{sidecar_vdb_id!r}."
-            )
+            message = f"Sidecar vdb_id is invalid: {sidecar_vdb_id!r}."
             return (
                 VdbHealthEntry(
                     code="sidecar-field",
@@ -1329,10 +1319,7 @@ class VdbService:
         try:
             model_id = int(model_id)
         except (TypeError, ValueError):
-            message = (
-                "Sidecar model_id is invalid: "
-                f"{model_id!r}."
-            )
+            message = f"Sidecar model_id is invalid: {model_id!r}."
             return (
                 VdbHealthEntry(
                     code="sidecar-field",
@@ -1387,10 +1374,7 @@ class VdbService:
 
         parsed = self._parse_sidecar_timestamp(built_at_raw)
         if parsed is None:
-            message = (
-                "Sidecar built_at is invalid: "
-                f"{built_at_raw!r}."
-            )
+            message = f"Sidecar built_at is invalid: {built_at_raw!r}."
             return (
                 VdbHealthEntry(
                     code="sidecar-field",
@@ -1418,9 +1402,7 @@ class VdbService:
             return ()
 
         reason_text = "; ".join(reasons)
-        message = (
-            "Index built_at {built} appears stale ({details})."
-        ).format(
+        message = ("Index built_at {built} appears stale ({details}).").format(
             built=self._format_health_timestamp(parsed),
             details=reason_text,
         )
@@ -1444,10 +1426,7 @@ class VdbService:
         try:
             sidecar_dim_int = int(sidecar_dim)
         except (TypeError, ValueError):
-            message = (
-                "Sidecar dim is invalid: "
-                f"{sidecar_dim!r}."
-            )
+            message = f"Sidecar dim is invalid: {sidecar_dim!r}."
             return (
                 VdbHealthEntry(
                     code="sidecar-field",
@@ -1674,9 +1653,7 @@ class VdbService:
                         stats.embedded_vectors += int(
                             per_vdb["vectors_embedded"]
                         )
-                        stats.skipped_vectors += int(
-                            per_vdb["vectors_skipped"]
-                        )
+                        stats.skipped_vectors += int(per_vdb["vectors_skipped"])
                         stats.planned_vectors += int(
                             per_vdb.get("vectors_planned", 0)
                         )
@@ -2064,9 +2041,7 @@ class VdbService:
             start_line = self._min_optional(
                 part["start_line"] for part in ordered
             )
-            end_line = self._max_optional(
-                part["end_line"] for part in ordered
-            )
+            end_line = self._max_optional(part["end_line"] for part in ordered)
             header_md = self._build_chunk_header(
                 symbol_row=symbol_row,
                 file_row=file_row,
@@ -2121,10 +2096,7 @@ class VdbService:
         if not id_tuple:
             return {}
         placeholders = ",".join("?" for _ in id_tuple)
-        query = (
-            "SELECT id, repo_path FROM files WHERE id IN ("
-            f"{placeholders})"
-        )
+        query = f"SELECT id, repo_path FROM files WHERE id IN ({placeholders})"
         rows = connection.execute(query, id_tuple).fetchall()
         return {int(row["id"]): row for row in rows}
 
@@ -2168,8 +2140,7 @@ class VdbService:
             (vdb_id,),
         ).fetchall()
         existing_by_symbol = {
-            int(row["symbol_id"]): int(row["id"])
-            for row in existing_rows
+            int(row["symbol_id"]): int(row["id"]) for row in existing_rows
         }
 
         records: list[_ChunkRecord] = []
@@ -2621,6 +2592,16 @@ class VdbService:
                 model_info = self._describe_model(provider_key, model_name)
             except VdbCreateError:
                 # Provider registration missing; trust the recorded dimension.
+                return int(row["id"]), existing_dim
+            except VdbProviderError as exc:
+                if self.logger is not None:
+                    self.logger.warning(
+                        "vdb-model-describe-fallback",
+                        provider=provider_key,
+                        model=model_name,
+                        status_code=getattr(exc, "status_code", None),
+                        error=str(exc),
+                    )
                 return int(row["id"]), existing_dim
 
             provider_dim = model_info.dim
