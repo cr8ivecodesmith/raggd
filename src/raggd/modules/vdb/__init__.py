@@ -40,6 +40,14 @@ from .providers import (
     ProviderRegistryError,
     resolve_sync_concurrency,
 )
+from .service import (
+    VdbCreateError,
+    VdbInfoError,
+    VdbResetError,
+    VdbService,
+    VdbServiceError,
+    VdbSyncError,
+)
 
 __all__ = [
     "FaissIndex",
@@ -74,4 +82,10 @@ __all__ = [
     "ProviderRegistry",
     "ProviderRegistryError",
     "resolve_sync_concurrency",
+    "VdbService",
+    "VdbServiceError",
+    "VdbCreateError",
+    "VdbSyncError",
+    "VdbInfoError",
+    "VdbResetError",
 ]

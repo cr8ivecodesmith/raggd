@@ -526,6 +526,7 @@ class VdbModuleSettings(ModuleToggle):
             )
         return value
 
+
 class AppConfig(BaseModel):
     """Root configuration for the :mod:`raggd` application."""
 

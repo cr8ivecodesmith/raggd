@@ -103,8 +103,7 @@ class _RecordingStubProvider(EmbeddingsProvider):
     def _vector_for(self, text: str) -> tuple[float, ...]:
         base = float(sum(ord(char) for char in text) or 1)
         return tuple(
-            (base + index) / (self.dim + index + 1)
-            for index in range(self.dim)
+            (base + index) / (self.dim + index + 1) for index in range(self.dim)
         )
 
 

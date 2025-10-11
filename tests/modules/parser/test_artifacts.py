@@ -38,7 +38,7 @@ def test_chunk_slice_round_trip_mapping() -> None:
         "content_text": "example",
         "overflow_is_truncated": "false",
         "overflow_reason": "",
-        "metadata_json": "{\"delegate_parent_chunk\": \"chunk-0\"}",
+        "metadata_json": '{"delegate_parent_chunk": "chunk-0"}',
         "created_at": now.isoformat(),
         "updated_at": later.isoformat(),
         "first_seen_batch": "batch-1",
@@ -53,7 +53,7 @@ def test_chunk_slice_round_trip_mapping() -> None:
     assert slice_.metadata["delegate_parent_chunk"] == "chunk-0"
 
     mapping = slice_.to_mapping()
-    assert mapping["metadata_json"] == "{\"delegate_parent_chunk\":\"chunk-0\"}"
+    assert mapping["metadata_json"] == '{"delegate_parent_chunk":"chunk-0"}'
     assert mapping["start_line"] == 14
     assert mapping["end_line"] == 20
     assert mapping["overflow_is_truncated"] == 0

@@ -167,13 +167,11 @@ def test_vdb_info_summary_sidecar_override_and_replace() -> None:
     naive = datetime(2025, 1, 1, 12, 30, 15)
     assert summary._serialize_datetime(naive) == "2025-01-01T12:30:15+00:00"
     assert (
-        VdbInfoSummary._serialize_datetime(naive)
-        == "2025-01-01T12:30:15+00:00"
+        VdbInfoSummary._serialize_datetime(naive) == "2025-01-01T12:30:15+00:00"
     )
     aware = datetime(2025, 1, 1, 12, 30, 15, tzinfo=timezone.utc)
     assert (
-        VdbInfoSummary._serialize_datetime(aware)
-        == "2025-01-01T12:30:15+00:00"
+        VdbInfoSummary._serialize_datetime(aware) == "2025-01-01T12:30:15+00:00"
     )
     assert (
         VdbInfoSummary._serialize_datetime("2025-01-01T12:30:15Z")
@@ -246,7 +244,6 @@ def test_vdb_info_summary_direct_instantiation_normalizes_inputs() -> None:
     mapped = naive_summary.to_mapping()
     assert mapped["built_at"].endswith("+00:00")
     assert mapped["last_sync_at"].endswith("+00:00")
-
 
 
 @pytest.mark.parametrize(
@@ -337,8 +334,7 @@ def test_validation_helpers_cover_branches() -> None:
 
     counts_instance = VdbInfoCounts(chunks=1, vectors=2, index=3)
     assert (
-        vdb_models._normalize_counts_value(counts_instance)
-        is counts_instance
+        vdb_models._normalize_counts_value(counts_instance) is counts_instance
     )
 
     counts_from_mapping = vdb_models._normalize_counts_value(

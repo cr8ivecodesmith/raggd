@@ -34,8 +34,7 @@ def _parse_int(value: Any, *, field: str, minimum: int | None = None) -> int:
             raise ValueError(message) from exc
     else:
         type_message = (
-            f"{field} must be an integer-compatible value "
-            f"(got {type(value)!r})"
+            f"{field} must be an integer-compatible value (got {type(value)!r})"
         )
         raise TypeError(type_message)
     if minimum is not None and result < minimum:
@@ -59,8 +58,7 @@ def _parse_datetime(value: Any, *, field: str) -> datetime:
             raise ValueError(message) from exc
     else:
         type_message = (
-            f"{field} must be ISO-8601 string or datetime; got "
-            f"{type(value)!r}"
+            f"{field} must be ISO-8601 string or datetime; got {type(value)!r}"
         )
         raise TypeError(type_message)
     if parsed.tzinfo is None:
@@ -308,11 +306,7 @@ class VdbHealthEntry:
         object.__setattr__(
             self,
             "actions",
-            tuple(
-                action.strip()
-                for action in self.actions
-                if action.strip()
-            ),
+            tuple(action.strip() for action in self.actions if action.strip()),
         )
 
     @classmethod
@@ -504,8 +498,7 @@ class VdbInfoSummary:
         reports: Sequence[HealthReport],
     ) -> "VdbInfoSummary":
         entries = tuple(
-            VdbHealthEntry.from_report(report)
-            for report in reports
+            VdbHealthEntry.from_report(report) for report in reports
         )
         return replace(self, health=entries)
 
@@ -514,9 +507,7 @@ class VdbInfoSummary:
 
     def to_mapping(self) -> dict[str, Any]:
         sidecar = (
-            str(self.sidecar_path)
-            if self.sidecar_path is not None
-            else None
+            str(self.sidecar_path) if self.sidecar_path is not None else None
         )
 
         return {

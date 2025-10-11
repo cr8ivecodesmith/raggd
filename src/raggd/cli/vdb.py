@@ -6,103 +6,20 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, Sequence
 
 import typer
 
 from raggd.core.config import AppConfig
 from raggd.core.logging import Logger, configure_logging, get_logger
 from raggd.core.paths import WorkspacePaths, resolve_workspace
+from raggd.modules.db import DbLifecycleService, db_settings_from_mapping
+from raggd.modules.manifest import (
+    ManifestService,
+    manifest_settings_from_config,
+)
+from raggd.modules.vdb.providers import ProviderRegistry
+from raggd.modules.vdb.service import VdbService
 from raggd.source.config import SourceConfigError, SourceConfigStore
-
-
-class VdbService(Protocol):
-    """Protocol describing CLI-facing VDB service operations."""
-
-    def info(
-        self,
-        *,
-        source: str | None,
-        vdb: str | None,
-    ) -> Sequence[dict[str, object]]:
-        """Return VDB info records suitable for CLI presentation."""
-
-    def create(
-        self,
-        *,
-        selector: str,
-        name: str,
-        model: str,
-    ) -> None:
-        """Create a new VDB bound to the provided selector and model."""
-
-    def sync(
-        self,
-        *,
-        source: str,
-        vdb: str | None,
-        missing_only: bool,
-        recompute: bool,
-        limit: int | None,
-        concurrency: str | None,
-        dry_run: bool,
-    ) -> dict[str, object]:
-        """Synchronize vectors and return a summary payload."""
-
-    def reset(
-        self,
-        *,
-        source: str,
-        vdb: str | None,
-        drop: bool,
-        force: bool,
-    ) -> dict[str, object]:
-        """Reset vectors (and optionally drop the VDB) returning a summary."""
-
-
-@dataclass(slots=True)
-class _StubVdbService:
-    """Temporary stub until the real VDB service is implemented."""
-
-    def info(
-        self,
-        *,
-        source: str | None,
-        vdb: str | None,
-    ) -> Sequence[dict[str, object]]:
-        raise NotImplementedError("vdb info service not implemented")
-
-    def create(
-        self,
-        *,
-        selector: str,
-        name: str,
-        model: str,
-    ) -> None:
-        raise NotImplementedError("vdb create service not implemented")
-
-    def sync(
-        self,
-        *,
-        source: str,
-        vdb: str | None,
-        missing_only: bool,
-        recompute: bool,
-        limit: int | None,
-        concurrency: str | None,
-        dry_run: bool,
-    ) -> dict[str, object]:
-        raise NotImplementedError("vdb sync service not implemented")
-
-    def reset(
-        self,
-        *,
-        source: str,
-        vdb: str | None,
-        drop: bool,
-        force: bool,
-    ) -> dict[str, object]:
-        raise NotImplementedError("vdb reset service not implemented")
 
 
 @dataclass(slots=True)
@@ -148,21 +65,49 @@ def _require_context(ctx: typer.Context) -> VdbCLIContext:
     return context
 
 
-def _build_vdb_service(*, logger: Logger) -> VdbService:
-    """Return a VDB service instance.
+def _build_vdb_service(
+    *,
+    paths: WorkspacePaths,
+    config: AppConfig,
+    logger: Logger,
+) -> VdbService:
+    """Return a configured VDB service instance."""
 
-    The concrete service will be provided in later steps. For now, return a
-    stub that raises `NotImplementedError` so we can surface clear CLI output.
-    """
+    config_payload = config.model_dump(mode="python")
+    manifest_settings = manifest_settings_from_config(config_payload)
+    db_settings = db_settings_from_mapping(config_payload)
 
-    logger.debug("vdb-service-stub")
-    return _StubVdbService()
+    manifest_service = ManifestService(
+        workspace=paths,
+        settings=manifest_settings,
+        logger=logger.bind(component="manifest"),
+    )
+    db_service = DbLifecycleService(
+        workspace=paths,
+        manifest_service=manifest_service,
+        db_settings=db_settings,
+        logger=logger.bind(component="db-service"),
+    )
+
+    providers = ProviderRegistry()
+
+    service = VdbService(
+        workspace=paths,
+        config=config,
+        db_service=db_service,
+        providers=providers,
+        logger=logger.bind(component="vdb-service"),
+    )
+
+    logger.debug(
+        "vdb-service-configured",
+        providers=tuple(sorted(providers.snapshot().keys())),
+    )
+    return service
 
 
 def _handle_not_implemented(action: str, *, logger: Logger) -> None:
-    message = (
-        f"VDB {action} is not implemented yet; CLI scaffold is in place."
-    )
+    message = f"VDB {action} is not implemented yet; CLI scaffold is in place."
     typer.secho(message, fg=typer.colors.YELLOW)
     logger.warning("vdb-action-not-implemented", action=action)
 
@@ -238,7 +183,13 @@ def configure_vdb_commands(
 
     logger = get_logger(__name__, command="vdb")
 
-    service = _build_vdb_service(logger=logger.bind(component="service"))
+    paths.sources_dir.mkdir(parents=True, exist_ok=True)
+
+    service = _build_vdb_service(
+        paths=paths,
+        config=config,
+        logger=logger,
+    )
 
     ctx.obj = VdbCLIContext(
         paths=paths,

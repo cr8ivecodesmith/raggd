@@ -84,7 +84,7 @@
     - [x] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
     - [x] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
   - [ ] Service: implement `VdbService` flows for each CLI command.
-    - [ ] `create`: validate config + uniqueness, derive vectors path, insert VDB row, and seed metadata.
+    - [x] `create`: validate config + uniqueness, derive vectors path, insert VDB row, and seed metadata.
     - [ ] `sync`: materialize chunks, batch embed, persist vectors + metadata, and refresh progress stats.
     - [ ] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
     - [ ] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
@@ -264,6 +264,16 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-14 09:30 UTC
+**Summary**
+VDB create service wired with tests and CLI integration
+**Changes**
+— Added `src/raggd/modules/vdb/service.py` providing the concrete `VdbService` (create flow with pre-registered embedding-model reuse), wired into `src/raggd/cli/vdb.py`, and exported via `src/raggd/modules/vdb/__init__.py`.
+— Added `tests/modules/vdb/test_service.py` covering create idempotency, conflicts, and `latest` batch selection using a stub provider.
+— Extended CLI coverage via `tests/cli/test_vdb.py` to exercise the create path using a configured workspace fixture.
+— Ran `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-service uv run pytest --no-cov tests/modules/vdb/test_service.py tests/cli/test_vdb.py` and `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`.
+— Marked the service create checklist item complete in this implementation plan.
 
 ### 2025-10-13 15:40 UTC
 **Summary**
