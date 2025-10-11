@@ -42,6 +42,13 @@ parser = [
     "tree_sitter_languages>=1.9",
     "tiktoken>=0.7",
 ]
+vdb = [
+    "faiss-cpu>=1.8",
+    "numpy",
+    "openai>=1",
+    "rapidfuzz>=3",
+    "tiktoken>=0.7",
+]
 rag = [
     "faiss-cpu>=1.8",
     "numpy",
@@ -76,6 +83,7 @@ modules = [
     { include-group = "mcp" },
     { include-group = "mcp-rest" },
     { include-group = "parser" },
+    { include-group = "vdb" },
     { include-group = "rag" },
 ]
 
@@ -104,6 +112,13 @@ parser = [
     "markdown-it-py>=3",
     "tree-sitter>=0.21,<0.22",
     "tree_sitter_languages>=1.9",
+    "tiktoken>=0.7",
+]
+vdb = [
+    "faiss-cpu>=1.8",
+    "numpy",
+    "openai>=1",
+    "rapidfuzz>=3",
     "tiktoken>=0.7",
 ]
 

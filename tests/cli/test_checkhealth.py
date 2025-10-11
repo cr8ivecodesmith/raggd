@@ -155,6 +155,7 @@ def test_checkhealth_generates_health_document(tmp_path: Path) -> None:
     assert "source: ok" in result.stdout
     assert "db: ok" in result.stdout
     assert "parser: unknown" in result.stdout
+    assert "vdb: ok" in result.stdout
     assert "  - demo: ok" in result.stdout
 
     document_path = workspace / ".health.json"
@@ -168,6 +169,8 @@ def test_checkhealth_generates_health_document(tmp_path: Path) -> None:
     db_detail = payload["db"]["details"][0]
     assert db_detail["name"] == "demo"
     assert db_detail["status"] == "ok"
+    assert payload["vdb"]["status"] == "ok"
+    assert payload["vdb"]["details"] == []
     assert payload["parser"]["status"] == "unknown"
     parser_detail = payload["parser"]["details"][0]
     assert parser_detail["name"] == "demo"

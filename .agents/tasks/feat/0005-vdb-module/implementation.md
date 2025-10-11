@@ -89,7 +89,7 @@
     - [x] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
     - [x] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
   - [ ] Health: wire `vdb` checks into `checkhealth`.
-    - [ ] Register the `vdb` health module with the central aggregator and ensure CLI commands load it.
+    - [x] Register the `vdb` health module with the central aggregator and ensure CLI commands load it.
     - [ ] Validate FAISS artifacts: detect missing index files, mismatched metadata, and stale build timestamps.
     - [ ] Compare DB vectors to chunk sources to surface count drift and orphaned references.
     - [ ] Expose actionable statuses in `checkhealth` output with remediation hints.
@@ -296,6 +296,15 @@ VDB sync service implemented with chunk materialization and FAISS persistence
 — Extended service telemetry helpers for batch sizing, concurrency resolution, and summary logging during sync runs.
 **Tests**
 — `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-sync-tests uv run pytest --no-cov tests/modules/vdb/test_service.py`
+
+### 2025-10-15 08:20 UTC
+**Summary**
+VDB health hook registered with checkhealth CLI integration
+**Changes**
+— Added `src/raggd/modules/vdb/health.py` exposing `vdb_health_hook`, exported via `src/raggd/modules/vdb/__init__.py`, and exercised by new service-level health coverage.
+— Registered the VDB module descriptor and extras in `src/raggd/cli/__init__.py`, wired optional dependencies in `pyproject.toml`, and updated CLI health/tests to surface the module.
+— Extended CLI and service tests (`tests/cli/test_checkhealth.py`, `tests/cli/test_cli_app.py`, `tests/modules/vdb/test_service.py`) for the new health reporting.
+— Ran `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-health uv run pytest --no-cov tests/cli/test_checkhealth.py tests/cli/test_cli_app.py tests/modules/vdb/test_service.py` and `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`.
 
 ### 2025-10-14 09:30 UTC
 **Summary**

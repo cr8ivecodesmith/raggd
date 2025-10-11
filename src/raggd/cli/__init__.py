@@ -28,6 +28,7 @@ from raggd.cli.vdb import create_vdb_app
 from raggd.cli.source import create_source_app
 from raggd.modules.db import db_health_hook
 from raggd.modules.parser import parser_health_hook
+from raggd.modules.vdb import vdb_health_hook
 from raggd.source import source_health_hook
 from raggd.core.config import (
     AppConfig,
@@ -109,6 +110,16 @@ _DEFAULT_MODULE_DESCRIPTORS: tuple[ModuleDescriptor, ...] = (
         health_hook=parser_health_hook,
     ),
     ModuleDescriptor(
+        name="vdb",
+        description="Vector database management and health checks.",
+        extras=("vdb",),
+        default_toggle=ModuleToggle(
+            enabled=True,
+            extras=("vdb",),
+        ),
+        health_hook=vdb_health_hook,
+    ),
+    ModuleDescriptor(
         name="rag",
         description="Core retrieval-augmented generation capabilities.",
         extras=("rag",),
@@ -133,6 +144,7 @@ _EXTRA_SENTINELS: Mapping[str, tuple[str, ...]] = {
         "tree_sitter",
         "tree_sitter_languages",
     ),
+    "vdb": ("faiss", "openai", "rapidfuzz", "tiktoken"),
     "rag": ("faiss", "openai", "rapidfuzz", "tiktoken"),
 }
 

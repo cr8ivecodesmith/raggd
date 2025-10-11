@@ -55,6 +55,7 @@ def test_cli_init_respects_env_and_outputs_status(
     assert "log level: WARNING" in result.stdout
     assert "file-monitoring" in result.stdout
     assert "parser: disabled - missing extras: parser" in result.stdout
+    assert "vdb: disabled - missing extras: vdb" in result.stdout
     expected_defaults_line = (
         f"defaults: packaged resource ({DEFAULTS_RESOURCE_NAME})"
     )
@@ -102,6 +103,7 @@ def test_cli_init_module_overrides_and_missing_extras(
     assert "rag: disabled - missing extras: rag" in result.stdout
     assert "file-monitoring: disabled" in result.stdout
     assert "parser: disabled - missing extras: parser" in result.stdout
+    assert "vdb: disabled - missing extras: vdb" in result.stdout
 
     workspace = Path(env["RAGGD_WORKSPACE"])  # type: ignore[arg-type]
     config_text = (workspace / "raggd.toml").read_text(encoding="utf-8")
@@ -181,6 +183,7 @@ def test_cli_help_lists_db_command(
     assert result.exit_code == 0
     assert "db" in result.stdout
     assert "parser" in result.stdout
+    assert "vdb" in result.stdout
 
 
 def test_build_module_overrides_sanitizes_names() -> None:

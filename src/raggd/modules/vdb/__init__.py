@@ -19,6 +19,7 @@ from .faiss_index import (
     persist_index_artifacts,
     sidecar_path_for_index,
 )
+from .health import vdb_health_hook
 from .models import (
     EmbeddingModel,
     Vdb,
@@ -65,6 +66,7 @@ __all__ = [
     "load_index_artifacts",
     "persist_index_artifacts",
     "sidecar_path_for_index",
+    "vdb_health_hook",
     "EmbeddingModel",
     "Vdb",
     "VdbHealthEntry",

@@ -4,6 +4,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Sequence
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from raggd.core.config import load_config, load_packaged_defaults
 from raggd.core.logging import get_logger
 from raggd.core.paths import WorkspacePaths
+from raggd.modules import HealthStatus
 from raggd.modules.db import DbLifecycleService, db_settings_from_mapping
 from raggd.modules.manifest import (
     ManifestService,
@@ -30,6 +32,7 @@ from raggd.modules.vdb.service import (
     VdbResetError,
     VdbService,
 )
+from raggd.modules.vdb.health import vdb_health_hook
 
 
 class _StubProvider:
@@ -331,6 +334,40 @@ def test_create_rejects_conflicting_vdb(tmp_path: Path) -> None:
         )
 
     assert "reset --drop" in str(exc.value)
+
+
+def test_vdb_health_hook_reports_healthy_vdb(tmp_path: Path) -> None:
+    service, db_service, paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    batch_id = "batch-001"
+
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=timestamp,
+    )
+
+    handle = SimpleNamespace(paths=paths, config=service.config)
+    reports = vdb_health_hook(handle)
+
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.name == "demo:primary"
+    assert report.status is HealthStatus.OK
+    assert report.last_refresh_at is not None
+    assert report.summary is not None
+    assert "chunks=" in report.summary
+    assert "vectors=" in report.summary
 
 
 def test_sync_materializes_chunks_and_vectors(tmp_path: Path) -> None:

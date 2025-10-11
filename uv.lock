@@ -2099,6 +2099,13 @@ rag = [
     { name = "rapidfuzz" },
     { name = "tiktoken" },
 ]
+vdb = [
+    { name = "faiss-cpu" },
+    { name = "numpy" },
+    { name = "openai" },
+    { name = "rapidfuzz" },
+    { name = "tiktoken" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2182,27 +2189,39 @@ test = [
     { name = "pytest-xdist" },
     { name = "ruff" },
 ]
+vdb = [
+    { name = "faiss-cpu" },
+    { name = "numpy" },
+    { name = "openai" },
+    { name = "rapidfuzz" },
+    { name = "tiktoken" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "faiss-cpu", marker = "extra == 'rag'", specifier = ">=1.8" },
+    { name = "faiss-cpu", marker = "extra == 'vdb'", specifier = ">=1.8" },
     { name = "fastapi", marker = "extra == 'mcp-rest'", specifier = ">=0.111" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "libcst", marker = "extra == 'parser'", specifier = ">=1.4" },
     { name = "markdown-it-py", marker = "extra == 'parser'", specifier = ">=3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1" },
     { name = "numpy", marker = "extra == 'rag'" },
+    { name = "numpy", marker = "extra == 'vdb'" },
     { name = "onnxruntime", marker = "extra == 'local-embeddings'", specifier = ">=1.17" },
     { name = "openai", marker = "extra == 'rag'", specifier = ">=1" },
+    { name = "openai", marker = "extra == 'vdb'", specifier = ">=1" },
     { name = "platformdirs", specifier = ">=3.11" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pydantic-settings", specifier = ">=2" },
     { name = "rapidfuzz", marker = "extra == 'rag'", specifier = ">=3" },
+    { name = "rapidfuzz", marker = "extra == 'vdb'", specifier = ">=3" },
     { name = "rich", specifier = ">=13" },
     { name = "sentence-transformers", marker = "extra == 'local-embeddings'", specifier = ">=3" },
     { name = "structlog", specifier = ">=24" },
     { name = "tiktoken", marker = "extra == 'parser'", specifier = ">=0.7" },
     { name = "tiktoken", marker = "extra == 'rag'", specifier = ">=0.7" },
+    { name = "tiktoken", marker = "extra == 'vdb'", specifier = ">=0.7" },
     { name = "tomlkit", specifier = ">=0.12" },
     { name = "tree-sitter", marker = "extra == 'parser'", specifier = ">=0.21,<0.22" },
     { name = "tree-sitter-languages", marker = "extra == 'parser'", specifier = ">=1.9" },
@@ -2210,7 +2229,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'mcp-rest'", specifier = ">=0.30" },
     { name = "watchdog", marker = "extra == 'file-monitoring'", specifier = ">=4" },
 ]
-provides-extras = ["source", "db", "file-monitoring", "local-embeddings", "mcp", "mcp-rest", "parser", "rag"]
+provides-extras = ["source", "db", "file-monitoring", "local-embeddings", "mcp", "mcp-rest", "parser", "vdb", "rag"]
 
 [package.metadata.requires-dev]
 db = []
@@ -2291,6 +2310,13 @@ test = [
     { name = "pytest-pretty" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+]
+vdb = [
+    { name = "faiss-cpu", specifier = ">=1.8" },
+    { name = "numpy" },
+    { name = "openai", specifier = ">=1" },
+    { name = "rapidfuzz", specifier = ">=3" },
+    { name = "tiktoken", specifier = ">=0.7" },
 ]
 
 [[package]]
