@@ -86,7 +86,7 @@
   - [ ] Service: implement `VdbService` flows for each CLI command.
     - [x] `create`: validate config + uniqueness, derive vectors path, insert VDB row, and seed metadata.
     - [x] `sync`: materialize chunks, batch embed, persist vectors + metadata, and refresh progress stats.
-    - [ ] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
+    - [x] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
     - [ ] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
   - [ ] Health: wire `vdb` checks into `checkhealth`.
     - [ ] Register the `vdb` health module with the central aggregator and ensure CLI commands load it.
@@ -264,6 +264,17 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-11 18:05 UTC
+**Summary**
+`VdbService.info` implemented with health assessments and CLI/test coverage
+**Changes**
+— Implemented the info aggregation flow in `VdbService`, including sidecar parsing, per-source selection, and health signal generation for missing artifacts, drift, and staleness.
+— Added service-level unit tests for info summaries and not-synced scenarios plus CLI integration coverage for `vdb info --json`.
+— Wired checklist status for the info subtask and ensured new helpers log diagnostic hints.
+**Tests**
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-service-info uv run pytest --no-cov tests/modules/vdb/test_service.py`
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-cli-info uv run pytest --no-cov tests/cli/test_vdb.py`
 
 ### 2025-10-11 06:34 UTC
 **Summary**

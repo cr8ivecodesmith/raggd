@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import math
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence, Type
+from typing import Any, Callable, Iterable, Mapping, Sequence, Type
 
 from raggd.core.config import AppConfig
 from raggd.core.logging import Logger, get_logger
@@ -18,7 +19,13 @@ from raggd.modules.db import (
     DbLockError,
     DbLockTimeoutError,
 )
-from raggd.modules.vdb.models import EmbeddingModel
+from raggd.modules.vdb.models import (
+    EmbeddingModel,
+    Vdb,
+    VdbHealthEntry,
+    VdbInfoCounts,
+    VdbInfoSummary,
+)
 from raggd.modules.vdb.providers import (
     EmbedRequestOptions,
     EmbeddingProviderModel,
@@ -227,7 +234,51 @@ class VdbService:
         source: str | None,
         vdb: str | None,
     ) -> tuple[dict[str, object], ...]:
-        raise NotImplementedError  # pragma: no cover - not implemented yet
+        normalized_source: str | None = None
+        normalized_vdb: str | None = None
+
+        if source is not None:
+            normalized_source = self._normalize_identifier(
+                source,
+                field="Source",
+                error=VdbInfoError,
+            )
+
+        if vdb is not None:
+            normalized_vdb = self._normalize_identifier(
+                vdb,
+                field="VDB name",
+                error=VdbInfoError,
+            )
+
+        if normalized_source is not None:
+            if normalized_source not in self.config.workspace_sources:
+                message = (
+                    "Source {source!r} is not configured in this workspace."
+                ).format(source=normalized_source)
+                raise VdbInfoError(message)
+            sources: tuple[str, ...] = (normalized_source,)
+            strict = True
+        else:
+            configured_sources = tuple(
+                sorted(self.config.workspace_sources.keys())
+            )
+            if not configured_sources:
+                return ()
+            sources = configured_sources
+            strict = False
+
+        summaries: list[VdbInfoSummary] = []
+        for source_name in sources:
+            summaries.extend(
+                self._collect_info_for_source(
+                    source=source_name,
+                    vdb_name=normalized_vdb,
+                    strict=strict,
+                )
+            )
+
+        return tuple(summary.to_mapping() for summary in summaries)
 
     def sync(
         self,
@@ -284,6 +335,732 @@ class VdbService:
         force: bool,
     ) -> dict[str, object]:
         raise NotImplementedError  # pragma: no cover - not implemented yet
+
+    # ------------------------------------------------------------------
+    # Internal helpers - info orchestration
+    # ------------------------------------------------------------------
+    def _collect_info_for_source(
+        self,
+        *,
+        source: str,
+        vdb_name: str | None,
+        strict: bool,
+    ) -> list[VdbInfoSummary]:
+        db_path = self.workspace.source_database_path(source)
+        if not db_path.exists():
+            self.logger.debug(
+                "vdb-info-skip-missing-db",
+                source=source,
+                database=str(db_path),
+            )
+            return []
+
+        try:
+            with self.db_service.lock(source, action="vdb-info"):
+                with sqlite3.connect(db_path) as connection:
+                    connection.row_factory = sqlite3.Row
+                    connection.execute("PRAGMA foreign_keys = ON")
+
+                    rows = self._fetch_info_vdb_rows(
+                        connection,
+                        source=source,
+                        vdb_name=vdb_name,
+                        strict=strict,
+                    )
+                    if not rows:
+                        return []
+
+                    latest_batch_id = self._fetch_latest_batch_id(connection)
+
+                    summaries: list[VdbInfoSummary] = []
+                    for row in rows:
+                        summary = self._build_info_summary(
+                            connection=connection,
+                            source=source,
+                            vdb_row=row,
+                            latest_batch_id=latest_batch_id,
+                        )
+                        summaries.append(summary)
+                    return summaries
+        except (DbLockError, DbLockTimeoutError) as exc:
+            raise VdbInfoError(
+                f"Failed to acquire database lock for source {source!r}: {exc}"
+            ) from exc
+        except sqlite3.DatabaseError as exc:
+            message = (
+                "SQLite error while reading VDB info for source "
+                f"{source!r}: {exc}"
+            )
+            raise VdbInfoError(message) from exc
+
+    def _fetch_info_vdb_rows(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        source: str,
+        vdb_name: str | None,
+        strict: bool,
+    ) -> tuple[sqlite3.Row, ...]:
+        if vdb_name is not None:
+            row = connection.execute(
+                (
+                    "SELECT id, name, batch_id, embedding_model_id, "
+                    "faiss_path, created_at FROM vdbs WHERE name = ?"
+                ),
+                (vdb_name,),
+            ).fetchone()
+            if row is None:
+                if strict:
+                    raise VdbInfoError(
+                        f"VDB {vdb_name!r} was not found for source {source!r}."
+                    )
+                self.logger.debug(
+                    "vdb-info-missing-vdb",
+                    source=source,
+                    vdb=vdb_name,
+                )
+                return ()
+            return (row,)
+
+        rows = connection.execute(
+            (
+                "SELECT id, name, batch_id, embedding_model_id, "
+                "faiss_path, created_at FROM vdbs ORDER BY name"
+            ),
+        ).fetchall()
+        return tuple(rows)
+
+    def _fetch_latest_batch_id(
+        self,
+        connection: sqlite3.Connection,
+    ) -> str | None:
+        row = connection.execute(
+            (
+                "SELECT id "
+                "FROM batches "
+                "ORDER BY generated_at DESC, id DESC "
+                "LIMIT 1"
+            )
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row["id"])
+
+    def _build_info_summary(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        source: str,
+        vdb_row: sqlite3.Row,
+        latest_batch_id: str | None,
+    ) -> VdbInfoSummary:
+        try:
+            vdb = Vdb.from_row(dict(vdb_row))
+        except Exception as exc:  # pragma: no cover - defensive
+            raise VdbInfoError(
+                f"Failed to normalize VDB row for source {source!r}: {exc}"
+            ) from exc
+
+        try:
+            embedding_model = self._load_embedding_model(
+                connection,
+                model_id=vdb.embedding_model_id,
+                vdb_name=vdb.name,
+            )
+        except VdbServiceError as exc:
+            raise VdbInfoError(str(exc)) from exc
+
+        try:
+            faiss_path = self._resolve_faiss_path(vdb_row["faiss_path"])
+        except VdbServiceError as exc:
+            raise VdbInfoError(str(exc)) from exc
+
+        sidecar_path = faiss_path.with_name(f"{faiss_path.name}.meta.json")
+        sidecar_meta, sidecar_error = self._load_sidecar_metadata(sidecar_path)
+
+        chunks_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM chunks WHERE vdb_id = ?",
+                (vdb.id,),
+            ).fetchone()[0]
+        )
+        vectors_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM vectors WHERE vdb_id = ?",
+                (vdb.id,),
+            ).fetchone()[0]
+        )
+
+        metric = self.config.vdb.metric
+        index_type = self.config.vdb.index_type
+        built_at: str | datetime | None = None
+        index_count = 0
+
+        if sidecar_meta is not None:
+            metric_value = sidecar_meta.get("metric")
+            if isinstance(metric_value, str) and metric_value.strip():
+                metric = metric_value.strip()
+            elif metric_value is not None:
+                metric = str(metric_value).strip() or metric
+
+            index_type_value = sidecar_meta.get("index_type")
+            if isinstance(index_type_value, str) and index_type_value.strip():
+                index_type = index_type_value.strip()
+            elif index_type_value is not None:
+                index_type = str(index_type_value).strip() or index_type
+
+            built_at = sidecar_meta.get("built_at")
+            try:
+                index_count = int(sidecar_meta.get("vector_count", 0))
+            except (TypeError, ValueError):
+                index_count = 0
+
+        counts = VdbInfoCounts(
+            chunks=chunks_count,
+            vectors=vectors_count,
+            index=index_count,
+        )
+
+        stale = latest_batch_id is not None and latest_batch_id != vdb.batch_id
+
+        health_entries = self._build_info_health(
+            source=source,
+            vdb=vdb,
+            embedding_model=embedding_model,
+            counts=counts,
+            index_count=index_count,
+            sidecar_path=sidecar_path,
+            faiss_path=faiss_path,
+            sidecar_meta=sidecar_meta,
+            sidecar_error=sidecar_error,
+            stale=stale,
+            latest_batch_id=latest_batch_id,
+        )
+
+        return VdbInfoSummary.from_sources(
+            vdb=vdb,
+            source_id=source,
+            embedding_model=embedding_model,
+            metric=metric,
+            index_type=index_type,
+            counts=counts,
+            faiss_path=faiss_path,
+            sidecar_path=sidecar_path,
+            built_at=built_at,
+            last_sync_at=built_at,
+            stale_relative_to_latest=stale,
+            health=health_entries,
+        )
+
+    def _load_sidecar_metadata(
+        self,
+        sidecar_path: Path,
+    ) -> tuple[Mapping[str, Any] | None, Exception | None]:
+        if not sidecar_path.exists():
+            return None, None
+        try:
+            with sidecar_path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if not isinstance(payload, Mapping):
+                raise ValueError("Sidecar JSON must be an object")
+            return payload, None
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.warning(
+                "vdb-info-sidecar-error",
+                sidecar=str(sidecar_path),
+                error=str(exc),
+            )
+            return None, exc
+
+    def _build_info_health(
+        self,
+        *,
+        source: str,
+        vdb: Vdb,
+        embedding_model: EmbeddingModel,
+        counts: VdbInfoCounts,
+        index_count: int,
+        sidecar_path: Path,
+        faiss_path: Path,
+        sidecar_meta: Mapping[str, Any] | None,
+        sidecar_error: Exception | None,
+        stale: bool,
+        latest_batch_id: str | None,
+    ) -> tuple[VdbHealthEntry, ...]:
+        sync_hint = self._format_sync_command(source, vdb.name)
+        index_exists = faiss_path.exists()
+        sidecar_exists = sidecar_meta is not None
+
+        empty_state = self._health_empty_state(
+            index_exists=index_exists,
+            sidecar_exists=sidecar_exists,
+            counts=counts,
+            stale=stale,
+            sync_hint=sync_hint,
+            vdb=vdb,
+            latest_batch_id=latest_batch_id,
+        )
+        if empty_state is not None:
+            return empty_state
+
+        entries: list[VdbHealthEntry] = []
+        entries.extend(
+            self._health_sidecar_error(
+                sidecar_error=sidecar_error,
+                sidecar_path=sidecar_path,
+                sync_hint=sync_hint,
+            )
+        )
+        entries.extend(
+            self._health_count_consistency(
+                counts=counts,
+                index_count=index_count,
+                sync_hint=sync_hint,
+            )
+        )
+        entries.extend(
+            self._health_sidecar_entries(
+                sidecar_meta=sidecar_meta,
+                counts=counts,
+                index_exists=index_exists,
+                sidecar_path=sidecar_path,
+                embedding_model=embedding_model,
+                vdb=vdb,
+                faiss_path=faiss_path,
+                sync_hint=sync_hint,
+            )
+        )
+        entries.extend(
+            self._health_missing_index(
+                index_exists=index_exists,
+                counts=counts,
+                faiss_path=faiss_path,
+                sync_hint=sync_hint,
+            )
+        )
+
+        stale_entry = self._health_stale_entry(
+            entries=entries,
+            stale=stale,
+            sync_hint=sync_hint,
+            vdb=vdb,
+            latest_batch_id=latest_batch_id,
+        )
+        if stale_entry is not None:
+            entries.append(stale_entry)
+
+        return tuple(entries)
+
+    @staticmethod
+    def _format_sync_command(source: str, vdb_name: str) -> str:
+        return f"raggd vdb sync {source} --vdb {vdb_name}"
+
+    def _health_empty_state(
+        self,
+        *,
+        index_exists: bool,
+        sidecar_exists: bool,
+        counts: VdbInfoCounts,
+        stale: bool,
+        sync_hint: str,
+        vdb: Vdb,
+        latest_batch_id: str | None,
+    ) -> tuple[VdbHealthEntry, ...] | None:
+        if index_exists or sidecar_exists:
+            return None
+        if counts.chunks != 0 or counts.vectors != 0:
+            return None
+
+        entries = [
+            VdbHealthEntry(
+                code="not-synced",
+                level="info",
+                message="VDB has not been synced yet.",
+                actions=(sync_hint,),
+            )
+        ]
+        if stale:
+            message = (
+                "VDB targets batch {batch} while latest batch is {latest}."
+            ).format(
+                batch=vdb.batch_id,
+                latest=latest_batch_id,
+            )
+            entries.append(
+                VdbHealthEntry(
+                    code="stale-batch",
+                    level="warning",
+                    message=message,
+                    actions=(sync_hint,),
+                )
+            )
+        return tuple(entries)
+
+    def _health_sidecar_error(
+        self,
+        *,
+        sidecar_error: Exception | None,
+        sidecar_path: Path,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        if sidecar_error is None:
+            return ()
+
+        message = (
+            "Failed to read sidecar metadata at "
+            f"{sidecar_path}: {sidecar_error}"
+        )
+        return (
+            VdbHealthEntry(
+                code="sidecar-invalid",
+                level="error",
+                message=message,
+                actions=(f"Inspect or delete {sidecar_path}", sync_hint),
+            ),
+        )
+
+    def _health_count_consistency(
+        self,
+        *,
+        counts: VdbInfoCounts,
+        index_count: int,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        entries: list[VdbHealthEntry] = []
+
+        if counts.vectors != counts.chunks:
+            message = (
+                f"chunks={counts.chunks} but vectors={counts.vectors}; "
+                "run sync to repair."
+            )
+            entries.append(
+                VdbHealthEntry(
+                    code="count-drift",
+                    level="warning",
+                    message=message,
+                    actions=(sync_hint,),
+                )
+            )
+
+        if index_count and counts.vectors != index_count:
+            message = (
+                "vectors table reports "
+                f"{counts.vectors} entries but index metadata reports "
+                f"{index_count}."
+            )
+            entries.append(
+                VdbHealthEntry(
+                    code="index-drift",
+                    level="warning",
+                    message=message,
+                    actions=(f"Run {sync_hint} --recompute",),
+                )
+            )
+
+        return tuple(entries)
+
+    def _health_sidecar_entries(
+        self,
+        *,
+        sidecar_meta: Mapping[str, Any] | None,
+        counts: VdbInfoCounts,
+        index_exists: bool,
+        sidecar_path: Path,
+        embedding_model: EmbeddingModel,
+        vdb: Vdb,
+        faiss_path: Path,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        if sidecar_meta is None:
+            return self._health_missing_sidecar(
+                counts=counts,
+                index_exists=index_exists,
+                sidecar_path=sidecar_path,
+                sync_hint=sync_hint,
+            )
+
+        entries: list[VdbHealthEntry] = []
+
+        entries.extend(
+            self._health_sidecar_vdb(
+                sidecar_meta=sidecar_meta,
+                sidecar_path=sidecar_path,
+                vdb=vdb,
+                faiss_path=faiss_path,
+                sync_hint=sync_hint,
+            )
+        )
+        entries.extend(
+            self._health_sidecar_model(
+                sidecar_meta=sidecar_meta,
+                sidecar_path=sidecar_path,
+                embedding_model=embedding_model,
+                sync_hint=sync_hint,
+            )
+        )
+
+        sidecar_provider = sidecar_meta.get("provider")
+        if sidecar_provider and (
+            str(sidecar_provider).strip().lower()
+            != embedding_model.provider
+        ):
+            message = (
+                "Sidecar provider {provider!r} differs from embedding "
+                "provider {expected!r}."
+            ).format(
+                provider=sidecar_provider,
+                expected=embedding_model.provider,
+            )
+            entries.append(
+                VdbHealthEntry(
+                    code="provider-mismatch",
+                    level="error",
+                    message=message,
+                    actions=(f"Run {sync_hint} --recompute",),
+                )
+            )
+
+        sidecar_model_name = sidecar_meta.get("model_name")
+        if sidecar_model_name and (
+            str(sidecar_model_name).strip()
+            != embedding_model.name
+        ):
+            message = (
+                "Sidecar model {name!r} differs from embedding model "
+                "{expected!r}."
+            ).format(
+                name=sidecar_model_name,
+                expected=embedding_model.name,
+            )
+            entries.append(
+                VdbHealthEntry(
+                    code="model-name-mismatch",
+                    level="error",
+                    message=message,
+                    actions=(f"Run {sync_hint} --recompute",),
+                )
+            )
+
+        sidecar_dim = sidecar_meta.get("dim")
+        if sidecar_dim is not None:
+            entries.extend(
+                self._health_sidecar_dim(
+                    sidecar_dim=sidecar_dim,
+                    sidecar_path=sidecar_path,
+                    embedding_model=embedding_model,
+                    sync_hint=sync_hint,
+                )
+            )
+
+        return tuple(entries)
+
+    def _health_missing_sidecar(
+        self,
+        *,
+        counts: VdbInfoCounts,
+        index_exists: bool,
+        sidecar_path: Path,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        if counts.vectors == 0 and not index_exists:
+            return ()
+        message = (
+            "Sidecar metadata missing at "
+            f"{sidecar_path}; unable to verify index integrity."
+        )
+        return (
+            VdbHealthEntry(
+                code="missing-sidecar",
+                level="warning",
+                message=message,
+                actions=(sync_hint,),
+            ),
+        )
+
+    def _health_sidecar_vdb(
+        self,
+        *,
+        sidecar_meta: Mapping[str, Any],
+        sidecar_path: Path,
+        vdb: Vdb,
+        faiss_path: Path,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        sidecar_vdb_id = sidecar_meta.get("vdb_id")
+        if sidecar_vdb_id is None:
+            return ()
+
+        try:
+            sidecar_vdb_id = int(sidecar_vdb_id)
+        except (TypeError, ValueError):
+            message = (
+                "Sidecar vdb_id is invalid: "
+                f"{sidecar_vdb_id!r}."
+            )
+            return (
+                VdbHealthEntry(
+                    code="sidecar-field",
+                    level="error",
+                    message=message,
+                    actions=(f"Inspect {sidecar_path}",),
+                ),
+            )
+
+        if sidecar_vdb_id == vdb.id:
+            return ()
+
+        message = (
+            "Sidecar vdb_id ({sidecar}) does not match VDB id {vdb}."
+        ).format(
+            sidecar=sidecar_vdb_id,
+            vdb=vdb.id,
+        )
+        return (
+            VdbHealthEntry(
+                code="sidecar-mismatch",
+                level="error",
+                message=message,
+                actions=(f"Reset index at {faiss_path}", sync_hint),
+            ),
+        )
+
+    def _health_sidecar_model(
+        self,
+        *,
+        sidecar_meta: Mapping[str, Any],
+        sidecar_path: Path,
+        embedding_model: EmbeddingModel,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        model_id = sidecar_meta.get("model_id")
+        if model_id is None:
+            return ()
+
+        try:
+            model_id = int(model_id)
+        except (TypeError, ValueError):
+            message = (
+                "Sidecar model_id is invalid: "
+                f"{model_id!r}."
+            )
+            return (
+                VdbHealthEntry(
+                    code="sidecar-field",
+                    level="error",
+                    message=message,
+                    actions=(f"Inspect {sidecar_path}",),
+                ),
+            )
+
+        if model_id == embedding_model.id:
+            return ()
+
+        message = (
+            "Sidecar references embedding model {model} but VDB expects "
+            "{expected}."
+        ).format(
+            model=model_id,
+            expected=embedding_model.id,
+        )
+        return (
+            VdbHealthEntry(
+                code="model-mismatch",
+                level="error",
+                message=message,
+                actions=(f"Run {sync_hint} --recompute",),
+            ),
+        )
+
+    def _health_sidecar_dim(
+        self,
+        *,
+        sidecar_dim: Any,
+        sidecar_path: Path,
+        embedding_model: EmbeddingModel,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        try:
+            sidecar_dim_int = int(sidecar_dim)
+        except (TypeError, ValueError):
+            message = (
+                "Sidecar dim is invalid: "
+                f"{sidecar_dim!r}."
+            )
+            return (
+                VdbHealthEntry(
+                    code="sidecar-field",
+                    level="error",
+                    message=message,
+                    actions=(f"Inspect {sidecar_path}",),
+                ),
+            )
+
+        if sidecar_dim_int == embedding_model.dim:
+            return ()
+
+        message = (
+            "Sidecar dim {dim} differs from embedding model dim {expected}."
+        ).format(
+            dim=sidecar_dim_int,
+            expected=embedding_model.dim,
+        )
+        return (
+            VdbHealthEntry(
+                code="dim-mismatch",
+                level="error",
+                message=message,
+                actions=(f"Run {sync_hint} --recompute",),
+            ),
+        )
+
+    def _health_missing_index(
+        self,
+        *,
+        index_exists: bool,
+        counts: VdbInfoCounts,
+        faiss_path: Path,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        if index_exists or counts.vectors == 0:
+            return ()
+        message = (
+            "Index file missing at "
+            f"{faiss_path}; vectors exist without an index."
+        )
+        return (
+            VdbHealthEntry(
+                code="missing-index",
+                level="warning",
+                message=message,
+                actions=(f"Run {sync_hint} --recompute",),
+            ),
+        )
+
+    def _health_stale_entry(
+        self,
+        *,
+        entries: Sequence[VdbHealthEntry],
+        stale: bool,
+        sync_hint: str,
+        vdb: Vdb,
+        latest_batch_id: str | None,
+    ) -> VdbHealthEntry | None:
+        if not stale:
+            return None
+        if any(entry.code == "stale-batch" for entry in entries):
+            return None
+        message = (
+            "VDB targets batch {batch} while latest batch is {latest}."
+        ).format(
+            batch=vdb.batch_id,
+            latest=latest_batch_id,
+        )
+        return VdbHealthEntry(
+            code="stale-batch",
+            level="warning",
+            message=message,
+            actions=(sync_hint,),
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers - sync orchestration

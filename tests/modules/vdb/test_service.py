@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +24,7 @@ from raggd.modules.vdb.providers import (
     ProviderInitContext,
     ProviderRegistry,
 )
-from raggd.modules.vdb.service import VdbCreateError, VdbService
+from raggd.modules.vdb.service import VdbCreateError, VdbInfoError, VdbService
 
 
 class _StubProvider:
@@ -412,3 +413,154 @@ def test_create_supports_latest_alias(tmp_path: Path) -> None:
     assert batch_id == "batch-new"
     expected_path = paths.source_dir("demo") / "vectors" / "latest-index"
     assert expected_path.is_dir()
+
+
+def test_info_returns_summary_with_sidecar(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    generated_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+    _seed_batch(db_path, batch_id, generated_at)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        vdb_query = (
+            "SELECT id, faiss_path, embedding_model_id FROM vdbs WHERE name = ?"
+        )
+        vdb_row = connection.execute(vdb_query, ("primary",)).fetchone()
+        assert vdb_row is not None
+        vdb_id = int(vdb_row["id"])
+        faiss_path = Path(vdb_row["faiss_path"])  # absolute from service.create
+        embedding_model_id = int(vdb_row["embedding_model_id"])
+
+        file_insert = (
+            "INSERT INTO files (batch_id, repo_path, lang, file_sha, mtime_ns, "
+            "size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        file_id = connection.execute(
+            file_insert,
+            (batch_id, "src/example.py", "python", "sha", 0, 16),
+        ).lastrowid
+
+        symbol_insert = (
+            "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+            "end_line, symbol_sha, symbol_norm_sha, args_json, returns_json, "
+            "imports_json, deps_out_json, docstring, summary, tokens, "
+            "first_seen_batch, last_seen_batch) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        symbol_id = connection.execute(
+            symbol_insert,
+            (
+                file_id,
+                "function",
+                "example:example",
+                1,
+                2,
+                "sym",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                16,
+                batch_id,
+                batch_id,
+            ),
+        ).lastrowid
+
+        chunk_insert = (
+            "INSERT INTO chunks (symbol_id, vdb_id, header_md, body_text, "
+            "token_count) VALUES (?, ?, ?, ?, ?)"
+        )
+        chunk_id = connection.execute(
+            chunk_insert,
+            (
+                symbol_id,
+                vdb_id,
+                "# example\n- File: `src/example.py`",
+                "def example():\n    return 42\n",
+                16,
+            ),
+        ).lastrowid
+
+        connection.execute(
+            "INSERT INTO vectors (chunk_id, vdb_id, dim) VALUES (?, ?, ?)",
+            (chunk_id, vdb_id, 1536),
+        )
+
+    faiss_path.parent.mkdir(parents=True, exist_ok=True)
+    faiss_path.write_bytes(b"FAKE")
+    sidecar_path = Path(f"{faiss_path}.meta.json")
+    sidecar_payload = {
+        "version": 1,
+        "provider": "stub",
+        "model_id": embedding_model_id,
+        "model_name": "model-a",
+        "dim": 1536,
+        "metric": "cosine",
+        "index_type": "IDMap,Flat",
+        "vector_count": 1,
+        "built_at": generated_at.isoformat(),
+        "checksum": "0" * 64,
+        "vdb_id": vdb_id,
+    }
+    sidecar_path.write_text(
+        json.dumps(sidecar_payload, indent=2),
+        encoding="utf-8",
+    )
+
+    records = service.info(source="demo", vdb="primary")
+    assert len(records) == 1
+
+    record = records[0]
+    assert record["selector"] == "demo:primary"
+    assert record["counts"] == {"chunks": 1, "vectors": 1, "index": 1}
+    assert record["embedding_model"]["dim"] == 1536
+    assert record["faiss_path"] == str(faiss_path)
+    assert record["sidecar_path"] == str(sidecar_path)
+    assert record["built_at"] == generated_at.isoformat()
+    assert record["stale_relative_to_latest"] is False
+    assert record["health"] == []
+
+
+def test_info_reports_not_synced(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    _seed_batch(db_path, batch_id, datetime(2024, 1, 1, tzinfo=timezone.utc))
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    records = service.info(source="demo", vdb="primary")
+    assert len(records) == 1
+    record = records[0]
+    assert record["counts"] == {"chunks": 0, "vectors": 0, "index": 0}
+    assert record["built_at"] is None
+    assert record["sidecar_path"]
+
+    health_codes = {entry["code"] for entry in record["health"]}
+    assert "not-synced" in health_codes
+
+
+def test_info_missing_vdb_raises_when_source_specified(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    _seed_batch(db_path, "batch-001", datetime(2024, 1, 1, tzinfo=timezone.utc))
+
+    with pytest.raises(VdbInfoError):
+        service.info(source="demo", vdb="unknown")
