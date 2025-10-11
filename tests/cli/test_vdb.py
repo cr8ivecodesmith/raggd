@@ -41,7 +41,6 @@ def runner() -> CliRunner:
     ("args", "action"),
     [
         (("info",), "info"),
-        (("sync", "docs"), "sync"),
         (("reset", "docs"), "reset"),
     ],
 )
@@ -65,6 +64,22 @@ def test_vdb_cli_stub_actions(
         f"VDB {action} is not implemented yet; CLI scaffold is in place."
         in result.stdout
     )
+
+
+def test_vdb_cli_sync_requires_configured_source(
+    workspace: Path,
+    runner: CliRunner,
+) -> None:
+    """`vdb sync` should fail fast when the source is missing."""
+
+    app = create_vdb_app()
+    result = runner.invoke(
+        app,
+        ["--workspace", workspace.as_posix(), "sync", "docs"],
+    )
+
+    assert result.exit_code == 1
+    assert "Source 'docs' is not configured in this workspace." in result.stdout
 
 
 def _configure_docs_source(workspace: Path) -> None:

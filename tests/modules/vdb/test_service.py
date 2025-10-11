@@ -39,7 +39,7 @@ class _StubProvider:
         self,
         *,
         model: str | None = None,
-    ) -> EmbeddingProviderCaps:  # pragma: no cover - helper for future steps
+    ) -> EmbeddingProviderCaps:
         return EmbeddingProviderCaps(max_batch_size=16, max_parallel_requests=2)
 
     def embed_texts(
@@ -48,7 +48,7 @@ class _StubProvider:
         *,
         model: str,
         options: EmbedRequestOptions,
-    ) -> EmbeddingMatrix:  # pragma: no cover - not exercised yet
+    ) -> EmbeddingMatrix:
         return tuple((0.0,) * 1536 for _ in texts)
 
 
@@ -217,6 +217,170 @@ def test_create_rejects_conflicting_vdb(tmp_path: Path) -> None:
         )
 
     assert "reset --drop" in str(exc.value)
+
+
+def test_sync_materializes_chunks_and_vectors(tmp_path: Path) -> None:
+    pytest.importorskip("faiss")
+    pytest.importorskip("numpy")
+
+    service, db_service, paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    chunk_text = "def example():\n    return 42\n"
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        file_id = connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                batch_id,
+                "src/example.py",
+                "python",
+                "sha-example",
+                0,
+                len(chunk_text),
+            ),
+        ).lastrowid
+
+        symbol_id = connection.execute(
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, "
+                "start_line, end_line, symbol_sha, symbol_norm_sha, "
+                "args_json, returns_json, imports_json, deps_out_json, "
+                "docstring, summary, tokens, first_seen_batch, "
+                "last_seen_batch) VALUES ("
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                file_id,
+                "function",
+                "example:example",
+                1,
+                2,
+                "sym-example",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                8,
+                batch_id,
+                batch_id,
+            ),
+        ).lastrowid
+
+        connection.execute(
+            (
+                "INSERT INTO chunk_slices (batch_id, file_id, symbol_id, "
+                "parent_symbol_id, chunk_id, handler_name, handler_version, "
+                "part_index, part_total, start_line, end_line, start_byte, "
+                "end_byte, token_count, content_hash, content_norm_hash, "
+                "content_text, overflow_is_truncated, overflow_reason, "
+                "metadata_json, created_at, updated_at, first_seen_batch, "
+                "last_seen_batch) VALUES ("
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?)"
+            ),
+            (
+                batch_id,
+                file_id,
+                symbol_id,
+                None,
+                "chunk-example",
+                "python",
+                "1.0.0",
+                0,
+                1,
+                1,
+                2,
+                0,
+                len(chunk_text),
+                12,
+                "hash-example",
+                None,
+                chunk_text,
+                0,
+                None,
+                "{}",
+                timestamp.isoformat(),
+                timestamp.isoformat(),
+                batch_id,
+                batch_id,
+            ),
+        )
+
+    summary = service.sync(
+        source="demo",
+        vdb="primary",
+        missing_only=False,
+        recompute=False,
+        limit=None,
+        concurrency=None,
+        dry_run=False,
+    )
+
+    assert summary["chunks_total"] == 1
+    assert summary["vectors_embedded"] == 1
+    assert summary["dry_run"] is False
+
+    index_path = (
+        paths.source_dir("demo") / "vectors" / "primary" / "index.faiss"
+    )
+    assert index_path.exists()
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+
+        chunk_row = connection.execute(
+            (
+                "SELECT c.header_md, c.body_text FROM chunks AS c "
+                "JOIN vdbs AS v ON v.id = c.vdb_id WHERE v.name = ?"
+            ),
+            ("primary",),
+        ).fetchone()
+        assert chunk_row is not None
+        assert chunk_row["body_text"] == chunk_text
+        assert "Chunk: `chunk-example`" in chunk_row["header_md"]
+
+        vector_row = connection.execute(
+            (
+                "SELECT dim FROM vectors AS vect "
+                "JOIN vdbs AS v ON v.id = vect.vdb_id WHERE v.name = ?"
+            ),
+            ("primary",),
+        ).fetchone()
+        assert vector_row is not None
+        assert vector_row["dim"] == 1536
+
+    dry_run_summary = service.sync(
+        source="demo",
+        vdb="primary",
+        missing_only=False,
+        recompute=False,
+        limit=None,
+        concurrency=None,
+        dry_run=True,
+    )
+
+    assert dry_run_summary["vectors_planned"] == 0
+    assert dry_run_summary["chunks_total"] == 1
 
 
 def test_create_supports_latest_alias(tmp_path: Path) -> None:

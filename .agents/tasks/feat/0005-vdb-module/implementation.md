@@ -85,7 +85,7 @@
     - [x] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
   - [ ] Service: implement `VdbService` flows for each CLI command.
     - [x] `create`: validate config + uniqueness, derive vectors path, insert VDB row, and seed metadata.
-    - [ ] `sync`: materialize chunks, batch embed, persist vectors + metadata, and refresh progress stats.
+    - [x] `sync`: materialize chunks, batch embed, persist vectors + metadata, and refresh progress stats.
     - [ ] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
     - [ ] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
   - [ ] Health: wire `vdb` checks into `checkhealth`.
@@ -264,6 +264,16 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-11 06:34 UTC
+**Summary**
+VDB sync service implemented with chunk materialization and FAISS persistence
+**Changes**
+— Implemented `VdbService.sync` with chunk slice recomposition, provider batching, vector persistence, and FAISS index management plus supporting helpers.
+— Added sync integration coverage via `test_sync_materializes_chunks_and_vectors` exercising stub embeddings and disk artifacts.
+— Extended service telemetry helpers for batch sizing, concurrency resolution, and summary logging during sync runs.
+**Tests**
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-sync-tests uv run pytest --no-cov tests/modules/vdb/test_service.py`
 
 ### 2025-10-14 09:30 UTC
 **Summary**
