@@ -339,10 +339,10 @@ def test_create_rejects_conflicting_vdb(tmp_path: Path) -> None:
 def test_vdb_health_hook_reports_healthy_vdb(tmp_path: Path) -> None:
     service, db_service, paths = _build_service(tmp_path)
     db_path = db_service.ensure("demo")
-    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    batch_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
     batch_id = "batch-001"
 
-    _seed_batch(db_path, batch_id, timestamp)
+    _seed_batch(db_path, batch_id, batch_timestamp)
 
     service.create(
         selector=f"demo@{batch_id}",
@@ -350,11 +350,13 @@ def test_vdb_health_hook_reports_healthy_vdb(tmp_path: Path) -> None:
         model="stub:model-a",
     )
 
+    build_timestamp = datetime.now(timezone.utc)
+
     _seed_vdb_artifacts(
         db_path,
         batch_id=batch_id,
         vdb_name="primary",
-        timestamp=timestamp,
+        timestamp=build_timestamp,
     )
 
     handle = SimpleNamespace(paths=paths, config=service.config)
@@ -682,6 +684,99 @@ def test_info_returns_summary_with_sidecar(tmp_path: Path) -> None:
     assert record["built_at"] == generated_at.isoformat()
     assert record["stale_relative_to_latest"] is False
     assert record["health"] == []
+
+
+def test_info_reports_missing_index_artifact(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    faiss_path, sidecar_path, _lock_path = _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=timestamp,
+    )
+
+    faiss_path.unlink()
+    assert sidecar_path.exists()
+
+    records = service.info(source="demo", vdb="primary")
+    assert len(records) == 1
+
+    health_codes = {entry["code"] for entry in records[0]["health"]}
+    assert "missing-index" in health_codes
+
+
+def test_info_detects_sidecar_dim_mismatch(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    faiss_path, sidecar_path, _lock_path = _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=timestamp,
+    )
+    assert faiss_path.exists()
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    payload["dim"] = 2048
+    sidecar_path.write_text(
+        json.dumps(payload, indent=2),
+        encoding="utf-8",
+    )
+
+    records = service.info(source="demo", vdb="primary")
+    assert len(records) == 1
+
+    health_entries = records[0]["health"]
+    codes = {entry["code"] for entry in health_entries}
+    assert "dim-mismatch" in codes
+
+
+def test_info_flags_stale_built_timestamp(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    batch_time = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    _seed_batch(db_path, batch_id, batch_time)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    old_timestamp = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=old_timestamp,
+    )
+
+    records = service.info(source="demo", vdb="primary")
+    assert len(records) == 1
+
+    health_codes = {entry["code"] for entry in records[0]["health"]}
+    assert "stale-built-at" in health_codes
 
 
 def test_info_reports_not_synced(tmp_path: Path) -> None:

@@ -7,7 +7,7 @@ import math
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence, Type
 
@@ -42,6 +42,9 @@ __all__ = [
     "VdbInfoError",
     "VdbResetError",
 ]
+
+
+_STALE_BUILD_MAX_AGE = timedelta(days=30)
 
 
 class VdbServiceError(RuntimeError):
@@ -894,6 +897,7 @@ class VdbService:
         sync_hint = self._format_sync_command(source, vdb.name)
         index_exists = faiss_path.exists()
         sidecar_exists = sidecar_meta is not None
+        observed_now = self.now()
 
         empty_state = self._health_empty_state(
             index_exists=index_exists,
@@ -932,6 +936,7 @@ class VdbService:
                 vdb=vdb,
                 faiss_path=faiss_path,
                 sync_hint=sync_hint,
+                now=observed_now,
             )
         )
         entries.extend(
@@ -1074,6 +1079,7 @@ class VdbService:
         vdb: Vdb,
         faiss_path: Path,
         sync_hint: str,
+        now: datetime,
     ) -> tuple[VdbHealthEntry, ...]:
         if sidecar_meta is None:
             return self._health_missing_sidecar(
@@ -1099,6 +1105,15 @@ class VdbService:
                 sidecar_meta=sidecar_meta,
                 sidecar_path=sidecar_path,
                 embedding_model=embedding_model,
+                sync_hint=sync_hint,
+            )
+        )
+        entries.extend(
+            self._health_sidecar_built_at(
+                sidecar_meta=sidecar_meta,
+                sidecar_path=sidecar_path,
+                vdb=vdb,
+                now=now,
                 sync_hint=sync_hint,
             )
         )
@@ -1275,6 +1290,78 @@ class VdbService:
             ),
         )
 
+    def _health_sidecar_built_at(
+        self,
+        *,
+        sidecar_meta: Mapping[str, Any],
+        sidecar_path: Path,
+        vdb: Vdb,
+        now: datetime,
+        sync_hint: str,
+    ) -> tuple[VdbHealthEntry, ...]:
+        built_at_raw = sidecar_meta.get("built_at")
+        if built_at_raw in (None, "", 0):
+            message = (
+                "Sidecar missing built_at timestamp at "
+                f"{sidecar_path}; unable to verify index freshness."
+            )
+            return (
+                VdbHealthEntry(
+                    code="missing-built-at",
+                    level="warning",
+                    message=message,
+                    actions=(f"Run {sync_hint} --recompute",),
+                ),
+            )
+
+        parsed = self._parse_sidecar_timestamp(built_at_raw)
+        if parsed is None:
+            message = (
+                "Sidecar built_at is invalid: "
+                f"{built_at_raw!r}."
+            )
+            return (
+                VdbHealthEntry(
+                    code="sidecar-field",
+                    level="error",
+                    message=message,
+                    actions=(f"Inspect {sidecar_path}",),
+                ),
+            )
+
+        reasons: list[str] = []
+
+        if parsed < vdb.created_at:
+            reasons.append(
+                "timestamp predates VDB creation "
+                f"{self._format_health_timestamp(vdb.created_at)}"
+            )
+
+        if now >= parsed:
+            age = now - parsed
+            if age > _STALE_BUILD_MAX_AGE:
+                days = max(age.days, 1)
+                reasons.append(f"{days} days since last build")
+
+        if not reasons:
+            return ()
+
+        reason_text = "; ".join(reasons)
+        message = (
+            "Index built_at {built} appears stale ({details})."
+        ).format(
+            built=self._format_health_timestamp(parsed),
+            details=reason_text,
+        )
+        return (
+            VdbHealthEntry(
+                code="stale-built-at",
+                level="warning",
+                message=message,
+                actions=(f"Run {sync_hint} --recompute",),
+            ),
+        )
+
     def _health_sidecar_dim(
         self,
         *,
@@ -1369,6 +1456,41 @@ class VdbService:
     # ------------------------------------------------------------------
     # Internal helpers - sync orchestration
     # ------------------------------------------------------------------
+    @staticmethod
+    def _format_health_timestamp(value: datetime) -> str:
+        normalized = value
+        if normalized.tzinfo is None:
+            normalized = normalized.replace(tzinfo=timezone.utc)
+        else:
+            normalized = normalized.astimezone(timezone.utc)
+        text = normalized.isoformat()
+        if text.endswith("+00:00"):
+            return text[:-6] + "Z"
+        return text
+
+    @staticmethod
+    def _parse_sidecar_timestamp(value: Any) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
     def _validate_sync_options(
         self,
         *,
