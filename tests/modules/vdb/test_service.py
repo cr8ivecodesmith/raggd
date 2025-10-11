@@ -716,6 +716,168 @@ def test_info_reports_missing_index_artifact(tmp_path: Path) -> None:
     assert "missing-index" in health_codes
 
 
+def test_info_detects_missing_vectors(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+
+    _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=timestamp,
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+
+        vdb_row = connection.execute(
+            "SELECT id FROM vdbs WHERE name = ?",
+            ("primary",),
+        ).fetchone()
+        assert vdb_row is not None
+        vdb_id = int(vdb_row["id"])
+
+        file_id = connection.execute(
+            (
+                "INSERT INTO files (batch_id, repo_path, lang, file_sha, "
+                "mtime_ns, size_bytes) VALUES (?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                batch_id,
+                "src/missing.py",
+                "python",
+                "sha-missing",
+                0,
+                16,
+            ),
+        ).lastrowid
+
+        symbol_id = connection.execute(
+            (
+                "INSERT INTO symbols (file_id, kind, symbol_path, start_line, "
+                "end_line, symbol_sha, symbol_norm_sha, args_json, "
+                "returns_json, imports_json, deps_out_json, docstring, "
+                "summary, tokens, first_seen_batch, last_seen_batch) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                file_id,
+                "function",
+                "missing:example",
+                1,
+                2,
+                "sym-missing",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                8,
+                batch_id,
+                batch_id,
+            ),
+        ).lastrowid
+
+        connection.execute(
+            (
+                "INSERT INTO chunks (symbol_id, vdb_id, header_md, body_text, "
+                "token_count) VALUES (?, ?, ?, ?, ?)"
+            ),
+            (
+                symbol_id,
+                vdb_id,
+                "# missing\n- File: `src/missing.py`",
+                "print('missing')\n",
+                8,
+            ),
+        )
+        connection.commit()
+
+    records = service.info(source="demo", vdb="primary")
+    assert len(records) == 1
+
+    entries = records[0]["health"]
+    codes = {entry["code"] for entry in entries}
+    assert "missing-vectors" in codes
+    missing_entry = next(
+        entry for entry in entries if entry["code"] == "missing-vectors"
+    )
+    missing_message = missing_entry["message"]
+    assert "chunk(s) have no vectors" in missing_message
+
+
+def test_info_detects_orphan_vectors(tmp_path: Path) -> None:
+    service, db_service, _paths = _build_service(tmp_path)
+    db_path = db_service.ensure("demo")
+    batch_id = "batch-001"
+    timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    _seed_batch(db_path, batch_id, timestamp)
+
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="primary",
+        model="stub:model-a",
+    )
+    service.create(
+        selector=f"demo@{batch_id}",
+        name="secondary",
+        model="stub:model-a",
+    )
+
+    _seed_vdb_artifacts(
+        db_path,
+        batch_id=batch_id,
+        vdb_name="primary",
+        timestamp=timestamp,
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+
+        primary_id = connection.execute(
+            "SELECT id FROM vdbs WHERE name = ?",
+            ("primary",),
+        ).fetchone()
+        secondary_id = connection.execute(
+            "SELECT id FROM vdbs WHERE name = ?",
+            ("secondary",),
+        ).fetchone()
+
+        assert primary_id is not None
+        assert secondary_id is not None
+
+        connection.execute(
+            "UPDATE vectors SET vdb_id = ? WHERE vdb_id = ?",
+            (int(secondary_id["id"]), int(primary_id["id"])),
+        )
+        connection.commit()
+
+    records = service.info(source="demo", vdb="secondary")
+    assert len(records) == 1
+
+    entries = records[0]["health"]
+    codes = {entry["code"] for entry in entries}
+    assert "orphan-vectors" in codes
+    orphan_entry = next(
+        entry for entry in entries if entry["code"] == "orphan-vectors"
+    )
+    orphan_message = orphan_entry["message"]
+    assert "vector(s) reference missing or foreign chunks" in orphan_message
+
+
 def test_info_detects_sidecar_dim_mismatch(tmp_path: Path) -> None:
     service, db_service, _paths = _build_service(tmp_path)
     db_path = db_service.ensure("demo")

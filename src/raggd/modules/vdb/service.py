@@ -797,6 +797,10 @@ class VdbService:
                 (vdb.id,),
             ).fetchone()[0]
         )
+        missing_vectors, orphan_vectors = self._fetch_vector_alignment(
+            connection=connection,
+            vdb_id=vdb.id,
+        )
 
         metric = self.config.vdb.metric
         index_type = self.config.vdb.index_type
@@ -842,6 +846,8 @@ class VdbService:
             sidecar_error=sidecar_error,
             stale=stale,
             latest_batch_id=latest_batch_id,
+            missing_vectors=missing_vectors,
+            orphan_vectors=orphan_vectors,
         )
 
         return VdbInfoSummary.from_sources(
@@ -893,6 +899,8 @@ class VdbService:
         sidecar_error: Exception | None,
         stale: bool,
         latest_batch_id: str | None,
+        missing_vectors: int,
+        orphan_vectors: int,
     ) -> tuple[VdbHealthEntry, ...]:
         sync_hint = self._format_sync_command(source, vdb.name)
         index_exists = faiss_path.exists()
@@ -923,6 +931,8 @@ class VdbService:
             self._health_count_consistency(
                 counts=counts,
                 index_count=index_count,
+                missing_vectors=missing_vectors,
+                orphan_vectors=orphan_vectors,
                 sync_hint=sync_hint,
             )
         )
@@ -1033,11 +1043,41 @@ class VdbService:
         *,
         counts: VdbInfoCounts,
         index_count: int,
+        missing_vectors: int,
+        orphan_vectors: int,
         sync_hint: str,
     ) -> tuple[VdbHealthEntry, ...]:
         entries: list[VdbHealthEntry] = []
 
-        if counts.vectors != counts.chunks:
+        if missing_vectors > 0:
+            message = (
+                f"{missing_vectors} chunk(s) have no vectors; "
+                "run sync to rebuild embeddings."
+            )
+            entries.append(
+                VdbHealthEntry(
+                    code="missing-vectors",
+                    level="warning",
+                    message=message,
+                    actions=(sync_hint,),
+                )
+            )
+
+        if orphan_vectors > 0:
+            message = (
+                f"{orphan_vectors} vector(s) reference missing or foreign "
+                "chunks; rebuild to repair integrity."
+            )
+            entries.append(
+                VdbHealthEntry(
+                    code="orphan-vectors",
+                    level="error",
+                    message=message,
+                    actions=(f"{sync_hint} --recompute",),
+                )
+            )
+
+        if counts.vectors != counts.chunks and not entries:
             message = (
                 f"chunks={counts.chunks} but vectors={counts.vectors}; "
                 "run sync to repair."
@@ -1067,6 +1107,37 @@ class VdbService:
             )
 
         return tuple(entries)
+
+    def _fetch_vector_alignment(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        vdb_id: int,
+    ) -> tuple[int, int]:
+        """Return counts of missing vectors and orphaned vector references."""
+
+        missing_row = connection.execute(
+            (
+                "SELECT COUNT(*) FROM chunks AS c "
+                "LEFT JOIN vectors AS v "
+                "ON v.chunk_id = c.id AND v.vdb_id = c.vdb_id "
+                "WHERE c.vdb_id = ? AND v.chunk_id IS NULL"
+            ),
+            (vdb_id,),
+        ).fetchone()
+        orphan_row = connection.execute(
+            (
+                "SELECT COUNT(*) FROM vectors AS v "
+                "LEFT JOIN chunks AS c "
+                "ON c.id = v.chunk_id AND c.vdb_id = v.vdb_id "
+                "WHERE v.vdb_id = ? AND c.id IS NULL"
+            ),
+            (vdb_id,),
+        ).fetchone()
+
+        missing_vectors = 0 if missing_row is None else int(missing_row[0])
+        orphan_vectors = 0 if orphan_row is None else int(orphan_row[0])
+        return missing_vectors, orphan_vectors
 
     def _health_sidecar_entries(
         self,

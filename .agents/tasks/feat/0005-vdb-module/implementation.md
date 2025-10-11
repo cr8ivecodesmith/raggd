@@ -91,7 +91,7 @@
   - [ ] Health: wire `vdb` checks into `checkhealth`.
     - [x] Register the `vdb` health module with the central aggregator and ensure CLI commands load it.
     - [x] Validate FAISS artifacts: detect missing index files, mismatched metadata, and stale build timestamps.
-    - [ ] Compare DB vectors to chunk sources to surface count drift and orphaned references.
+    - [x] Compare DB vectors to chunk sources to surface count drift and orphaned references.
     - [ ] Expose actionable statuses in `checkhealth` output with remediation hints.
   - [ ] Docs: update CLI help and add user guide.
     - [ ] Refresh `raggd vdb` CLI help text with new flags, preconditions, and result fields.
@@ -264,6 +264,16 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-13 14:45 UTC
+**Summary**
+Vector/chunk integrity checks surfaced in VDB health
+**Changes**
+— Added vector alignment queries to flag missing embeddings and orphaned vectors during `info` health synthesis.
+— Extended service tests covering missing vector and orphan vector scenarios, verifying health codes and remediation messaging.
+**Tests**
+— `UV_CACHE_DIR=$PWD/.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-health-align uv run pytest --no-cov tests/modules/vdb/test_service.py`
+— `UV_CACHE_DIR=$PWD/.tmp/uv-cache uv run ruff check src/raggd/modules/vdb/service.py tests/modules/vdb/test_service.py`
 
 ### 2025-10-11 23:15 UTC
 **Summary**
