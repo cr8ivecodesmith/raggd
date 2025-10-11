@@ -83,7 +83,7 @@
     - [x] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
     - [x] Guard index rebuilds and writes with file locks to avoid concurrent corruption across CLI commands.
     - [x] Implement load/validation flow that reads metadata, verifies dimensions/metric, and surfaces typed errors on mismatch.
-  - [ ] Service: implement `VdbService` flows for each CLI command.
+  - [x] Service: implement `VdbService` flows for each CLI command.
     - [x] `create`: validate config + uniqueness, derive vectors path, insert VDB row, and seed metadata.
     - [x] `sync`: materialize chunks, batch embed, persist vectors + metadata, and refresh progress stats.
     - [x] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
