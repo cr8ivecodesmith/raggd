@@ -96,7 +96,7 @@
   - [x] Docs: update CLI help and add user guide.
     - [x] Refresh `raggd vdb` CLI help text with new flags, preconditions, and result fields.
     - [x] Extend the user guide with create/sync/info/reset walkthroughs plus example outputs.
-    - [ ] Document troubleshooting guidance for health warnings and reset-driven recovery flows.
+    - [x] Document troubleshooting guidance for health warnings and reset-driven recovery flows.
 
 ## Test Plan
 - Unit tests
@@ -264,6 +264,15 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-16 15:35 UTC
+**Summary**
+Captured troubleshooting guidance for common VDB health warnings and recovery procedures.
+**Changes**
+— Expanded `docs/learn/vdb.md` with remediation steps for missing indexes, dimension drift, count drift, stale batches, and provider failures plus validation reminders.
+— Checked off the documentation checklist item covering troubleshooting guidance.
+**Tests**
+— Not run (docs-only change).
 
 ### 2025-10-16 15:20 UTC
 **Summary**

@@ -121,3 +121,26 @@ $ raggd vdb reset docs --vdb base --force
   stale batches or dim mismatches early.
 - Review `raggd checkhealth` regularly; VDB health hooks surface missing indexes
   or orphaned vectors alongside remediation advice.
+
+## Troubleshooting & Recovery
+- `health: warn missing-index` or `health: error sidecar-missing` — the FAISS
+  files are gone or incomplete. Run `raggd vdb sync <source> --vdb <name> --recompute`
+  to rebuild the index. If the vectors table also drifted, follow up with
+  `raggd checkhealth vdb` to confirm the warning clears.
+- `health: error dim-mismatch` — the stored vector dimension differs from the
+  provider or sidecar metadata. Use `raggd vdb reset <source> --vdb <name> --drop`
+  to clear the conflicting artifacts, re-run `raggd vdb create`, then
+  `raggd vdb sync` to reseed vectors.
+- `health: warn vector-count-drift` or `health: warn orphaned-vectors` — SQLite
+  counts no longer match the FAISS index. Run `raggd vdb sync <source> --vdb <name>`
+  to restore missing vectors; if drift persists, execute a full
+  `--recompute` or `reset` cycle.
+- `stale_relative_to_latest: true` — the parser produced a newer batch. Execute
+  `raggd parser parse <source>` (or confirm the latest batch you want), then run
+  `raggd vdb sync` so embeddings align with current content.
+- Provider errors (rate limits or timeouts) — `sync` already retries with backoff.
+  If failures persist, lower `--concurrency`, ensure credentials (e.g.,
+  `OPENAI_API_KEY`) are set, and retry once the provider recovers.
+- After any reset or recompute, validate the workspace with
+  `raggd vdb info --json` and `raggd checkhealth vdb` to ensure remediation
+  cleared the warnings before resuming downstream workflows.
