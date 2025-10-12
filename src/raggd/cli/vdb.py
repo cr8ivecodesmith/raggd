@@ -36,9 +36,10 @@ class VdbCLIContext:
 _vdb_app = typer.Typer(
     name="vdb",
     help=(
-        "Manage per-source vector databases: create, sync, info, and reset.\n\n"
-        "This command group is scaffolded; underlying service wiring will be"
-        " completed in subsequent implementation steps."
+        "Manage per-source vector databases: create, sync, inspect, and "
+        "reset.\n\n"
+        "Materialize embeddings, review health signals, and repair FAISS "
+        "artifacts for each configured source."
     ),
     no_args_is_help=True,
     invoke_without_command=False,
@@ -203,9 +204,9 @@ def configure_vdb_commands(
 @_vdb_app.command(
     "info",
     help=(
-        "Display VDB status for the provided source (or all)."
-        " JSON output will match the schema outlined in the spec once the"
-        " service is implemented."
+        "List VDB metadata, counts, and health findings for one source or all "
+        "configured sources. Use --json to emit the structured payload "
+        "described in the implementation spec."
     ),
 )
 def info_vdb(
@@ -224,10 +225,13 @@ def info_vdb(
     json_output: bool = typer.Option(
         False,
         "--json",
-        help="Emit machine-readable JSON output.",
+        help=(
+            "Emit machine-readable JSON including selector, batch, embedding "
+            "model, counts, paths, timestamps, and health entries."
+        ),
     ),
 ) -> None:
-    """Report VDB information via the service, handling stub responses."""
+    """Render VDB summaries including counts, paths, timestamps, and health."""
 
     context = _require_context(ctx)
     try:
@@ -280,29 +284,39 @@ def info_vdb(
 
 @_vdb_app.command(
     "create",
-    help="Create a VDB bound to a parser batch and embedding model.",
+    help=(
+        "Create a VDB bound to a parser batch and embedding model. Existing "
+        "names must refer to the same batch/model pairing, otherwise the "
+        "command fails with remediation guidance."
+    ),
 )
 def create_vdb(
     ctx: typer.Context,
     selector: str = typer.Argument(
         ...,
         metavar="SOURCE@BATCH",
-        help="Source and batch selector (supports `latest`).",
+        help=(
+            "Source and batch selector (accepts the `latest` alias for the most"
+            " recent batch). The referenced batch must already exist."
+        ),
     ),
     name: str = typer.Argument(
         ...,
         metavar="NAME",
-        help="Human-friendly VDB name.",
+        help="Human-friendly VDB name; must be unique per source.",
     ),
     model: str = typer.Option(
         ...,
         "--model",
         "-m",
         metavar="PROVIDER:MODEL",
-        help="Embedding model identifier (provider:name or provider:id).",
+        help=(
+            "Embedding model identifier (provider:name or provider:id), e.g."
+            " `openai:text-embedding-3-small`."
+        ),
     ),
 ) -> None:
-    """Delegate VDB creation to the service and report status."""
+    """Create or verify the requested VDB and confirm the bound model."""
 
     context = _require_context(ctx)
     try:
@@ -335,7 +349,11 @@ def create_vdb(
 
 @_vdb_app.command(
     "sync",
-    help="Materialize chunks, generate embeddings, and update the FAISS index.",
+    help=(
+        "Materialize chunks, generate embeddings, and update the FAISS index. "
+        "Supports incremental refresh via --missing-only, atomic rebuilds via "
+        "--recompute, and dry-run planning."
+    ),
 )
 def sync_vdb(
     ctx: typer.Context,
@@ -353,33 +371,44 @@ def sync_vdb(
     missing_only: bool = typer.Option(
         False,
         "--missing-only",
-        help="Only embed chunks without vectors.",
+        help=(
+            "Embed only chunks without vectors while validating existing rows."
+        ),
     ),
     recompute: bool = typer.Option(
         False,
         "--recompute",
-        help="Rebuild embeddings and index atomically.",
+        help="Rebuild embeddings and index atomically before swapping them in.",
     ),
     limit: int | None = typer.Option(
         None,
         "--limit",
         "-n",
         min=1,
-        help="Optional limit on chunks to process.",
+        help=(
+            "Optional limit on chunks to process; pair with --dry-run or "
+            "targeted repairs."
+        ),
     ),
     concurrency: str | None = typer.Option(
         None,
         "--concurrency",
         "-c",
-        help="Override concurrency (integer or 'auto').",
+        help=(
+            "Override concurrency (integer or 'auto'); defaults to provider "
+            "and workspace configuration."
+        ),
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Plan actions without performing writes.",
+        help=(
+            "Plan actions without performing writes; summary reports "
+            "`vectors_planned` instead of persisted counts."
+        ),
     ),
 ) -> None:
-    """Invoke the service sync operation and report the outcome."""
+    """Synchronize vectors and report chunk/vector counts plus run metadata."""
 
     if missing_only and recompute:
         raise typer.BadParameter(
@@ -435,7 +464,10 @@ def sync_vdb(
 
 @_vdb_app.command(
     "reset",
-    help="Remove vector artifacts and optionally drop the VDB entry.",
+    help=(
+        "Remove vector artifacts and optionally drop the VDB entry after "
+        "confirmation. Summaries include deleted row counts and removed files."
+    ),
 )
 def reset_vdb(
     ctx: typer.Context,
@@ -453,15 +485,15 @@ def reset_vdb(
     drop: bool = typer.Option(
         False,
         "--drop",
-        help="Remove the VDB record after clearing artifacts.",
+        help="Remove the VDB record after clearing artifacts from disk.",
     ),
     force: bool = typer.Option(
         False,
         "--force",
-        help="Bypass interactive confirmation prompts.",
+        help="Bypass interactive confirmation prompts for destructive actions.",
     ),
 ) -> None:
-    """Call the service reset operation and present a summary."""
+    """Purge vectors, artifacts, and optionally the VDB metadata entry."""
 
     context = _require_context(ctx)
     try:

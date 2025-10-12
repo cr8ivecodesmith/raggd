@@ -94,7 +94,7 @@
     - [x] Compare DB vectors to chunk sources to surface count drift and orphaned references.
     - [x] Expose actionable statuses in `checkhealth` output with remediation hints.
   - [ ] Docs: update CLI help and add user guide.
-    - [ ] Refresh `raggd vdb` CLI help text with new flags, preconditions, and result fields.
+    - [x] Refresh `raggd vdb` CLI help text with new flags, preconditions, and result fields.
     - [ ] Extend the user guide with create/sync/info/reset walkthroughs plus example outputs.
     - [ ] Document troubleshooting guidance for health warnings and reset-driven recovery flows.
 
@@ -264,6 +264,15 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-16 12:30 UTC
+**Summary**
+Refreshed CLI help text to describe final VDB flows and surfaced summary fields.
+**Changes**
+— Updated `src/raggd/cli/vdb.py` help strings for the group and `info/create/sync/reset` commands to highlight flags, preconditions, and result metadata.
+— Marked the documentation checklist sub-item for the CLI help refresh as complete.
+**Tests**
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-cli-help uv run pytest --no-cov tests/cli/test_vdb.py tests/cli/test_vdb_cli.py`
 
 ### 2025-10-12 08:18 UTC
 **Summary**
