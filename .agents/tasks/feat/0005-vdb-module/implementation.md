@@ -265,6 +265,16 @@ Example:
 
 ## History
 
+### 2025-10-12 05:36 UTC
+**Summary**
+VDB module coverage pushed past 90% with new service, health, and CLI tests
+**Changes**
+— Added targeted service cleanup tests for artifact removal helpers and logger initialization edge cases in `tests/modules/vdb/test_service.py`.
+— Introduced `tests/modules/vdb/test_health.py` covering timestamp parsing, health entry aggregation, and error handling from the info hook.
+— Created `tests/cli/test_vdb_cli.py` to exercise scaffolded CLI flows, including not-implemented branches, success summaries, and parameter guards.
+**Tests**
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-coverage uv run pytest --cov=raggd --cov-report=term --cov-report=xml`
+
 ### 2025-10-16 09:45 UTC
 **Summary**
 OpenAI embeddings provider implemented with registry wiring and coverage

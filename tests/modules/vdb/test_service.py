@@ -336,6 +336,35 @@ def test_create_rejects_conflicting_vdb(tmp_path: Path) -> None:
     assert "reset --drop" in str(exc.value)
 
 
+def test_create_requires_configured_source(tmp_path: Path) -> None:
+    service, _db_service, _paths = _build_service(tmp_path)
+
+    with pytest.raises(VdbCreateError) as exc:
+        service.create(
+            selector="unknown@batch-001",
+            name="primary",
+            model="stub:model-a",
+        )
+
+    assert "not configured" in str(exc.value)
+
+
+def test_service_initializes_default_logger(tmp_path: Path) -> None:
+    service, db_service, paths = _build_service(tmp_path)
+
+    new_service = VdbService(
+        workspace=paths,
+        config=service.config,
+        db_service=db_service,
+        providers=service.providers,
+        logger=None,
+        now=service.now,
+    )
+
+    assert new_service.logger is not None
+    assert new_service.logger is not service.logger
+
+
 def test_vdb_health_hook_reports_healthy_vdb(tmp_path: Path) -> None:
     service, db_service, paths = _build_service(tmp_path)
     db_path = db_service.ensure("demo")
@@ -1208,3 +1237,76 @@ def test_reset_missing_vdb_errors(tmp_path: Path) -> None:
             drop=False,
             force=True,
         )
+
+
+def test_remove_artifact_behaviors(tmp_path: Path) -> None:
+    service, _db_service, _paths = _build_service(tmp_path)
+
+    existing = tmp_path / "artifact.lock"
+    existing.write_text("locked", encoding="utf-8")
+    assert service._remove_artifact(existing) is True
+    assert not existing.exists()
+
+    missing = tmp_path / "missing.lock"
+    assert service._remove_artifact(missing) is False
+
+    class BrokenPath:
+        def unlink(self) -> None:
+            raise OSError("boom")
+
+        def __str__(self) -> str:
+            return "/broken/path"
+
+    with pytest.raises(VdbResetError):
+        service._remove_artifact(BrokenPath())  # type: ignore[arg-type]
+
+
+def test_remove_directory_if_empty_behaviors(tmp_path: Path) -> None:
+    service, _db_service, _paths = _build_service(tmp_path)
+
+    missing = tmp_path / "missing-dir"
+    assert service._remove_directory_if_empty(missing) is False
+
+    non_empty = tmp_path / "non-empty"
+    non_empty.mkdir()
+    (non_empty / "nested.txt").write_text("data", encoding="utf-8")
+    assert service._remove_directory_if_empty(non_empty) is False
+    assert non_empty.exists()
+
+    empty = tmp_path / "empty-dir"
+    empty.mkdir()
+    assert service._remove_directory_if_empty(empty) is True
+    assert not empty.exists()
+
+    class FailingDir:
+        def exists(self) -> bool:
+            return True
+
+        def is_dir(self) -> bool:
+            return True
+
+        def iterdir(self):
+            return iter(())
+
+        def rmdir(self) -> None:
+            raise OSError("cannot remove")
+
+        def __str__(self) -> str:
+            return "/failing/dir"
+
+    with pytest.raises(VdbResetError):
+        service._remove_directory_if_empty(FailingDir())  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("rowcount", "expected"),
+    [
+        (None, 0),
+        (-1, 0),
+        (0, 0),
+        (5, 5),
+    ],
+)
+def test_rowcount_normalizes_values(rowcount: int | None, expected: int) -> None:
+    cursor = SimpleNamespace(rowcount=rowcount)
+    assert VdbService._rowcount(cursor) == expected
