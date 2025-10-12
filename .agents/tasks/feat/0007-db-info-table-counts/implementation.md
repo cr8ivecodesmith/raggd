@@ -42,7 +42,7 @@
   - [x] Implement table counting in `SQLiteLifecycleBackend.info` with internal helper (filters tables, enforces timeout via progress handler, records skipped tables).
   - [x] Update `DbLifecycleService.info` to surface `table_counts` in payload, track skip reasons, and enrich logging.
   - [x] Add `--counts/--no-counts` option to CLI command, adjust output formatting to render counts as a nested section, and include note on skipped tables/timeouts.
-  - [ ] Refresh docs in `docs/api/db.md` with flag description, sample output, and performance guidance.
+  - [x] Refresh docs in `docs/api/db.md` with flag description, sample output, and performance guidance.
   - [ ] Add/adjust tests across CLI, backend, lifecycle, and config to cover new behaviors and edge cases (timeout skip, disabled counts).
 
 ## Test Plan
@@ -118,3 +118,10 @@
 - Introduced `--counts/--no-counts` to `raggd db info`, rendering nested table counts, skip details, and a highlighted note when any tables are skipped.
 - Expanded CLI integration tests to cover default counts, the `--no-counts` opt-out, and row-limit skip reporting.
 - Ran `pytest tests/cli/test_db.py --no-cov` with `UV_CACHE_DIR=.tmp/uv-cache`, `UV_PROJECT_ENVIRONMENT=.tmp/uv-env`, and `RAGGD_WORKSPACE=$PWD/.tmp/test-workspace`.
+
+### 2025-10-13 05:05 UTC
+**Summary**
+- Documented the table count flag and skip behavior for `raggd db info`.
+**Changes**
+- Expanded `docs/api/db.md` with `--counts/--no-counts` coverage, a sample output block showing skip metadata, and configuration guidance for timeout/row-limit tuning.
+- Re-ran `.venv/bin/pytest tests/cli/test_db.py --no-cov` using `UV_CACHE_DIR=.tmp/uv-cache`, `UV_PROJECT_ENVIRONMENT=.tmp/uv-env`, and `RAGGD_WORKSPACE=$PWD/.tmp/test-workspace`.
