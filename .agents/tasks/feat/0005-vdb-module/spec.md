@@ -69,7 +69,7 @@ Introduce a first-class `raggd vdb` command group that manages per-source vector
 - [x] Provider abstraction with OpenAI implementation: batching, concurrency, truncation, retries/backoff, and `dim` consistency enforcement.
 - [x] Chunk materialization and FAISS IDMap writing wired to `vectors` presence tracking; supports `--missing-only`, `--recompute`, `--limit`, and `--dry-run`.
 - [x] Health checks for index existence, counts drift, `dim` mismatches, and staleness wired into `checkhealth`; `info --json` reflects the same signals.
-- [ ] Config keys defined in `raggd.defaults.toml` under `modules.vdb` (provider defaults, index type/metric, batching/concurrency, normalize, max input tokens) with user overrides in `raggd.toml`, and passed through to services.
+- [x] Config keys defined in `raggd.defaults.toml` under `modules.vdb` (provider defaults, index type/metric, batching/concurrency, normalize, max input tokens) with user overrides in `raggd.toml`, and passed through to services.
 - [x] Tests: CLI happy paths, stale index detection, dimension mismatch, resumable sync, reset (including `--drop`), and atomic index rebuild behavior.
 - [x] Docs: user-facing CLI docs, operator notes (OpenAI API key handling, cost/limits), and developer notes on provider/index adapters.
 - [x] Packaging: `vdb` extra declared; module registered and toggle respected.
