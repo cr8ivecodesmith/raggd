@@ -22,6 +22,8 @@ vacuum_concurrency = "auto"
 run_allow_outside = true
 run_autocommit_default = false
 drift_warning_seconds = 0
+info_count_timeout_ms = 1000
+info_count_row_limit = 500000
 
 [modules]
 

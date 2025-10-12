@@ -17,6 +17,8 @@ def test_db_settings_from_mapping_honors_overrides() -> None:
             "lock_poll_interval": 0.05,
             "lock_suffix": ".dblock",
             "lock_namespace": "sqlite",
+            "info_count_timeout_ms": 2500,
+            "info_count_row_limit": 123456,
         }
     }
 
@@ -35,6 +37,8 @@ def test_db_settings_from_mapping_honors_overrides() -> None:
     assert settings.lock_poll_interval == 0.05
     assert settings.lock_suffix == ".dblock"
     assert settings.lock_namespace == "sqlite"
+    assert settings.info_count_timeout_ms == 2500
+    assert settings.info_count_row_limit == 123456
 
 
 def test_db_settings_from_mapping_defaults_when_missing() -> None:
@@ -51,3 +55,5 @@ def test_db_settings_from_mapping_defaults_when_missing() -> None:
     assert settings.lock_poll_interval == 0.1
     assert settings.lock_suffix == ".lock"
     assert settings.lock_namespace == "db"
+    assert settings.info_count_timeout_ms == 1000
+    assert settings.info_count_row_limit == 500_000

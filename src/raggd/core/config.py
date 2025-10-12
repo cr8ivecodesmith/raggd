@@ -91,6 +91,18 @@ class DbSettings(BaseModel):
         ge=0,
         description="Threshold before reporting manifest/database drift.",
     )
+    info_count_timeout_ms: int = Field(
+        default=1000,
+        ge=0,
+        description="Millisecond timeout applied to db info table counts.",
+    )
+    info_count_row_limit: int = Field(
+        default=500_000,
+        ge=0,
+        description=(
+            "Maximum rows counted per table before db info aborts the query."
+        ),
+    )
 
     model_config = {
         "str_strip_whitespace": True,
@@ -963,6 +975,8 @@ def render_user_config(
     db_table["run_allow_outside"] = config.db.run_allow_outside
     db_table["run_autocommit_default"] = config.db.run_autocommit_default
     db_table["drift_warning_seconds"] = config.db.drift_warning_seconds
+    db_table["info_count_timeout_ms"] = config.db.info_count_timeout_ms
+    db_table["info_count_row_limit"] = config.db.info_count_row_limit
     document["db"] = db_table
 
     if config.modules:

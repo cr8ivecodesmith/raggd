@@ -26,6 +26,8 @@ class DbModuleSettings:
     lock_poll_interval: float = 0.1
     lock_suffix: str = ".lock"
     lock_namespace: str = "db"
+    info_count_timeout_ms: int = 1000
+    info_count_row_limit: int = 500_000
 
 
 def db_settings_from_mapping(
@@ -59,6 +61,8 @@ def db_settings_from_mapping(
     lock_poll_interval = float(_read("lock_poll_interval", 0.1))
     lock_suffix = str(_read("lock_suffix", ".lock"))
     lock_namespace = str(_read("lock_namespace", "db"))
+    info_count_timeout_ms = int(_read("info_count_timeout_ms", 1000))
+    info_count_row_limit = int(_read("info_count_row_limit", 500_000))
 
     return DbModuleSettings(
         migrations_path=migrations_path,
@@ -72,4 +76,6 @@ def db_settings_from_mapping(
         lock_poll_interval=lock_poll_interval,
         lock_suffix=lock_suffix,
         lock_namespace=lock_namespace,
+        info_count_timeout_ms=info_count_timeout_ms,
+        info_count_row_limit=info_count_row_limit,
     )

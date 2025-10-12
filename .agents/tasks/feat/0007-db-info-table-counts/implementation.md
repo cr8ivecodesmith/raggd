@@ -37,7 +37,7 @@
 - Architecture/pattern choices: compute counts inside `SQLiteLifecycleBackend.info` to keep DB access localized; expose results via `DbInfoOutcome.metadata["table_counts"] = dict[str, int | None]`, where `None` indicates timeout/skipped.
 - DI & boundaries: `DbLifecycleService.info` will pass `include_counts` flag through to backend and normalize returned metadata into top-level `table_counts` plus optional warning summary, maintaining existing manifest mutation pattern.
 - Stepwise checklist:
-  - [ ] Extend `DbModuleSettings` (fields + loader + defaults) with count timeout/limits and update config serialization/tests.
+  - [x] Extend `DbModuleSettings` (fields + loader + defaults) with count timeout/limits and update config serialization/tests.
   - [ ] Update `DbLifecycleBackend.info` protocol + implementations (real + test doubles) to accept an `include_counts` flag and return count metadata.
   - [ ] Implement table counting in `SQLiteLifecycleBackend.info` with internal helper (filters tables, enforces timeout via progress handler, records skipped tables).
   - [ ] Update `DbLifecycleService.info` to surface `table_counts` in payload, track skip reasons, and enrich logging.
@@ -69,3 +69,8 @@
 **Changes**
 - Documented understanding, impact, plan, tests, and operability considerations.
 
+### 2025-10-12 16:11 UTC
+**Summary**
+- Landed configuration scaffolding for db info table counts.
+**Changes**
+- Added timeout/row limit fields to `DbModuleSettings` and `DbSettings`, refreshed defaults, serialization, and tests (`tests/modules/db/test_settings.py`, `tests/core/test_config.py`).
