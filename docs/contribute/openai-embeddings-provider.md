@@ -7,7 +7,8 @@ aligned.
 
 ## Quick reference
 - Depends on the OpenAI Python SDK (>=1.0) and `tiktoken`.
-- Requires `OPENAI_API_KEY`; optional overrides:
+- Requires `OPENAI_API_KEY` for all CLI entry points, including `--dry-run`
+  planning flows; optional overrides:
   - `OPENAI_BASE_URL` (e.g., Azure or private proxy endpoints).
   - `OPENAI_TIMEOUT_SECONDS` (float, defaults to 30s).
   - `OPENAI_ORG_ID` for multi-tenant accounts.

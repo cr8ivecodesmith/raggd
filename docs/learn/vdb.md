@@ -12,7 +12,8 @@ you should see when the module is healthy.
 ## Prerequisites
 - Parse at least one batch for the source with `raggd parser parse <source>`.
 - Configure credentials for your embeddings provider (for OpenAI set
-  `OPENAI_API_KEY`). The CLI fails fast when the API key is missing.
+  `OPENAI_API_KEY`). The CLI fails fast when the API key is missing, even when
+  you plan a run with `--dry-run`.
 - Confirm the workspace contains the optional `rag` extra dependencies so FAISS
   and provider SDKs are available (install with `uv sync --extra rag`).
 
@@ -52,8 +53,10 @@ $ raggd vdb sync docs --vdb base --missing-only
   scratch with an atomic swap.
 - `--limit` constrains how many chunks sync in one run. Helpful during incident
   response when you want to stage large updates.
-- `--dry-run` walks the plan and reports counts without writing. Logs include
-  provider throttle warnings if rate limits are hit.
+- `--dry-run` walks the plan and reports counts without writing. Export
+  `OPENAI_API_KEY` first—the provider still initializes during planning and
+  fails fast without credentials. Logs include provider throttle warnings if
+  rate limits are hit.
 
 ## Inspect VDB status
 `info` reports selector details, counts, index paths, and health indicators. The

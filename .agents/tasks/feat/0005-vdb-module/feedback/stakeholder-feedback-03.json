@@ -1,0 +1,64 @@
+{
+  "id": "stakeholder-feedback-03",
+  "task": {
+    "id": "0005",
+    "slug": "vdb-module"
+  },
+  "doc": {
+    "type": "implementation",
+    "path": ".agents/tasks/feat/0005-vdb-module/implementation.md"
+  },
+  "stakeholder": "Stakeholder",
+  "owner": "Engineer",
+  "status": "approved-with-notes",
+  "sign_off": false,
+  "created_at": "2025-10-12T18:45:00Z",
+  "summary": "Validated the end-to-end VDB CLI workflow inside a scratch workspace: bootstrapped the sandbox, added a sample source, parsed new content, created a VDB bound to the latest batch, and exercised sync (dry-run) plus info reporting. Flows behave per spec when environment overrides are supplied.",
+  "verification": {
+    "environment": {
+      "RAGGD_WORKSPACE": ".tmp/vdb-sandbox",
+      "UV_CACHE_DIR": ".tmp/uv-cache",
+      "OPENAI_API_KEY": "<redacted test key>"
+    },
+    "commands_exercised": [
+      "uv run raggd init",
+      "uv run raggd source init sample --target ./tmp/sample-source --force-refresh",
+      "uv run raggd parser parse sample",
+      "uv run raggd vdb create sample@latest sample-vdb --model openai:text-embedding-3-small",
+      "uv run raggd vdb sync sample --vdb sample-vdb --dry-run",
+      "uv run raggd vdb info sample --vdb sample-vdb --json"
+    ],
+    "observations": [
+      "Dry-run sync reported `vectors_planned=3` and respected provider-driven concurrency (auto resolved to 4 parallel requests).",
+      "`vdb info --json` exposes selector, model metadata, FAISS paths, and health guidance per spec.",
+      "Workspace artifacts align with the documented layout (`sources/<name>/vectors/<vdb>`) and manifest backups are updated automatically."
+    ],
+    "artifacts": [
+      {
+        "path": ".tmp/vdb-sandbox/sources/sample/docs/tutorial.md",
+        "description": "Sample knowledge-base document used to drive parser output."
+      },
+      {
+        "path": ".tmp/vdb-sandbox/sources/sample/vectors/sample-vdb",
+        "description": "Created VDB directory (index pending until a non-dry-run sync writes FAISS artifacts)."
+      }
+    ]
+  },
+  "notes": [
+    "Both `vdb create` and `vdb sync --dry-run` require `OPENAI_API_KEY` to be present because the provider initializes an API client even when no requests are sent; document this prerequisite in operator guides.",
+    "Actual embedding writes remain unverified in this pass because we intentionally ran with `--dry-run`; a real sync should be performed in staging once production API credentials are available."
+  ],
+  "follow_ups": [
+    {
+      "item": "Clarify in docs/runbooks that VDB commands need OPENAI_API_KEY set ahead of planning or dry-run workflows.",
+      "owner": "Engineer",
+      "priority": "P2"
+    },
+    {
+      "item": "Schedule a full `raggd vdb sync` (without `--dry-run`) once shared OpenAI credentials are cleared for use so we can verify embeddings end-to-end.",
+      "owner": "Stakeholder",
+      "priority": "P1"
+    }
+  ],
+  "next_checkin": "2025-10-18"
+}

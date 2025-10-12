@@ -6,6 +6,7 @@
   - We will reuse the existing schema introduced by prior migrations (tables named above) without further changes for MVP.
   - The “rag” optional dependency group in `pyproject.toml` covers required packages (`faiss-cpu`, `openai`, `tiktoken`). We will not add new dependencies in MVP.
   - Provider dims for OpenAI models are known and stable; when unknown, we defer to provider-reported dim at first `sync` and then lock it in the DB for determinism.
+  - CLI flows initialize the embedding provider during argument validation, so `OPENAI_API_KEY` must be exported ahead of `vdb create`/`sync` (even with `--dry-run`); document this expectation for operators.
   - Single-writer guarantees for FAISS operations can rely on coarse file locks at the `faiss_path` directory level; SQLite remains authoritative for metadata and can coordinate presence/drift checks.
   - Parser batch selection accepts an alias `latest` resolved to the most recent batch for the source; behavior mirrors the parser module UX.
 - Risks & mitigations
@@ -13,6 +14,7 @@
   - Partial writes/corruption on rebuild: Use temp file writes and atomic swap for `--recompute`; hold a file lock to ensure single writer; keep `vectors` updates in a transaction.
   - Provider rate limits/timeouts: Implement batched requests, exponential backoff with jitter, and `--concurrency auto` derived from provider caps; surface progress and retries in logs.
   - Secrets exposure: Never log raw API keys or prompt content; redact token payloads and ensure `.gitignore` excludes vectors directories under sources.
+  - Missing API credentials: Provider bootstrapping occurs before any network calls, so unset `OPENAI_API_KEY` causes immediate failures; add pre-flight checks and callouts in docs/runbooks.
 
 ## Resources
 ### Project docs
@@ -53,7 +55,7 @@
 - Delete: None.
 - Config/flags:
   - `modules.vdb.*` settings: default provider/model, batching, concurrency, paths, retry policy.
-  - Environment: `OPENAI_API_KEY` for OpenAI provider; optional overrides like `OPENAI_BASE_URL`.
+  - Environment: `OPENAI_API_KEY` for OpenAI provider (required even for planning or `--dry-run` flows); optional overrides like `OPENAI_BASE_URL`.
 ### Security considerations
 - Secrets: Read provider keys from environment; never persist or log them. Redact sensitive fields in structured logs.
 - Data privacy: Embedding payloads may contain proprietary content; document this and provide `--dry-run` plus local-only provider pathway in future.
@@ -99,6 +101,7 @@
     - [x] Refresh `raggd vdb` CLI help text with new flags, preconditions, and result fields.
     - [x] Extend the user guide with create/sync/info/reset walkthroughs plus example outputs.
     - [x] Document troubleshooting guidance for health warnings and reset-driven recovery flows.
+    - [x] Call out the `OPENAI_API_KEY` prerequisite for planning/dry-run workflows in operator docs and runbooks (Stakeholder feedback 03).
 
 ## Test Plan
 - Unit tests
@@ -111,7 +114,7 @@
   - `raggd vdb create/sync/info/reset` end-to-end with a temporary workspace and seeded DB (fixtures).
   - Health aggregator includes vdb checks and flags mismatches/stale status.
 - Manual checks
-  - Run `uv run raggd vdb create` and `sync` against a small parsed source; verify FAISS files appear under `sources/<source>/vectors/<vdb>/` and `info --json` fields are sane.
+  - Run `uv run raggd vdb create` and `sync` against a small parsed source with `OPENAI_API_KEY` exported; verify FAISS files appear under `sources/<source>/vectors/<vdb>/` and `info --json` fields are sane.
 
 ## Operability
 - Telemetry
@@ -120,6 +123,7 @@
 - Health
   - Contribute `vdb` checks to `checkhealth`: missing index, count drift, dim mismatch, stale vs latest batch, orphaned refs.
 - Runbooks
+  - Pre-flight: confirm `OPENAI_API_KEY` is set before invoking `vdb create`/`sync` (including `--dry-run`) so provider bootstrap succeeds.
   - Recovery: use `vdb reset --recompute` to rebuild a corrupted index; verify with `vdb info --json` and health checks.
 
 ## CLI Surface
@@ -267,8 +271,27 @@ Example:
 - Metric default: cosine similarity with vector normalization in MVP; expose metric enum in sidecar for future choices.
 - Multiple VDBs per batch/model per source: allowed by unique VDB `name`; UX guidance recommends meaningful names.
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
+- Follow-up: Update docs/runbooks with the `OPENAI_API_KEY` prerequisite for all VDB CLI flows (Stakeholder feedback 03) — ✅ completed 2025-10-18 via docs/learn/vdb.md and docs/contribute/openai-embeddings-provider.md.
+- Stakeholder action: Perform a full `raggd vdb sync` without `--dry-run` once shared OpenAI credentials are cleared (feedback 03, P1).
 
 ## History
+### 2025-10-18 09:30 UTC
+**Summary**
+Captured stakeholder feedback 03 follow-ups in the implementation plan.
+**Changes**
+— Documented the `OPENAI_API_KEY` prerequisite for `vdb create`/`sync` (including `--dry-run`) and added a docs follow-up.
+— Logged stakeholder-owned real-sync verification alongside existing open decisions.
+**Tests**
+— Not run (documentation update).
+
+### 2025-10-18 10:05 UTC
+**Summary**
+Updated operator docs and runbook with API key prerequisites.
+**Changes**
+— Highlighted that `OPENAI_API_KEY` must be set even for `--dry-run` planning flows in `docs/learn/vdb.md`.
+— Noted the same requirement in `docs/contribute/openai-embeddings-provider.md` quick reference.
+**Tests**
+— Not run (docs-only change).
 
 ### 2025-10-17 11:20 UTC
 **Summary**
