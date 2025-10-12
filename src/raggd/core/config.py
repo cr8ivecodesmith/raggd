@@ -228,6 +228,7 @@ ParserTokenLimit = int | Literal["auto"] | None
 ParserConcurrencyValue = int | Literal["auto"]
 VdbBatchSizeValue = int | Literal["auto"]
 VdbConcurrencyValue = int | Literal["auto"]
+VdbTokenLimit = int | Literal["auto"] | None
 
 
 class ParserGitignoreBehavior(StrEnum):
@@ -470,6 +471,17 @@ class VdbModuleSettings(ModuleToggle):
             "Worker pool size for VDB sync operations or 'auto' for heuristics."
         ),
     )
+    normalize: bool = Field(
+        default=True,
+        description="Whether to L2 normalize embeddings before index writes.",
+    )
+    max_input_tokens: VdbTokenLimit = Field(
+        default=8_192,
+        description=(
+            "Maximum tokens per chunk prior to embedding; 'auto' defers to "
+            "provider caps and null disables the limit."
+        ),
+    )
 
     model_config = {
         "frozen": True,
@@ -523,6 +535,30 @@ class VdbModuleSettings(ModuleToggle):
                     "VDB max_concurrency must be >= 1 when provided as an "
                     "integer."
                 ),
+            )
+        return value
+
+    @field_validator("max_input_tokens")
+    @classmethod
+    def _validate_max_input_tokens(
+        cls,
+        value: VdbTokenLimit,
+    ) -> VdbTokenLimit:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized != "auto":
+                raise ValueError(
+                    (
+                        "VDB max_input_tokens must be a positive integer, "
+                        "'auto', or null."
+                    ),
+                )
+            return "auto"
+        if value < 1:
+            raise ValueError(
+                "VDB max_input_tokens must be >= 1 when provided as an integer."
             )
         return value
 
@@ -793,6 +829,8 @@ def _render_module_entry(toggle: ModuleToggle) -> tomlkit.table:
         entry["index_type"] = toggle.index_type
         entry["batch_size"] = toggle.batch_size
         entry["max_concurrency"] = toggle.max_concurrency
+        entry["normalize"] = toggle.normalize
+        entry["max_input_tokens"] = toggle.max_input_tokens
         return entry
 
     entry = tomlkit.table()

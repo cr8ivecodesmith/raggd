@@ -73,7 +73,14 @@ def test_embedding_provider_model_normalizes_and_computes_key() -> None:
 def test_embed_request_options_and_caps_validate_inputs() -> None:
     options = EmbedRequestOptions(max_batch_size=8, timeout=30.0)
     assert options.max_batch_size == 8
+    assert options.max_input_tokens is None
     assert options.timeout == 30.0
+
+    options_with_tokens = EmbedRequestOptions(
+        max_batch_size=8,
+        max_input_tokens=2048,
+    )
+    assert options_with_tokens.max_input_tokens == 2048
 
     caps = EmbeddingProviderCaps(max_batch_size=32, max_parallel_requests=4)
     assert caps.max_batch_size == 32
@@ -83,6 +90,8 @@ def test_embed_request_options_and_caps_validate_inputs() -> None:
         EmbedRequestOptions(max_batch_size=0)
     with pytest.raises(ValueError):
         EmbedRequestOptions(max_batch_size=4, timeout=0)
+    with pytest.raises(ValueError):
+        EmbedRequestOptions(max_batch_size=4, max_input_tokens=0)
     with pytest.raises(ValueError):
         EmbeddingProviderCaps(max_batch_size=0, max_parallel_requests=1)
     with pytest.raises(ValueError):

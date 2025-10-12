@@ -153,6 +153,14 @@ class OpenAIEmbeddingsProvider(EmbeddingsProvider):
         self._stats = {"requests": 0, "retries": 0, "failures": 0}
         self._client = client or self._build_client()
 
+    def _configured_max_input_tokens(self) -> int | None:
+        value = self._config.get("max_input_tokens")
+        if isinstance(value, int):
+            if value < 1:
+                return None
+            return value
+        return None
+
     @property
     def stats(self) -> Mapping[str, int]:
         """Return counters captured during the provider lifetime."""
@@ -205,10 +213,14 @@ class OpenAIEmbeddingsProvider(EmbeddingsProvider):
                 metadata.max_request_tokens
                 for metadata in _OPENAI_MODELS.values()
             )
+            config_limit = self._configured_max_input_tokens()
+            if config_limit is not None:
+                token_ceiling = min(token_ceiling, config_limit)
             return EmbeddingProviderCaps(
                 max_batch_size=batch_ceiling,
                 max_parallel_requests=parallel_ceiling,
                 max_request_tokens=token_ceiling,
+                max_input_tokens=config_limit,
             )
 
         name = _normalize_model_name(model)
@@ -220,11 +232,24 @@ class OpenAIEmbeddingsProvider(EmbeddingsProvider):
                 max_request_tokens=8_191,
             )
 
+        config_limit = self._configured_max_input_tokens()
+        max_request_tokens = metadata.max_request_tokens
+        max_input_tokens = metadata.max_input_tokens
+        if config_limit is not None:
+            if max_request_tokens is None:
+                max_request_tokens = config_limit
+            else:
+                max_request_tokens = min(max_request_tokens, config_limit)
+            if max_input_tokens is None:
+                max_input_tokens = config_limit
+            else:
+                max_input_tokens = min(max_input_tokens, config_limit)
+
         return EmbeddingProviderCaps(
             max_batch_size=metadata.max_batch_size,
             max_parallel_requests=metadata.max_parallel_requests,
-            max_request_tokens=metadata.max_request_tokens,
-            max_input_tokens=metadata.max_input_tokens,
+            max_request_tokens=max_request_tokens,
+            max_input_tokens=max_input_tokens,
         )
 
     def embed_texts(
@@ -243,6 +268,8 @@ class OpenAIEmbeddingsProvider(EmbeddingsProvider):
         request_limit = (
             caps.max_request_tokens or caps.max_input_tokens or 8_191
         )
+        if options.max_input_tokens is not None:
+            request_limit = min(request_limit, options.max_input_tokens)
 
         normalized_texts = [self._normalize_text(text) for text in texts]
         token_counts = [

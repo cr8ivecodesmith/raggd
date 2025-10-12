@@ -175,3 +175,40 @@ def test_openai_provider_retries_then_raises_rate_limit() -> None:
         )
 
     assert provider.stats["retries"] >= 4
+
+
+def test_openai_capabilities_respect_configured_token_limit() -> None:
+    client = _FakeOpenAIClient([])
+    provider = OpenAIEmbeddingsProvider(
+        logger=get_logger("test.openai.provider"),
+        client=client,  # type: ignore[arg-type]
+        config={"max_input_tokens": 1024},
+        sleep=lambda _: None,
+        now=lambda: 0.0,
+    )
+
+    caps = provider.capabilities(model="text-embedding-3-small")
+
+    assert caps.max_input_tokens == 1024
+    assert caps.max_request_tokens == 1024
+
+
+def test_openai_provider_respects_option_max_input_tokens() -> None:
+    client = _FakeOpenAIClient([])
+    provider = OpenAIEmbeddingsProvider(
+        logger=get_logger("test.openai.provider"),
+        client=client,  # type: ignore[arg-type]
+        sleep=lambda _: None,
+        now=lambda: 0.0,
+    )
+    _patch_token_estimator(provider, [2_048])
+
+    with pytest.raises(VdbProviderInputTooLargeError):
+        provider.embed_texts(
+            ["oversize"],
+            model="text-embedding-3-small",
+            options=EmbedRequestOptions(
+                max_batch_size=1,
+                max_input_tokens=1_024,
+            ),
+        )

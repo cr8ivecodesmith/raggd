@@ -94,6 +94,8 @@ metric = "cosine"
 index_type = "IDMap,Flat"
 batch_size = "auto"
 max_concurrency = "auto"
+normalize = true
+max_input_tokens = 8192
 
 [modules.rag]
 enabled = false

@@ -179,6 +179,8 @@ def test_load_packaged_defaults_resource() -> None:
     assert vdb_defaults["index_type"] == "IDMap,Flat"
     assert vdb_defaults["batch_size"] == "auto"
     assert vdb_defaults["max_concurrency"] == "auto"
+    assert vdb_defaults["normalize"] is True
+    assert vdb_defaults["max_input_tokens"] == 8192
 
 
 def test_internal_module_helpers_cover_branches() -> None:
@@ -366,6 +368,8 @@ def test_render_user_config_serializes_parser_settings() -> None:
     assert vdb_section["index_type"] == "IDMap,Flat"
     assert vdb_section["batch_size"] == "auto"
     assert vdb_section["max_concurrency"] == "auto"
+    assert vdb_section["normalize"] is True
+    assert vdb_section["max_input_tokens"] == 8192
 
 
 def test_parser_settings_validation_errors() -> None:
@@ -403,6 +407,12 @@ def test_vdb_settings_validation_errors() -> None:
 
     with pytest.raises(ValueError):
         VdbModuleSettings(provider=" ")
+
+    with pytest.raises(ValueError):
+        VdbModuleSettings(max_input_tokens=0)
+
+    with pytest.raises(ValueError):
+        VdbModuleSettings(max_input_tokens="fast")
 
 
 def test_parser_coercion_helpers() -> None:

@@ -79,7 +79,7 @@
     - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [x] Outline provider-focused unit/contract tests leveraging stub provider seams.
-  - [ ] Config: expose `modules.vdb.normalize` and `modules.vdb.max_input_tokens` defaults and thread them through settings, defaults TOML, provider caps, and service sync flow (Architect feedback 03).
+  - [x] Config: expose `modules.vdb.normalize` and `modules.vdb.max_input_tokens` defaults and thread them through settings, defaults TOML, provider caps, and service sync flow (Architect feedback 03).
   - [x] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
     - [x] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
     - [x] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
@@ -269,6 +269,15 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-17 11:20 UTC
+**Summary**
+Exposed VDB `normalize`/`max_input_tokens` configuration across settings, provider caps, and sync flow.
+**Changes**
+— Added `normalize` and `max_input_tokens` fields to `VdbModuleSettings`, defaults serialization, and associated config helpers.
+— Threaded token ceilings through `VdbService` embed options and OpenAI provider capabilities with targeted service/provider tests.
+**Tests**
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-config uv run pytest --no-cov tests/core/test_config.py tests/modules/vdb/test_service.py tests/modules/vdb/test_providers.py tests/modules/vdb/test_provider_openai.py`
 
 ### 2025-10-16 15:35 UTC
 **Summary**

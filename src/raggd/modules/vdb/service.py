@@ -1781,6 +1781,10 @@ class VdbService:
     ):
         """Instantiate provider and translate failures to sync errors."""
 
+        provider_config = {
+            "max_input_tokens": self.config.vdb.max_input_tokens,
+            "normalize": self.config.vdb.normalize,
+        }
         try:
             provider = self.providers.create(
                 provider_key,
@@ -1790,7 +1794,7 @@ class VdbService:
                     source=source,
                     vdb=vdb_name,
                 ),
-                config=None,
+                config=provider_config,
             )
         except ProviderNotRegisteredError as exc:
             raise VdbSyncError(
@@ -1819,6 +1823,42 @@ class VdbService:
             "vdb-batch-size",
             mode=mode,
             resolved=resolved,
+            provider_limit=provider_limit,
+        )
+        return resolved
+
+    def _resolve_max_input_tokens(
+        self,
+        *,
+        config_value,
+        capabilities,
+    ) -> int | None:
+        """Resolve max input tokens honor config and provider hints."""
+
+        provider_limit = self._min_optional(
+            (
+                getattr(capabilities, "max_input_tokens", None),
+                getattr(capabilities, "max_request_tokens", None),
+            )
+        )
+
+        if config_value is None:
+            mode = "provider" if provider_limit is not None else "disabled"
+            resolved = provider_limit
+        elif isinstance(config_value, str):
+            mode = "auto"
+            resolved = provider_limit
+        else:
+            mode = "fixed"
+            resolved = int(config_value)
+            if provider_limit is not None:
+                resolved = min(resolved, provider_limit)
+
+        self.logger.debug(
+            "vdb-max-input-tokens",
+            mode=mode,
+            resolved=resolved,
+            config_value=config_value,
             provider_limit=provider_limit,
         )
         return resolved
@@ -1879,7 +1919,14 @@ class VdbService:
             config_value=config_batch_size,
             capabilities=capabilities,
         )
-        embed_options = EmbedRequestOptions(max_batch_size=batch_size)
+        max_input_tokens = self._resolve_max_input_tokens(
+            config_value=self.config.vdb.max_input_tokens,
+            capabilities=capabilities,
+        )
+        embed_options = EmbedRequestOptions(
+            max_batch_size=batch_size,
+            max_input_tokens=max_input_tokens,
+        )
 
         payloads = self._collect_chunk_payloads(
             connection,
@@ -1928,6 +1975,7 @@ class VdbService:
                 concurrency=resolved_concurrency,
                 source=source,
                 vdb_name=vdb_name,
+                normalize_vectors=self.config.vdb.normalize,
             )
 
         self.logger.info(
@@ -2280,6 +2328,7 @@ class VdbService:
         concurrency: int,
         source: str,
         vdb_name: str,
+        normalize_vectors: bool,
     ) -> tuple[int, int]:
         """Embed chunk records and persist FAISS artifacts."""
 
@@ -2333,6 +2382,7 @@ class VdbService:
             targets=targets,
             index=index,
             vdb_id=vdb_id,
+            normalize_vectors=normalize_vectors,
         )
 
         connection.executemany(
@@ -2433,6 +2483,7 @@ class VdbService:
         targets: Sequence[_ChunkRecord],
         index,
         vdb_id: int,
+        normalize_vectors: bool,
     ) -> list[tuple[int, int, int]]:
         """Embed chunk batches and update the FAISS index."""
 
@@ -2455,7 +2506,11 @@ class VdbService:
 
             ids = [int(record.id) for record in batch]
             normalized_vectors = [
-                self._normalize_embedding(vector, metric=metric)
+                self._normalize_embedding(
+                    vector,
+                    metric=metric,
+                    normalize=normalize_vectors,
+                )
                 for vector in embeddings
             ]
 
@@ -2483,10 +2538,13 @@ class VdbService:
         vector: Sequence[float],
         *,
         metric: str,
+        normalize: bool,
     ) -> tuple[float, ...]:
         """Normalize embedding vectors when cosine similarity is requested."""
 
         floats = tuple(float(value) for value in vector)
+        if not normalize:
+            return floats
         if metric.strip().lower() != "cosine":
             return floats
         norm = math.sqrt(sum(value * value for value in floats))

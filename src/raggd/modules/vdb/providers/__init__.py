@@ -47,11 +47,14 @@ class EmbedRequestOptions:
     """Request tuning options shared across embedding providers."""
 
     max_batch_size: int
+    max_input_tokens: int | None = None
     timeout: float | None = None
 
     def __post_init__(self) -> None:  # pragma: no cover - defensive invariants
         if self.max_batch_size < 1:
             raise ValueError("max_batch_size must be >= 1")
+        if self.max_input_tokens is not None and self.max_input_tokens < 1:
+            raise ValueError("max_input_tokens must be >= 1 when provided")
         if self.timeout is not None and self.timeout <= 0:
             raise ValueError("timeout must be positive when provided")
 

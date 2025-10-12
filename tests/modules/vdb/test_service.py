@@ -9,7 +9,11 @@ from typing import Sequence
 
 import pytest
 
-from raggd.core.config import load_config, load_packaged_defaults
+from raggd.core.config import (
+    VDB_MODULE_KEY,
+    load_config,
+    load_packaged_defaults,
+)
 from raggd.core.logging import get_logger
 from raggd.core.paths import WorkspacePaths
 from raggd.modules import HealthStatus
@@ -40,6 +44,8 @@ class _StubProvider:
 
     def __init__(self, context: ProviderInitContext) -> None:
         self.logger = context.logger
+        self.config = dict(context.config or {})
+        self.last_embed_options: EmbedRequestOptions | None = None
 
     def describe_model(self, model: str) -> EmbeddingProviderModel:
         return EmbeddingProviderModel(provider="stub", name=model, dim=1536)
@@ -58,6 +64,7 @@ class _StubProvider:
         model: str,
         options: EmbedRequestOptions,
     ) -> EmbeddingMatrix:
+        self.last_embed_options = options
         return tuple((0.0,) * 1536 for _ in texts)
 
 
@@ -1313,3 +1320,86 @@ def test_rowcount_normalizes_values(
 ) -> None:
     cursor = SimpleNamespace(rowcount=rowcount)
     assert VdbService._rowcount(cursor) == expected
+
+
+def test_resolve_max_input_tokens_clamps_values(tmp_path: Path) -> None:
+    service, _, _ = _build_service(tmp_path)
+    capabilities = SimpleNamespace(
+        max_batch_size=16,
+        max_parallel_requests=2,
+        max_request_tokens=4096,
+        max_input_tokens=2048,
+    )
+
+    resolved = service._resolve_max_input_tokens(
+        config_value=10_000,
+        capabilities=capabilities,
+    )
+    assert resolved == 2048
+
+    resolved_fixed = service._resolve_max_input_tokens(
+        config_value=1024,
+        capabilities=capabilities,
+    )
+    assert resolved_fixed == 1024
+
+    resolved_auto = service._resolve_max_input_tokens(
+        config_value="auto",
+        capabilities=capabilities,
+    )
+    assert resolved_auto == 2048
+
+    unlimited_caps = SimpleNamespace(
+        max_batch_size=16,
+        max_parallel_requests=2,
+        max_request_tokens=None,
+        max_input_tokens=None,
+    )
+    resolved_none = service._resolve_max_input_tokens(
+        config_value=None,
+        capabilities=unlimited_caps,
+    )
+    assert resolved_none is None
+
+
+def test_normalize_embedding_respects_toggle() -> None:
+    vector = (3.0, 4.0)
+    normalized = VdbService._normalize_embedding(
+        vector,
+        metric="cosine",
+        normalize=True,
+    )
+    assert normalized == pytest.approx((0.6, 0.8))
+
+    passthrough = VdbService._normalize_embedding(
+        vector,
+        metric="cosine",
+        normalize=False,
+    )
+    assert passthrough == vector
+
+    unchanged_metric = VdbService._normalize_embedding(
+        vector,
+        metric="l2",
+        normalize=True,
+    )
+    assert unchanged_metric == vector
+
+
+def test_create_provider_injects_module_config(tmp_path: Path) -> None:
+    service, _, _ = _build_service(tmp_path)
+    override = service.config.vdb.model_copy(
+        update={"normalize": False, "max_input_tokens": 1024},
+    )
+    service.config.modules[VDB_MODULE_KEY] = override
+
+    provider = service._create_provider(
+        provider_key="stub",
+        model_name="model-a",
+        source="demo",
+        vdb_name="primary",
+    )
+
+    assert isinstance(provider, _StubProvider)
+    assert provider.config["normalize"] is False
+    assert provider.config["max_input_tokens"] == 1024
