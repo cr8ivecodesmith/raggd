@@ -307,6 +307,7 @@ class DbLifecycleService:
         source: str,
         *,
         include_schema: bool = False,
+        include_counts: bool = False,
     ) -> dict[str, object]:
         """Return manifest/database info for ``source``."""
 
@@ -330,6 +331,7 @@ class DbLifecycleService:
                     db_path=db_path,
                     manifest=state,
                     include_schema=include_schema,
+                    include_counts=include_counts,
                     now=inspected_at,
                 ),
             )

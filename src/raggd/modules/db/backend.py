@@ -130,6 +130,7 @@ class DbLifecycleBackend(Protocol):
         db_path: Path,
         manifest: DbManifestState,
         include_schema: bool,
+        include_counts: bool,
         now: datetime,
     ) -> DbInfoOutcome: ...
 
@@ -288,6 +289,7 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
         db_path: Path,
         manifest: DbManifestState,
         include_schema: bool,
+        include_counts: bool,
         now: datetime,
     ) -> DbInfoOutcome:
         with self._connect(db_path) as conn:
@@ -299,7 +301,7 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
             if include_schema:
                 schema_dump = "\n".join(conn.iterdump())
 
-            metadata = {
+            metadata: dict[str, object] = {
                 "bootstrap_shortuuid7": state.meta.bootstrap_shortuuid7,
                 "head_migration_uuid7": str(state.meta.head_uuid),
                 "head_migration_shortuuid7": state.meta.head_short,
@@ -307,6 +309,8 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
                 "applied_migrations": [m.short_value for m in state.applied],
                 "pending_migrations": list(state.pending),
             }
+            if include_counts:
+                metadata["table_counts"] = {}
 
             return DbInfoOutcome(
                 status=manifest_state,

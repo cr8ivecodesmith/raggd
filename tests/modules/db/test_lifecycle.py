@@ -129,15 +129,19 @@ class RecordingBackend:
         db_path: Path,
         manifest: DbManifestState,
         include_schema: bool,
+        include_counts: bool,
         now: datetime,
     ) -> DbInfoOutcome:
         self._record(
             "info",
             source=source,
             include_schema=include_schema,
+            include_counts=include_counts,
             now=now,
         )
-        metadata = self.info_metadata if self.info_metadata else {}
+        metadata = dict(self.info_metadata) if self.info_metadata else {}
+        if include_counts:
+            metadata.setdefault("table_counts", {})
         return DbInfoOutcome(
             status=self.info_status,
             schema=self.info_schema if include_schema else None,
@@ -298,7 +302,16 @@ def test_info_returns_payload_and_metadata(tmp_path: Path) -> None:
     assert payload["manifest"]["head_migration_shortuuid7"] == "0003-info"
     assert "CREATE TABLE" in (payload.get("schema") or "")
     assert payload["metadata"]["applied_migrations"] == ["0001", "0002"]
+    assert "table_counts" not in payload["metadata"]
+
+    payload_with_counts = service.info(
+        "demo",
+        include_schema=True,
+        include_counts=True,
+    )
+    assert payload_with_counts["metadata"]["table_counts"] == {}
     assert backend.calls[-1][0] == "info"
+    assert backend.calls[-1][1]["include_counts"] is True
 
 
 def test_reset_updates_manifest_timestamp(tmp_path: Path) -> None:

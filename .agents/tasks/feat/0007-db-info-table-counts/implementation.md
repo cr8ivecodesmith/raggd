@@ -38,7 +38,7 @@
 - DI & boundaries: `DbLifecycleService.info` will pass `include_counts` flag through to backend and normalize returned metadata into top-level `table_counts` plus optional warning summary, maintaining existing manifest mutation pattern.
 - Stepwise checklist:
   - [x] Extend `DbModuleSettings` (fields + loader + defaults) with count timeout/limits and update config serialization/tests.
-  - [ ] Update `DbLifecycleBackend.info` protocol + implementations (real + test doubles) to accept an `include_counts` flag and return count metadata.
+  - [x] Update `DbLifecycleBackend.info` protocol + implementations (real + test doubles) to accept an `include_counts` flag and return count metadata.
   - [ ] Implement table counting in `SQLiteLifecycleBackend.info` with internal helper (filters tables, enforces timeout via progress handler, records skipped tables).
   - [ ] Update `DbLifecycleService.info` to surface `table_counts` in payload, track skip reasons, and enrich logging.
   - [ ] Add `--counts/--no-counts` option to CLI command, adjust output formatting to render counts as a nested section, and include note on skipped tables/timeouts.
@@ -74,3 +74,9 @@
 - Landed configuration scaffolding for db info table counts.
 **Changes**
 - Added timeout/row limit fields to `DbModuleSettings` and `DbSettings`, refreshed defaults, serialization, and tests (`tests/modules/db/test_settings.py`, `tests/core/test_config.py`).
+
+### 2025-10-12 16:55 UTC
+**Summary**
+- Updated lifecycle backend info contract for table count flag plumbing.
+**Changes**
+- Added `include_counts` parameter to backend protocols/implementations, returning placeholder `table_counts` metadata, and refreshed lifecycle tests to cover the new flag.
