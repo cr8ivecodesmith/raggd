@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -314,6 +316,8 @@ class DbLifecycleService:
         db_path, _ = self._prepare_db_path(source)
         schema: str | None = None
         metadata: dict[str, object] = {}
+        table_counts: dict[str, int | None] | None = None
+        table_counts_skipped: list[dict[str, object]] = []
 
         inspected_at = self._now()
 
@@ -321,7 +325,7 @@ class DbLifecycleService:
             _: ManifestSnapshot,
             state: DbManifestState,
         ) -> DbManifestState:
-            nonlocal schema, metadata
+            nonlocal schema, metadata, table_counts, table_counts_skipped
             outcome = cast(
                 DbInfoOutcome,
                 self._call_backend(
@@ -336,7 +340,31 @@ class DbLifecycleService:
                 ),
             )
             schema = outcome.schema
-            metadata = dict(outcome.metadata or {})
+            raw_metadata = dict(outcome.metadata or {})
+            counts_data = raw_metadata.pop("table_counts", None)
+            if counts_data is None:
+                table_counts = None
+            elif isinstance(counts_data, Mapping):
+                table_counts = dict(counts_data)
+            else:  # pragma: no cover - defensive
+                table_counts = cast(dict[str, int | None], counts_data)
+
+            skipped_data = raw_metadata.pop("table_counts_skipped", None)
+            table_counts_skipped = []
+            if skipped_data:
+                if isinstance(skipped_data, Sequence) and not isinstance(
+                    skipped_data, (str, bytes)
+                ):
+                    for entry in skipped_data:
+                        if isinstance(entry, Mapping):
+                            table_counts_skipped.append(dict(entry))
+                        else:  # pragma: no cover - defensive
+                            table_counts_skipped.append(
+                                cast(dict[str, object], entry)
+                            )
+                elif isinstance(skipped_data, Mapping):  # pragma: no cover
+                    table_counts_skipped.append(dict(skipped_data))
+            metadata = raw_metadata
             return outcome.status
 
         state = self._mutate_manifest(
@@ -344,6 +372,14 @@ class DbLifecycleService:
             operation="info",
             mutator=_apply,
         )
+
+        skip_summary: dict[str, int] = {}
+        if table_counts_skipped:
+            skip_counter = Counter(
+                str(entry.get("reason", "unknown"))
+                for entry in table_counts_skipped
+            )
+            skip_summary = dict(skip_counter)
 
         payload: dict[str, object] = {
             "source": source,
@@ -354,6 +390,30 @@ class DbLifecycleService:
             payload["schema"] = schema
         if metadata:
             payload["metadata"] = metadata
+        if table_counts is not None:
+            payload["table_counts"] = table_counts
+        if table_counts_skipped:
+            payload["table_counts_skipped"] = table_counts_skipped
+            if skip_summary:
+                payload["table_counts_skipped_summary"] = skip_summary
+
+        log_payload: dict[str, object] = {
+            "source": source,
+            "database": str(db_path),
+            "include_schema": include_schema,
+            "include_counts": include_counts,
+            "inspected_at": inspected_at.isoformat(),
+        }
+        if table_counts is not None:
+            log_payload["table_counts"] = table_counts
+        if table_counts_skipped:
+            log_payload["table_counts_skipped"] = table_counts_skipped
+            if skip_summary:
+                log_payload["table_counts_skipped_summary"] = skip_summary
+        if metadata:
+            log_payload["metadata_keys"] = sorted(metadata.keys())
+
+        self._logger.info("db-info", **log_payload)
         return payload
 
     def vacuum(

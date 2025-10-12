@@ -40,7 +40,7 @@
   - [x] Extend `DbModuleSettings` (fields + loader + defaults) with count timeout/limits and update config serialization/tests.
   - [x] Update `DbLifecycleBackend.info` protocol + implementations (real + test doubles) to accept an `include_counts` flag and return count metadata.
   - [x] Implement table counting in `SQLiteLifecycleBackend.info` with internal helper (filters tables, enforces timeout via progress handler, records skipped tables).
-  - [ ] Update `DbLifecycleService.info` to surface `table_counts` in payload, track skip reasons, and enrich logging.
+  - [x] Update `DbLifecycleService.info` to surface `table_counts` in payload, track skip reasons, and enrich logging.
   - [ ] Add `--counts/--no-counts` option to CLI command, adjust output formatting to render counts as a nested section, and include note on skipped tables/timeouts.
   - [ ] Refresh docs in `docs/api/db.md` with flag description, sample output, and performance guidance.
   - [ ] Add/adjust tests across CLI, backend, lifecycle, and config to cover new behaviors and edge cases (timeout skip, disabled counts).
@@ -87,3 +87,11 @@
 **Changes**
 - Added counting helper utilities that populate `table_counts`/skip metadata when `include_counts` is enabled.
 - Extended backend test suite to cover successful counts, timeout handling, and row-limit truncation.
+
+### 2025-10-13 02:45 UTC
+**Summary**
+- Surfaced table count metadata and logging via the lifecycle service.
+**Changes**
+- Promoted backend-provided `table_counts` data to top-level payload fields, added skip summaries, and emitted enriched `db-info` logs.
+- Updated lifecycle tests with a structured logger stub covering table count logging and skip metadata handling.
+- Verified with `.venv/bin/pytest --no-cov tests/modules/db/test_lifecycle.py -k info` while exporting `UV_CACHE_DIR=.tmp/uv-cache`, `UV_PROJECT_ENVIRONMENT=.tmp/uv-env`, and `RAGGD_WORKSPACE=$PWD/.tmp/test-workspace`.

@@ -74,6 +74,8 @@ class RecordingBackend:
         self.reset_status = baseline
         self.info_schema: str | None = None
         self.info_metadata: dict[str, object] = {}
+        self.info_table_counts: dict[str, int | None] = {}
+        self.info_table_counts_skipped: list[dict[str, object]] = []
         self.raise_for: dict[str, Exception] = {}
 
     def _record(self, action: str, **payload: Any) -> None:
@@ -141,7 +143,11 @@ class RecordingBackend:
         )
         metadata = dict(self.info_metadata) if self.info_metadata else {}
         if include_counts:
-            metadata.setdefault("table_counts", {})
+            metadata["table_counts"] = dict(self.info_table_counts)
+            if self.info_table_counts_skipped:
+                metadata["table_counts_skipped"] = list(
+                    self.info_table_counts_skipped
+                )
         return DbInfoOutcome(
             status=self.info_status,
             schema=self.info_schema if include_schema else None,
@@ -190,6 +196,45 @@ class RecordingBackend:
     ) -> DbResetOutcome:
         self._record("reset", source=source, force=force, now=now)
         return DbResetOutcome(status=self.reset_status)
+
+
+class StubLogger:
+    """Minimal structlog-compatible logger for capturing structured records."""
+
+    def __init__(
+        self,
+        *,
+        context: dict[str, Any] | None = None,
+        records: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self._context: dict[str, Any] = dict(context or {})
+        self.records: list[dict[str, Any]] = records if records is not None else []
+
+    def bind(self, **context: Any) -> "StubLogger":
+        new_context = dict(self._context)
+        new_context.update(context)
+        return StubLogger(context=new_context, records=self.records)
+
+    def _record(
+        self,
+        level: str,
+        event: str,
+        **payload: Any,
+    ) -> "StubLogger":
+        entry: dict[str, Any] = {"level": level, "event": event}
+        entry.update(self._context)
+        entry.update(payload)
+        self.records.append(entry)
+        return self
+
+    def info(self, event: str, **payload: Any) -> "StubLogger":
+        return self._record("info", event, **payload)
+
+    def debug(self, event: str, **payload: Any) -> "StubLogger":
+        return self._record("debug", event, **payload)
+
+    def warning(self, event: str, **payload: Any) -> "StubLogger":
+        return self._record("warning", event, **payload)
 
 
 def test_db_lock_creates_and_releases(tmp_path: Path) -> None:
@@ -294,6 +339,12 @@ def test_info_returns_payload_and_metadata(tmp_path: Path) -> None:
     )
     backend.info_schema = "CREATE TABLE example(...);\n"
     backend.info_metadata = {"applied_migrations": ["0001", "0002"]}
+    backend.info_table_counts = {"alpha": 3}
+    backend.info_table_counts_skipped = [
+        {"table": "beta", "reason": "timeout"},
+        {"table": "gamma", "reason": "row_limit"},
+        {"table": "delta", "reason": "timeout"},
+    ]
 
     service = DbLifecycleService(workspace=paths, backend=backend)
     service.ensure("demo")
@@ -302,16 +353,57 @@ def test_info_returns_payload_and_metadata(tmp_path: Path) -> None:
     assert payload["manifest"]["head_migration_shortuuid7"] == "0003-info"
     assert "CREATE TABLE" in (payload.get("schema") or "")
     assert payload["metadata"]["applied_migrations"] == ["0001", "0002"]
-    assert "table_counts" not in payload["metadata"]
+    assert "table_counts" not in payload
 
     payload_with_counts = service.info(
         "demo",
         include_schema=True,
         include_counts=True,
     )
-    assert payload_with_counts["metadata"]["table_counts"] == {}
+    assert payload_with_counts["metadata"]["applied_migrations"] == [
+        "0001",
+        "0002",
+    ]
+    assert payload_with_counts["table_counts"] == {"alpha": 3}
+    assert payload_with_counts["table_counts_skipped"] == [
+        {"table": "beta", "reason": "timeout"},
+        {"table": "gamma", "reason": "row_limit"},
+        {"table": "delta", "reason": "timeout"},
+    ]
+    assert payload_with_counts["table_counts_skipped_summary"] == {
+        "timeout": 2,
+        "row_limit": 1,
+    }
     assert backend.calls[-1][0] == "info"
     assert backend.calls[-1][1]["include_counts"] is True
+
+
+def test_info_logs_table_counts(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    backend = RecordingBackend()
+    backend.info_table_counts = {"alpha": 7}
+    backend.info_table_counts_skipped = [
+        {"table": "beta", "reason": "timeout"},
+    ]
+
+    logger = StubLogger()
+    service = DbLifecycleService(
+        workspace=paths,
+        backend=backend,
+        logger=logger,
+    )
+    service.ensure("demo")
+    service.info("demo", include_counts=True)
+
+    db_info_records = [r for r in logger.records if r["event"] == "db-info"]
+    assert db_info_records, "expected db-info log record"
+    latest = db_info_records[-1]
+    assert latest["include_counts"] is True
+    assert latest["table_counts"] == {"alpha": 7}
+    assert latest["table_counts_skipped_summary"] == {"timeout": 1}
 
 
 def test_reset_updates_manifest_timestamp(tmp_path: Path) -> None:
