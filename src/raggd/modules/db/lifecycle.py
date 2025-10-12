@@ -314,10 +314,10 @@ class DbLifecycleService:
         """Return manifest/database info for ``source``."""
 
         db_path, _ = self._prepare_db_path(source)
-        schema: str | None = None
         metadata: dict[str, object] = {}
         table_counts: dict[str, int | None] | None = None
         table_counts_skipped: list[dict[str, object]] = []
+        info_outcome: DbInfoOutcome | None = None
 
         inspected_at = self._now()
 
@@ -325,8 +325,8 @@ class DbLifecycleService:
             _: ManifestSnapshot,
             state: DbManifestState,
         ) -> DbManifestState:
-            nonlocal schema, metadata, table_counts, table_counts_skipped
-            outcome = cast(
+            nonlocal info_outcome
+            info_outcome = cast(
                 DbInfoOutcome,
                 self._call_backend(
                     "info",
@@ -339,33 +339,7 @@ class DbLifecycleService:
                     now=inspected_at,
                 ),
             )
-            schema = outcome.schema
-            raw_metadata = dict(outcome.metadata or {})
-            counts_data = raw_metadata.pop("table_counts", None)
-            if counts_data is None:
-                table_counts = None
-            elif isinstance(counts_data, Mapping):
-                table_counts = dict(counts_data)
-            else:  # pragma: no cover - defensive
-                table_counts = cast(dict[str, int | None], counts_data)
-
-            skipped_data = raw_metadata.pop("table_counts_skipped", None)
-            table_counts_skipped = []
-            if skipped_data:
-                if isinstance(skipped_data, Sequence) and not isinstance(
-                    skipped_data, (str, bytes)
-                ):
-                    for entry in skipped_data:
-                        if isinstance(entry, Mapping):
-                            table_counts_skipped.append(dict(entry))
-                        else:  # pragma: no cover - defensive
-                            table_counts_skipped.append(
-                                cast(dict[str, object], entry)
-                            )
-                elif isinstance(skipped_data, Mapping):  # pragma: no cover
-                    table_counts_skipped.append(dict(skipped_data))
-            metadata = raw_metadata
-            return outcome.status
+            return info_outcome.status
 
         state = self._mutate_manifest(
             source,
@@ -373,20 +347,118 @@ class DbLifecycleService:
             mutator=_apply,
         )
 
-        skip_summary: dict[str, int] = {}
-        if table_counts_skipped:
-            skip_counter = Counter(
-                str(entry.get("reason", "unknown"))
-                for entry in table_counts_skipped
-            )
-            skip_summary = dict(skip_counter)
+        if info_outcome is None:  # pragma: no cover - defensive
+            raise DbLifecycleError("info outcome missing")
 
+        schema = info_outcome.schema
+        (
+            metadata,
+            table_counts,
+            table_counts_skipped,
+        ) = self._partition_info_metadata(info_outcome.metadata)
+        skip_summary = self._summarize_table_count_skips(table_counts_skipped)
+
+        payload = self._build_info_payload(
+            source=source,
+            db_path=db_path,
+            state=state,
+            include_schema=include_schema,
+            schema=schema,
+            metadata=metadata,
+            table_counts=table_counts,
+            table_counts_skipped=table_counts_skipped,
+            skip_summary=skip_summary,
+        )
+        log_payload = self._build_info_log_payload(
+            source=source,
+            db_path=db_path,
+            include_schema=include_schema,
+            include_counts=include_counts,
+            inspected_at=inspected_at,
+            metadata=metadata,
+            table_counts=table_counts,
+            table_counts_skipped=table_counts_skipped,
+            skip_summary=skip_summary,
+        )
+
+        self._logger.info("db-info", **log_payload)
+        return payload
+
+    @staticmethod
+    def _partition_info_metadata(
+        metadata: Mapping[str, object] | None,
+    ) -> tuple[
+        dict[str, object],
+        dict[str, int | None] | None,
+        list[dict[str, object]],
+    ]:
+        if not metadata:
+            return {}, None, []
+
+        raw_metadata = dict(metadata)
+        counts_data = raw_metadata.pop("table_counts", None)
+        table_counts: dict[str, int | None] | None = None
+        if counts_data is None:
+            table_counts = None
+        elif isinstance(counts_data, Mapping):
+            table_counts = dict(counts_data)
+        else:  # pragma: no cover - defensive
+            table_counts = cast(dict[str, int | None], counts_data)
+
+        skipped_data = raw_metadata.pop("table_counts_skipped", None)
+        skipped = DbLifecycleService._normalize_table_count_skips(skipped_data)
+        return raw_metadata, table_counts, skipped
+
+    @staticmethod
+    def _normalize_table_count_skips(
+        skipped_data: object,
+    ) -> list[dict[str, object]]:
+        if not skipped_data:
+            return []
+        if isinstance(skipped_data, Mapping):
+            return [dict(skipped_data)]
+        if isinstance(skipped_data, Sequence) and not isinstance(
+            skipped_data, (str, bytes)
+        ):
+            normalized: list[dict[str, object]] = []
+            for entry in skipped_data:
+                if isinstance(entry, Mapping):
+                    normalized.append(dict(entry))
+                else:  # pragma: no cover - defensive
+                    normalized.append(cast(dict[str, object], entry))
+            return normalized
+        return [cast(dict[str, object], skipped_data)]
+
+    @staticmethod
+    def _summarize_table_count_skips(
+        skipped: Sequence[Mapping[str, object]],
+    ) -> dict[str, int]:
+        if not skipped:
+            return {}
+        skip_counter = Counter(
+            str(entry.get("reason", "unknown")) for entry in skipped
+        )
+        return dict(skip_counter)
+
+    @staticmethod
+    def _build_info_payload(
+        *,
+        source: str,
+        db_path: Path,
+        state: DbManifestState,
+        include_schema: bool,
+        schema: str | None,
+        metadata: dict[str, object],
+        table_counts: dict[str, int | None] | None,
+        table_counts_skipped: list[dict[str, object]],
+        skip_summary: Mapping[str, int],
+    ) -> dict[str, object]:
         payload: dict[str, object] = {
             "source": source,
             "database": str(db_path),
             "manifest": state.to_mapping(),
         }
-        if include_schema:
+        if include_schema and schema is not None:
             payload["schema"] = schema
         if metadata:
             payload["metadata"] = metadata
@@ -395,8 +467,22 @@ class DbLifecycleService:
         if table_counts_skipped:
             payload["table_counts_skipped"] = table_counts_skipped
             if skip_summary:
-                payload["table_counts_skipped_summary"] = skip_summary
+                payload["table_counts_skipped_summary"] = dict(skip_summary)
+        return payload
 
+    @staticmethod
+    def _build_info_log_payload(
+        *,
+        source: str,
+        db_path: Path,
+        include_schema: bool,
+        include_counts: bool,
+        inspected_at: datetime,
+        metadata: Mapping[str, object],
+        table_counts: Mapping[str, int | None] | None,
+        table_counts_skipped: Sequence[Mapping[str, object]],
+        skip_summary: Mapping[str, int],
+    ) -> dict[str, object]:
         log_payload: dict[str, object] = {
             "source": source,
             "database": str(db_path),
@@ -407,14 +493,12 @@ class DbLifecycleService:
         if table_counts is not None:
             log_payload["table_counts"] = table_counts
         if table_counts_skipped:
-            log_payload["table_counts_skipped"] = table_counts_skipped
+            log_payload["table_counts_skipped"] = list(table_counts_skipped)
             if skip_summary:
-                log_payload["table_counts_skipped_summary"] = skip_summary
+                log_payload["table_counts_skipped_summary"] = dict(skip_summary)
         if metadata:
             log_payload["metadata_keys"] = sorted(metadata.keys())
-
-        self._logger.info("db-info", **log_payload)
-        return payload
+        return log_payload
 
     def vacuum(
         self,

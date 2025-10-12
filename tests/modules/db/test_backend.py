@@ -322,11 +322,10 @@ def test_backend_table_counts_include_user_tables(tmp_path: Path) -> None:
         conn.commit()
 
     info = service.info("alpha", include_counts=True)
-    metadata = info["metadata"]
-    counts = metadata["table_counts"]
+    counts = info["table_counts"]
     assert counts["items"] == 2
     assert "schema_meta" not in counts
-    assert "table_counts_skipped" not in metadata
+    assert "table_counts_skipped" not in info
 
 
 def test_backend_table_counts_timeout(
@@ -410,10 +409,9 @@ def test_backend_table_counts_row_limit(tmp_path: Path) -> None:
         conn.commit()
 
     info = service.info("alpha", include_counts=True)
-    metadata = info["metadata"]
-    counts = metadata["table_counts"]
+    counts = info["table_counts"]
     assert counts["items"] is None
-    skipped = metadata["table_counts_skipped"]
+    skipped = info["table_counts_skipped"]
     assert skipped and skipped[0]["table"] == "items"
     assert skipped[0]["reason"] == "row_limit"
     assert skipped[0]["row_limit"] == 1

@@ -208,7 +208,9 @@ class StubLogger:
         records: list[dict[str, Any]] | None = None,
     ) -> None:
         self._context: dict[str, Any] = dict(context or {})
-        self.records: list[dict[str, Any]] = records if records is not None else []
+        if records is None:
+            records = []
+        self.records: list[dict[str, Any]] = records
 
     def bind(self, **context: Any) -> "StubLogger":
         new_context = dict(self._context)

@@ -95,3 +95,18 @@
 - Promoted backend-provided `table_counts` data to top-level payload fields, added skip summaries, and emitted enriched `db-info` logs.
 - Updated lifecycle tests with a structured logger stub covering table count logging and skip metadata handling.
 - Verified with `.venv/bin/pytest --no-cov tests/modules/db/test_lifecycle.py -k info` while exporting `UV_CACHE_DIR=.tmp/uv-cache`, `UV_PROJECT_ENVIRONMENT=.tmp/uv-env`, and `RAGGD_WORKSPACE=$PWD/.tmp/test-workspace`.
+
+### 2025-10-13 03:20 UTC
+**Summary**
+- Realigned backend info tests with the new lifecycle payload shape.
+**Changes**
+- Updated `tests/modules/db/test_backend.py` to assert `table_counts` and skip metadata from the top-level response.
+- Ran `pytest tests/modules/db/test_backend.py -k table_counts --no-cov` with `UV_CACHE_DIR=.tmp/uv-cache`, `UV_PROJECT_ENVIRONMENT=.tmp/uv-env`, and `RAGGD_WORKSPACE=$PWD/.tmp/test-workspace`.
+
+### 2025-10-13 03:40 UTC
+**Summary**
+- Refactored lifecycle info plumbing to satisfy lint and restored formatting.
+**Changes**
+- Split metadata normalization and payload construction into helpers to reduce `DbLifecycleService.info` complexity.
+- Fixed the stub logger fixture line length and revalidated `tests/modules/db/test_backend.py` table-count cases.
+- Ran `.venv/bin/ruff check src tests`, `pytest tests/modules/db/test_backend.py -k table_counts --no-cov`, and `pytest tests/modules/db/test_lifecycle.py -k info --no-cov` with the standard `.tmp` overrides.
