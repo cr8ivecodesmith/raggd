@@ -59,7 +59,9 @@ def _build_context(tmp_path, service: Any) -> tuple[DummyContext, StubLogger]:
     return ctx, logger
 
 
-def test_require_context_without_obj_exits(capsys: pytest.CaptureFixture[str]) -> None:
+def test_require_context_without_obj_exits(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     ctx = DummyContext()
 
     with pytest.raises(typer.Exit) as excinfo:
@@ -92,7 +94,11 @@ def test_configure_vdb_commands_handles_workspace_error(
     def raise_value_error(workspace):
         raise ValueError("invalid workspace")
 
-    monkeypatch.setattr(vdb_cli, "_resolve_workspace_override", raise_value_error)
+    monkeypatch.setattr(
+        vdb_cli,
+        "_resolve_workspace_override",
+        raise_value_error,
+    )
 
     with pytest.raises(typer.Exit) as excinfo:
         vdb_cli.configure_vdb_commands(ctx, workspace=None, log_level=None)
@@ -115,7 +121,11 @@ def test_configure_vdb_commands_requires_config_file(
         archives_dir=tmp_path / "archives",
         sources_dir=tmp_path / "sources",
     )
-    monkeypatch.setattr(vdb_cli, "_resolve_workspace_override", lambda workspace: paths)
+    monkeypatch.setattr(
+        vdb_cli,
+        "_resolve_workspace_override",
+        lambda workspace: paths,
+    )
 
     with pytest.raises(typer.Exit) as excinfo:
         vdb_cli.configure_vdb_commands(ctx, workspace=None, log_level=None)
@@ -140,12 +150,21 @@ def test_configure_vdb_commands_reports_load_error(
         archives_dir=tmp_path / "archives",
         sources_dir=tmp_path / "sources",
     )
-    monkeypatch.setattr(vdb_cli, "_resolve_workspace_override", lambda workspace: paths)
+    monkeypatch.setattr(
+        vdb_cli,
+        "_resolve_workspace_override",
+        lambda workspace: paths,
+    )
 
     def raise_source_error(self):
         raise SourceConfigError("broken config")
 
-    monkeypatch.setattr(vdb_cli.SourceConfigStore, "load", raise_source_error, raising=False)
+    monkeypatch.setattr(
+        vdb_cli.SourceConfigStore,
+        "load",
+        raise_source_error,
+        raising=False,
+    )
 
     with pytest.raises(typer.Exit) as excinfo:
         vdb_cli.configure_vdb_commands(ctx, workspace=None, log_level=None)
@@ -155,7 +174,10 @@ def test_configure_vdb_commands_reports_load_error(
     assert "Failed to load workspace config" in captured.out
 
 
-def test_info_command_not_implemented(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_info_command_not_implemented(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class NotImplementedInfoService:
         def info(self, *, source, vdb):
             raise NotImplementedError("pending")
@@ -171,7 +193,10 @@ def test_info_command_not_implemented(tmp_path, capsys: pytest.CaptureFixture[st
     assert any(level == "debug" for level, _ in logger.events)
 
 
-def test_info_command_renders_records(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_info_command_renders_records(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class RecordingService:
         def __init__(self) -> None:
             self.calls: list[tuple[str, tuple[Any, ...]]] = []
@@ -194,11 +219,23 @@ def test_info_command_renders_records(tmp_path, capsys: pytest.CaptureFixture[st
     captured = capsys.readouterr()
     assert "VDB demo:primary" in captured.out
     assert "status: ok" in captured.out
-    assert ("info", {"message": "vdb-info", "source": "demo", "vdb": None, "json": False, "count": 1}) in logger.events
+    assert (
+        "info",
+        {
+            "message": "vdb-info",
+            "source": "demo",
+            "vdb": None,
+            "json": False,
+            "count": 1,
+        },
+    ) in logger.events
     assert service.calls == [("info", ("demo", None))]
 
 
-def test_info_command_json_output(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_info_command_json_output(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class JsonService:
         def info(self, *, source, vdb):
             return ({"selector": "demo:primary"},)
@@ -212,7 +249,10 @@ def test_info_command_json_output(tmp_path, capsys: pytest.CaptureFixture[str]) 
     assert '"demo:primary"' in captured.out
 
 
-def test_create_command_not_implemented(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_create_command_not_implemented(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class NotImplementedCreateService:
         def create(self, *, selector, name, model):
             raise NotImplementedError("pending")
@@ -232,7 +272,10 @@ def test_create_command_not_implemented(tmp_path, capsys: pytest.CaptureFixture[
     assert any(level == "warning" for level, _ in logger.events)
 
 
-def test_create_command_reports_success(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_create_command_reports_success(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class RecordingService:
         def __init__(self) -> None:
             self.calls: list[tuple[str, tuple[Any, ...]]] = []
@@ -252,7 +295,12 @@ def test_create_command_reports_success(tmp_path, capsys: pytest.CaptureFixture[
 
     captured = capsys.readouterr()
     assert "Created VDB primary for demo@batch-001" in captured.out
-    assert service.calls == [("create", ("demo@batch-001", "primary", "stub:model-a"))]
+    assert service.calls == [
+        (
+            "create",
+            ("demo@batch-001", "primary", "stub:model-a"),
+        )
+    ]
     assert any(level == "info" for level, _ in logger.events)
 
 
@@ -272,7 +320,10 @@ def test_sync_command_bad_parameter(tmp_path) -> None:
         )
 
 
-def test_sync_command_not_implemented(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_sync_command_not_implemented(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class NotImplementedSyncService:
         def sync(
             self,
@@ -306,7 +357,10 @@ def test_sync_command_not_implemented(tmp_path, capsys: pytest.CaptureFixture[st
     assert any(level == "warning" for level, _ in logger.events)
 
 
-def test_sync_command_renders_summary(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_sync_command_renders_summary(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class RecordingService:
         def __init__(self) -> None:
             self.calls: list[tuple[str, tuple[Any, ...]]] = []
@@ -356,12 +410,18 @@ def test_sync_command_renders_summary(tmp_path, capsys: pytest.CaptureFixture[st
     assert "VDB sync complete" in captured.out
     assert "source: demo" in captured.out
     assert service.calls == [
-        ("sync", ("demo", "primary", False, False, None, "auto", True))
+        (
+            "sync",
+            ("demo", "primary", False, False, None, "auto", True),
+        )
     ]
     assert any(level == "info" for level, _ in logger.events)
 
 
-def test_reset_command_not_implemented(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_reset_command_not_implemented(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class NotImplementedResetService:
         def reset(self, *, source, vdb, drop, force):
             raise NotImplementedError("pending")
@@ -382,7 +442,10 @@ def test_reset_command_not_implemented(tmp_path, capsys: pytest.CaptureFixture[s
     assert any(level == "warning" for level, _ in logger.events)
 
 
-def test_reset_command_renders_summary(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_reset_command_renders_summary(
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     class RecordingService:
         def __init__(self) -> None:
             self.calls: list[tuple[str, tuple[Any, ...]]] = []
@@ -405,5 +468,10 @@ def test_reset_command_renders_summary(tmp_path, capsys: pytest.CaptureFixture[s
     captured = capsys.readouterr()
     assert "VDB reset complete" in captured.out
     assert "force: True" in captured.out
-    assert service.calls == [("reset", ("demo", "primary", True, True))]
+    assert service.calls == [
+        (
+            "reset",
+            ("demo", "primary", True, True),
+        )
+    ]
     assert any(level == "info" for level, _ in logger.events)

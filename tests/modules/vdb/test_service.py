@@ -1307,6 +1307,9 @@ def test_remove_directory_if_empty_behaviors(tmp_path: Path) -> None:
         (5, 5),
     ],
 )
-def test_rowcount_normalizes_values(rowcount: int | None, expected: int) -> None:
+def test_rowcount_normalizes_values(
+    rowcount: int | None,
+    expected: int,
+) -> None:
     cursor = SimpleNamespace(rowcount=rowcount)
     assert VdbService._rowcount(cursor) == expected

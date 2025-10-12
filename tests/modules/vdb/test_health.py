@@ -18,14 +18,29 @@ from raggd.modules.vdb.service import VdbInfoError
         ("", None),
         ("  ", None),
         (0, None),
-        (datetime(2024, 1, 1, tzinfo=timezone.utc), datetime(2024, 1, 1, tzinfo=timezone.utc)),
-        (datetime(2024, 1, 1), datetime(2024, 1, 1, tzinfo=timezone.utc)),
-        ("2024-01-01T00:00:00", datetime(2024, 1, 1, tzinfo=timezone.utc)),
-        ("2024-01-01T00:00:00Z", datetime(2024, 1, 1, tzinfo=timezone.utc)),
+        (
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2024, 1, 1),
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+        ),
+        (
+            "2024-01-01T00:00:00",
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+        ),
+        (
+            "2024-01-01T00:00:00Z",
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+        ),
         ("not-a-date", None),
     ],
 )
-def test_parse_timestamp_handles_inputs(value: object, expected: datetime | None) -> None:
+def test_parse_timestamp_handles_inputs(
+    value: object,
+    expected: datetime | None,
+) -> None:
     result = health_module._parse_timestamp(value)
     assert result == expected
 
@@ -68,7 +83,11 @@ def test_build_report_combines_counts_and_health() -> None:
         "counts": {"chunks": "2", "vectors": 2, "index": 2},
         "last_sync_at": "2024-01-02T12:34:56Z",
         "health": [
-            {"level": "warning", "code": "missing-index", "message": "Rebuild index"},
+            {
+                "level": "warning",
+                "code": "missing-index",
+                "message": "Rebuild index",
+            },
             {"level": "info", "code": "chunks-ok", "message": "Chunks synced"},
         ],
     }
@@ -80,10 +99,20 @@ def test_build_report_combines_counts_and_health() -> None:
     assert "chunks=2, vectors=2, index=2" in (report.summary or "")
     assert "missing-index" in (report.summary or "")
     assert report.actions == ()
-    assert report.last_refresh_at == datetime(2024, 1, 2, 12, 34, 56, tzinfo=timezone.utc)
+    assert report.last_refresh_at == datetime(
+        2024,
+        1,
+        2,
+        12,
+        34,
+        56,
+        tzinfo=timezone.utc,
+    )
 
 
-def test_vdb_health_hook_handles_info_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_vdb_health_hook_handles_info_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class RaisingService:
         def info(self, *, source, vdb):  # type: ignore[no-untyped-def]
             raise VdbInfoError("boom")
