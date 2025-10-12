@@ -88,7 +88,7 @@
     - [x] `sync`: materialize chunks, batch embed, persist vectors + metadata, and refresh progress stats.
     - [x] `info`: aggregate DB + FAISS stats, surface health signals, and format summaries for CLI + `checkhealth`.
     - [x] `reset`: purge FAISS artifacts and DB rows, honoring `--recompute` safeguards.
-  - [ ] Health: wire `vdb` checks into `checkhealth`.
+  - [x] Health: wire `vdb` checks into `checkhealth`.
     - [x] Register the `vdb` health module with the central aggregator and ensure CLI commands load it.
     - [x] Validate FAISS artifacts: detect missing index files, mismatched metadata, and stale build timestamps.
     - [x] Compare DB vectors to chunk sources to surface count drift and orphaned references.
@@ -264,6 +264,14 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-12 08:18 UTC
+**Summary**
+Confirmed VDB health hook wiring through the module registry and closed the checklist item.
+**Changes**
+— Marked the implementation checklist step for `checkhealth` integration as complete after validating the existing wiring.
+**Tests**
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-checkhealth uv run pytest --no-cov tests/cli/test_checkhealth.py`
 
 ### 2025-10-12 05:36 UTC
 **Summary**
