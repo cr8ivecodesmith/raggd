@@ -93,9 +93,9 @@
     - [x] Validate FAISS artifacts: detect missing index files, mismatched metadata, and stale build timestamps.
     - [x] Compare DB vectors to chunk sources to surface count drift and orphaned references.
     - [x] Expose actionable statuses in `checkhealth` output with remediation hints.
-  - [ ] Docs: update CLI help and add user guide.
+  - [x] Docs: update CLI help and add user guide.
     - [x] Refresh `raggd vdb` CLI help text with new flags, preconditions, and result fields.
-    - [ ] Extend the user guide with create/sync/info/reset walkthroughs plus example outputs.
+    - [x] Extend the user guide with create/sync/info/reset walkthroughs plus example outputs.
     - [ ] Document troubleshooting guidance for health warnings and reset-driven recovery flows.
 
 ## Test Plan
@@ -264,6 +264,15 @@ Example:
 - Provider selection overrides: CLI flag `--model` takes precedence over config defaults.
 
 ## History
+
+### 2025-10-16 15:20 UTC
+**Summary**
+Documented the VDB operator workflow with lifecycle walkthroughs and sample outputs in the user guide.
+**Changes**
+— Added `docs/learn/vdb.md` covering create, sync, info (including `--json`), and reset flows with callouts to key flags and remediation hints.
+— Marked the documentation checklist sub-item for the user guide walkthroughs as complete.
+**Tests**
+— `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-docs uv run pytest --no-cov tests/cli/test_vdb.py`
 
 ### 2025-10-16 12:30 UTC
 **Summary**
