@@ -39,7 +39,7 @@
 - Stepwise checklist:
   - [x] Extend `DbModuleSettings` (fields + loader + defaults) with count timeout/limits and update config serialization/tests.
   - [x] Update `DbLifecycleBackend.info` protocol + implementations (real + test doubles) to accept an `include_counts` flag and return count metadata.
-  - [ ] Implement table counting in `SQLiteLifecycleBackend.info` with internal helper (filters tables, enforces timeout via progress handler, records skipped tables).
+  - [x] Implement table counting in `SQLiteLifecycleBackend.info` with internal helper (filters tables, enforces timeout via progress handler, records skipped tables).
   - [ ] Update `DbLifecycleService.info` to surface `table_counts` in payload, track skip reasons, and enrich logging.
   - [ ] Add `--counts/--no-counts` option to CLI command, adjust output formatting to render counts as a nested section, and include note on skipped tables/timeouts.
   - [ ] Refresh docs in `docs/api/db.md` with flag description, sample output, and performance guidance.
@@ -80,3 +80,10 @@
 - Updated lifecycle backend info contract for table count flag plumbing.
 **Changes**
 - Added `include_counts` parameter to backend protocols/implementations, returning placeholder `table_counts` metadata, and refreshed lifecycle tests to cover the new flag.
+
+### 2025-10-13 01:15 UTC
+**Summary**
+- Implemented SQLite table counting with timeout and row-limit handling plus tests.
+**Changes**
+- Added counting helper utilities that populate `table_counts`/skip metadata when `include_counts` is enabled.
+- Extended backend test suite to cover successful counts, timeout handling, and row-limit truncation.

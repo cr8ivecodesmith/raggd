@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.resources
 import sqlite3
+import time
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, Sequence
 import uuid
@@ -310,7 +311,10 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
                 "pending_migrations": list(state.pending),
             }
             if include_counts:
-                metadata["table_counts"] = {}
+                counts, skipped = self._collect_table_counts(conn)
+                metadata["table_counts"] = counts
+                if skipped:
+                    metadata["table_counts_skipped"] = skipped
 
             return DbInfoOutcome(
                 status=manifest_state,
@@ -530,6 +534,226 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
             self._update_meta(conn, now=now)
         return rolled_back
 
+    def _collect_table_counts(
+        self,
+        conn: sqlite3.Connection,
+    ) -> tuple[dict[str, int | None], list[dict[str, object]]]:
+        """Return row counts for user tables along with any skip metadata."""
+
+        timeout_ms = max(self._settings.info_count_timeout_ms, 0)
+        row_limit = max(self._settings.info_count_row_limit, 0)
+
+        counts: dict[str, int | None] = {}
+        skipped: list[dict[str, object]] = []
+
+        for table_name in self._iter_user_tables(conn):
+            count, skip_meta = self._count_table_rows(
+                conn,
+                table_name,
+                timeout_ms=timeout_ms,
+                row_limit=row_limit,
+            )
+            counts[table_name] = count
+            if skip_meta:
+                skipped.append(skip_meta)
+
+        return counts, skipped
+
+    def _iter_user_tables(
+        self,
+        conn: sqlite3.Connection,
+    ) -> Sequence[str]:
+        """Yield user-managed tables excluding SQLite internals."""
+
+        excluded = {"schema_meta", "schema_migrations"}
+        rows = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_schema
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+            """
+        )
+        return [row["name"] for row in rows if row["name"] not in excluded]
+
+    def _count_table_rows(
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        *,
+        timeout_ms: int,
+        row_limit: int,
+    ) -> tuple[int | None, dict[str, object] | None]:
+        """Return count for ``table`` or ``None`` when skipped."""
+
+        handler_installed = timeout_ms > 0
+        limit_probe = row_limit + 1 if row_limit > 0 else None
+        aborted = False
+        started_at = time.monotonic()
+        skip: dict[str, object] | None = None
+        count_value: int | None = None
+
+        if handler_installed:
+            deadline = started_at + (timeout_ms / 1000.0)
+
+            def _progress_handler() -> int:
+                nonlocal aborted
+                if time.monotonic() >= deadline:
+                    aborted = True
+                    return 1
+                return 0
+
+            conn.set_progress_handler(_progress_handler, 1000)
+
+        try:
+            count_value = self._execute_count_query(
+                conn,
+                table=table,
+                limit_probe=limit_probe,
+            )
+        except sqlite3.OperationalError as exc:
+            skip = self._handle_operational_error(
+                table=table,
+                exc=exc,
+                aborted=aborted,
+                timeout_ms=timeout_ms,
+                started_at=started_at,
+            )
+        except sqlite3.DatabaseError as exc:
+            skip = self._handle_database_error(table, exc)
+        finally:
+            if handler_installed:
+                conn.set_progress_handler(None, 0)
+
+        if skip:
+            return None, skip
+
+        assert count_value is not None  # pragma: no cover - defensive
+
+        row_limit_skip = self._apply_row_limit_skip(
+            table=table,
+            count_value=count_value,
+            limit_probe=limit_probe,
+            row_limit=row_limit,
+            started_at=started_at,
+        )
+        if row_limit_skip:
+            return None, row_limit_skip
+
+        return count_value, None
+
+    def _execute_count_query(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        table: str,
+        limit_probe: int | None,
+    ) -> int:
+        identifier = _quote_identifier(table)
+        query = f"SELECT COUNT(*) AS total FROM {identifier}"
+        params: Sequence[object] = ()
+
+        if limit_probe is not None:
+            query = (
+                "SELECT COUNT(*) AS total FROM ("
+                f"SELECT 1 FROM {identifier} LIMIT ?"
+                ")"
+            )
+            params = (limit_probe,)
+
+        cursor = conn.execute(query, params)
+        row = cursor.fetchone()
+        return self._extract_count_value(row)
+
+    def _extract_count_value(
+        self,
+        row: sqlite3.Row | Sequence[object] | None,
+    ) -> int:
+        if row is None:
+            return 0
+        if isinstance(row, sqlite3.Row):
+            return int(row["total"])
+        return int(row[0])
+
+    def _handle_operational_error(
+        self,
+        *,
+        table: str,
+        exc: sqlite3.OperationalError,
+        aborted: bool,
+        timeout_ms: int,
+        started_at: float,
+    ) -> dict[str, object]:
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        message = str(exc).lower()
+        if aborted or "interrupted" in message:
+            self._logger.warning(
+                "db_info_table_count_timeout",
+                table=table,
+                timeout_ms=timeout_ms,
+                elapsed_ms=elapsed_ms,
+            )
+            return {
+                "table": table,
+                "reason": "timeout",
+                "timeout_ms": timeout_ms,
+                "elapsed_ms": elapsed_ms,
+            }
+
+        self._logger.warning(
+            "db_info_table_count_error",
+            table=table,
+            error=str(exc),
+        )
+        return {
+            "table": table,
+            "reason": "error",
+            "error": str(exc),
+        }
+
+    def _handle_database_error(
+        self,
+        table: str,
+        exc: sqlite3.DatabaseError,
+    ) -> dict[str, object]:
+        self._logger.warning(
+            "db_info_table_count_error",
+            table=table,
+            error=str(exc),
+        )
+        return {
+            "table": table,
+            "reason": "error",
+            "error": str(exc),
+        }
+
+    def _apply_row_limit_skip(
+        self,
+        *,
+        table: str,
+        count_value: int,
+        limit_probe: int | None,
+        row_limit: int,
+        started_at: float,
+    ) -> dict[str, object] | None:
+        if limit_probe is None or count_value < limit_probe:
+            return None
+
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        self._logger.warning(
+            "db_info_table_count_row_limit",
+            table=table,
+            row_limit=row_limit,
+            elapsed_ms=elapsed_ms,
+        )
+        return {
+            "table": table,
+            "reason": "row_limit",
+            "row_limit": row_limit,
+            "elapsed_ms": elapsed_ms,
+        }
+
     def _load_meta(
         self,
         conn: sqlite3.Connection,
@@ -657,6 +881,11 @@ class SQLiteLifecycleBackend(DbLifecycleBackend):
             base = importlib.resources.files("raggd.modules.db")
             path = Path(base.joinpath(path_value))
         return MigrationRunner.from_path(path)
+
+
+def _quote_identifier(value: str) -> str:
+    escaped = value.replace('"', '""')
+    return f'"{escaped}"'
 
 
 def _ledger_checksum(applied: Sequence[Migration]) -> str:

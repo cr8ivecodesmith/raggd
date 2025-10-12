@@ -9,7 +9,7 @@ import pytest
 from raggd.cli.init import init_workspace
 from raggd.core.paths import WorkspacePaths
 from raggd.modules.db import DbLifecycleService
-from raggd.modules.db.backend import _from_iso, _to_iso
+from raggd.modules.db.backend import SQLiteLifecycleBackend, _from_iso, _to_iso
 from raggd.modules.db.migrations import (
     Migration,
     MigrationLoadError,
@@ -291,6 +291,132 @@ def test_backend_apply_downgrades_missing_script(tmp_path: Path) -> None:
             plan,
             datetime.now(timezone.utc),
         )
+
+
+def test_backend_table_counts_include_user_tables(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    migrations_dir = tmp_path / "migrations"
+    migrations_dir.mkdir()
+
+    bootstrap_uuid = generate_uuid7(
+        when=datetime(2024, 3, 1, tzinfo=timezone.utc)
+    )
+    _write_migration(
+        migrations_dir,
+        bootstrap_uuid,
+        up=("CREATE TABLE items(id INTEGER PRIMARY KEY, name TEXT NOT NULL);"),
+    )
+
+    service = DbLifecycleService(
+        workspace=paths,
+        manifest_settings=ManifestSettings(),
+        db_settings=DbModuleSettings(migrations_path=str(migrations_dir)),
+    )
+
+    db_path = service.ensure("alpha")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("INSERT INTO items(name) VALUES ('a'), ('b')")
+        conn.commit()
+
+    info = service.info("alpha", include_counts=True)
+    metadata = info["metadata"]
+    counts = metadata["table_counts"]
+    assert counts["items"] == 2
+    assert "schema_meta" not in counts
+    assert "table_counts_skipped" not in metadata
+
+
+def test_backend_table_counts_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    settings = DbModuleSettings(
+        info_count_timeout_ms=1,
+        info_count_row_limit=0,
+    )
+    service = DbLifecycleService(
+        workspace=paths,
+        manifest_settings=ManifestSettings(),
+        db_settings=settings,
+    )
+
+    backend = service._backend  # type: ignore[attr-defined]
+    assert isinstance(backend, SQLiteLifecycleBackend)
+
+    class FakeConnection:
+        def set_progress_handler(self, *_: object) -> None:
+            return None
+
+        def execute(self, sql: str, *_: object, **__: object):
+            if "COUNT" in sql.upper():
+                raise sqlite3.OperationalError("interrupted")
+            raise AssertionError(f"Unexpected query: {sql!r}")
+
+    fake_conn = FakeConnection()
+
+    monkeypatch.setattr(
+        SQLiteLifecycleBackend,
+        "_iter_user_tables",
+        lambda self, _: ["items"],
+    )
+
+    counts, skipped = backend._collect_table_counts(fake_conn)  # type: ignore[arg-type]
+    assert counts["items"] is None
+    assert skipped and skipped[0]["table"] == "items"
+    assert skipped[0]["reason"] == "timeout"
+
+
+def test_backend_table_counts_row_limit(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace=workspace)
+    paths = _make_paths(workspace)
+
+    migrations_dir = tmp_path / "migrations"
+    migrations_dir.mkdir()
+
+    bootstrap_uuid = generate_uuid7(
+        when=datetime(2024, 3, 3, tzinfo=timezone.utc)
+    )
+    _write_migration(
+        migrations_dir,
+        bootstrap_uuid,
+        up="CREATE TABLE items(id INTEGER PRIMARY KEY, name TEXT);",
+    )
+
+    settings = DbModuleSettings(
+        migrations_path=str(migrations_dir),
+        info_count_timeout_ms=5000,
+        info_count_row_limit=1,
+    )
+    service = DbLifecycleService(
+        workspace=paths,
+        manifest_settings=ManifestSettings(),
+        db_settings=settings,
+    )
+
+    db_path = service.ensure("alpha")
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO items(name) VALUES (?)",
+            [("a",), ("b",), ("c",)],
+        )
+        conn.commit()
+
+    info = service.info("alpha", include_counts=True)
+    metadata = info["metadata"]
+    counts = metadata["table_counts"]
+    assert counts["items"] is None
+    skipped = metadata["table_counts_skipped"]
+    assert skipped and skipped[0]["table"] == "items"
+    assert skipped[0]["reason"] == "row_limit"
+    assert skipped[0]["row_limit"] == 1
 
 
 def test_backend_iso_helpers_handle_naive_values() -> None:
