@@ -1,0 +1,35 @@
+{
+  "id": "architect-feedback-03",
+  "task": { "id": "0005", "slug": "vdb-module" },
+  "doc": { "type": "implementation", "path": ".agents/tasks/feat/0005-vdb-module/implementation.md" },
+  "architect": "Architect",
+  "owner": "Engineer",
+  "status": "changes-requested",
+  "created_at": "2025-10-12T09:00:00Z",
+  "summary": "Most DoD items are satisfied, but the modules.vdb config still lacks the documented normalize/max_input_tokens knobs. Please wire those settings (or update the spec) before final sign-off.",
+  "review": {
+    "completed": [
+      "CLI surface (`info`, `create`, `sync`, `reset`) and service wiring match the spec, including mutual exclusion of --missing-only/--recompute and JSON output.",
+      "Sidecar/index persistence uses the deterministic sources/<source>/vectors/<vdb>/index.faiss layout with metadata validation; health hooks and info --json expose drift/staleness codes.",
+      "Provider abstraction (OpenAI) includes batching, retries, dim enforcement, and concurrency resolution; tests cover CLI flows, resumable sync, reset (--drop), and FAISS adapters."
+    ],
+    "gaps": [
+      "Config defaults are missing the promised `modules.vdb.normalize` and `modules.vdb.max_input_tokens` keys. `VdbModuleSettings` and `raggd.defaults.toml` only expose provider/model/index/batch/concurrency toggles, so operators cannot tune normalization or request ceilings as documented."
+    ],
+    "notes": [
+      "Spec checkboxes updated to reflect the single outstanding item. Once the config story is resolved (either by adding the settings or amending the spec/DoD), I can move to approval."
+    ]
+  },
+  "acceptance_criteria": [
+    "Expose `modules.vdb.normalize` and `modules.vdb.max_input_tokens` settings (with defaults) through `raggd.defaults.toml`, `AppConfig.VdbModuleSettings`, and the provider/service plumbing, or adjust the spec/DoD to remove those promises and document the rationale."
+  ],
+  "references": [
+    ".agents/tasks/feat/0005-vdb-module/spec.md",
+    ".agents/tasks/feat/0005-vdb-module/implementation.md",
+    "src/raggd/resources/raggd.defaults.toml",
+    "src/raggd/core/config.py"
+  ],
+  "action_items": [
+    { "action": "Add the missing config knobs or revise the spec accordingly", "owner": "Engineer", "priority": "P1" }
+  ]
+}

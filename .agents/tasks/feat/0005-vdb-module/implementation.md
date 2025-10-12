@@ -66,6 +66,7 @@
   - FAISS layer wraps an `IndexIDMap` over `IndexFlatIP` (cosine via normalized vectors) or `IndexFlatL2` based on metric; sidecar metadata persists `dim`, `metric`, `built_at`, and `vdb_id`.
   - Provider implementation details: define `EmbeddingsProvider` `Protocol` plus capability/model info dataclasses, load providers via keyed factories for DI seams, and ensure provider outputs stay immutable for testability.
   - OpenAI provider specifics: wrap the 1.x SDK, normalize text with `tiktoken`, batch respecting provider caps, implement exponential backoff with jitter, map HTTP/client errors to typed `Vdb*Error`s, and lock embedding dims into SQLite on first success when unknown.
+  - Normalization + token ceiling knobs: surface `modules.vdb.normalize` (default `true`) to control L2 normalization prior to FAISS writes and `modules.vdb.max_input_tokens` (default `8192`) to enforce chunk truncation/splitting via `tiktoken`; plumb through `VdbModuleSettings`, provider caps, and `VdbService` sync orchestration.
   - Auto concurrency + logging: compute `min(cpu_count, provider_caps.max_parallel_requests, config_override or 8)` with floor 1, emit the resolved concurrency via structured logs, and surface provider throttle warnings for operability.
 - DI & boundaries
   - Inject config, logger, DB connection factory, provider registry, and `FaissIndex` adapter into `VdbService`.
@@ -78,6 +79,7 @@
     - [x] Document OpenAI provider behavior (batching, retries, dim resolution, token estimation, error mapping).
     - [x] Capture `auto` concurrency heuristic + logging aligned with config defaults and caps surfaced by providers.
     - [x] Outline provider-focused unit/contract tests leveraging stub provider seams.
+  - [ ] Config: expose `modules.vdb.normalize` and `modules.vdb.max_input_tokens` defaults and thread them through settings, defaults TOML, provider caps, and service sync flow (Architect feedback 03).
   - [x] FAISS: implement IDMap wrapper, persistence, locks, and sidecar metadata.
     - [x] Wrap FAISS interactions in a `FaissIndex` adapter that hides `IndexIDMap` setup and exposes add/query/remove seams.
     - [x] Persist the index file plus sidecar metadata (`dim`, `metric`, `built_at`, `vdb_id`) under the vectors directory with atomic writes.
@@ -100,7 +102,7 @@
 
 ## Test Plan
 - Unit tests
-  - Provider batching, retries, dim reporting, error translation, and auto concurrency resolution using stubbed provider caps and fake OpenAI responses.
+  - Provider batching, retries, dim reporting, error translation, auto concurrency resolution, and honoring `normalize`/`max_input_tokens` settings using stubbed provider caps and fake OpenAI responses.
   - FAISS adapter: add/update vectors, atomic rebuild, metadata read/write, and locking behavior (use temp dirs in `.tmp/`).
   - Service logic: idempotency for `create`, `sync --missing-only`, and conflict detection.
 - Contract tests
@@ -235,10 +237,13 @@ Example:
   - `modules.vdb.index_type` (default: `"IDMap,Flat"`)
   - `modules.vdb.batch_size` (default: `auto`)
   - `modules.vdb.concurrency` (default: `auto`)
+  - `modules.vdb.normalize` (default: `true`)
+  - `modules.vdb.max_input_tokens` (default: `8192`)
   - `modules.vdb.paths.base` (default: `<workspace>/sources/<source>/vectors/<vdb_name>/`)
   - `modules.vdb.retry.initial_backoff_ms` (default: `500`)
   - `modules.vdb.retry.max_backoff_ms` (default: `5000`)
   - `modules.vdb.retry.max_retries` (default: `5`)
+- `normalize=false` skips L2 normalization even for cosine metrics (intended for advanced operators); `max_input_tokens` applies pre-flight trimming via `tiktoken` and feeds provider batching heuristics.
 - Env: `OPENAI_API_KEY` required when `provider=openai` (never logged).
 
 ## Acceptance Criteria Mapping
@@ -425,6 +430,13 @@ FAISS index artifacts persisted with sidecar metadata and tests
 — Added atomic persistence helpers and sidecar serialization in `src/raggd/modules/vdb/faiss_index.py`.
 — Extended `tests/modules/vdb/test_faiss_index.py` to validate artifact writes and path derivation.
 — Ran `UV_CACHE_DIR=.tmp/uv-cache RAGGD_WORKSPACE=$PWD/.tmp/vdb-faiss-persist uv run pytest --no-cov tests/modules/vdb/test_faiss_index.py` and `UV_CACHE_DIR=.tmp/uv-cache uv run ruff check`.
+
+### 2025-10-12 11:30 UTC
+**Summary**
+Architect feedback 03 acknowledged
+**Changes**
+— Documented `modules.vdb.normalize`/`modules.vdb.max_input_tokens` defaults and threading expectations across settings, defaults TOML, provider caps, and service sync orchestration.
+— Reopened the config checklist item to track implementing these knobs per Architect sign-off gate.
 
 ### 2025-10-12 09:45 UTC
 **Summary**

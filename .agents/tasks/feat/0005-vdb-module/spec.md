@@ -64,15 +64,15 @@ Introduce a first-class `raggd vdb` command group that manages per-source vector
 - Consider adding a `query` extra later and an umbrella `rag` extra that aggregates `vdb` + `query` for convenience.
 
 ## Definition of Done
-- [ ] `raggd vdb` implements `info`, `create`, `sync`, `reset` with consistent flags and messaging.
-- [ ] Deterministic storage layout is implemented; sidecar metadata is written and read for compatibility checks.
-- [ ] Provider abstraction with OpenAI implementation: batching, concurrency, truncation, retries/backoff, and `dim` consistency enforcement.
-- [ ] Chunk materialization and FAISS IDMap writing wired to `vectors` presence tracking; supports `--missing-only`, `--recompute`, `--limit`, and `--dry-run`.
-- [ ] Health checks for index existence, counts drift, `dim` mismatches, and staleness wired into `checkhealth`; `info --json` reflects the same signals.
+- [x] `raggd vdb` implements `info`, `create`, `sync`, `reset` with consistent flags and messaging.
+- [x] Deterministic storage layout is implemented; sidecar metadata is written and read for compatibility checks.
+- [x] Provider abstraction with OpenAI implementation: batching, concurrency, truncation, retries/backoff, and `dim` consistency enforcement.
+- [x] Chunk materialization and FAISS IDMap writing wired to `vectors` presence tracking; supports `--missing-only`, `--recompute`, `--limit`, and `--dry-run`.
+- [x] Health checks for index existence, counts drift, `dim` mismatches, and staleness wired into `checkhealth`; `info --json` reflects the same signals.
 - [ ] Config keys defined in `raggd.defaults.toml` under `modules.vdb` (provider defaults, index type/metric, batching/concurrency, normalize, max input tokens) with user overrides in `raggd.toml`, and passed through to services.
-- [ ] Tests: CLI happy paths, stale index detection, dimension mismatch, resumable sync, reset (including `--drop`), and atomic index rebuild behavior.
-- [ ] Docs: user-facing CLI docs, operator notes (OpenAI API key handling, cost/limits), and developer notes on provider/index adapters.
-- [ ] Packaging: `vdb` extra declared; module registered and toggle respected.
+- [x] Tests: CLI happy paths, stale index detection, dimension mismatch, resumable sync, reset (including `--drop`), and atomic index rebuild behavior.
+- [x] Docs: user-facing CLI docs, operator notes (OpenAI API key handling, cost/limits), and developer notes on provider/index adapters.
+- [x] Packaging: `vdb` extra declared; module registered and toggle respected.
 
 ## Open Items
 - Clarify explicit model registration vs. auto-create policy and error messaging for dimension mismatches. Owner: Architect. Due: 2025-10-17.
