@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from collections.abc import Mapping, Sequence
 
 import typer
 
@@ -39,6 +39,99 @@ _db_app = typer.Typer(
     no_args_is_help=True,
     invoke_without_command=False,
 )
+
+
+def _echo_table_counts(counts: Mapping[str, object]) -> None:
+    """Render table count details with nested indentation."""
+
+    typer.echo("  table_counts:")
+    for table, total in sorted(counts.items()):
+        display = "skipped" if total is None else str(total)
+        typer.echo(f"    {table}: {display}")
+
+
+def _echo_table_counts_skipped(value: object) -> bool:
+    """Render skipped table count entries and return True when any exist."""
+
+    entries: list[Mapping[str, object]] = []
+    extras: list[object] = []
+
+    if isinstance(value, Mapping):
+        entries.append(value)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for item in value:
+            if isinstance(item, Mapping):
+                entries.append(item)
+            else:
+                extras.append(item)
+    elif value:
+        extras.append(value)
+
+    if not entries and not extras:
+        return False
+
+    typer.echo("  table_counts_skipped:")
+    for entry in entries:
+        table = entry.get("table", "<unknown>")
+        reason = entry.get("reason")
+        details = [
+            f"{key}={entry[key]}"
+            for key in sorted(entry)
+            if key not in {"table", "reason"}
+        ]
+        fragments: list[str] = []
+        if reason is not None:
+            fragments.append(str(reason))
+        if details:
+            fragments.append(", ".join(details))
+        if fragments:
+            typer.echo(f"    - {table} ({'; '.join(fragments)})")
+        else:
+            typer.echo(f"    - {table}")
+    for extra in extras:
+        typer.echo(f"    - {extra}")
+    return True
+
+
+def _echo_table_counts_skip_summary(value: object) -> str | None:
+    """Render skip summary details and return a condensed summary string."""
+
+    if not value:
+        return None
+
+    if isinstance(value, Mapping):
+        typer.echo("  table_counts_skipped_summary:")
+        parts: list[str] = []
+        for reason, count in sorted(value.items()):
+            typer.echo(f"    {reason}: {count}")
+            parts.append(f"{reason}: {count}")
+        return ", ".join(parts)
+
+    typer.echo(f"  table_counts_skipped_summary: {value}")
+    return str(value)
+
+
+def _echo_info_payload(info: Mapping[str, object]) -> None:
+    """Display info payload with enriched formatting for table counts."""
+
+    skipped_present = False
+    skip_summary: str | None = None
+
+    for key, value in sorted(info.items()):
+        if key == "table_counts" and isinstance(value, Mapping):
+            _echo_table_counts(value)
+        elif key == "table_counts_skipped":
+            skipped_present = _echo_table_counts_skipped(value)
+        elif key == "table_counts_skipped_summary":
+            skip_summary = _echo_table_counts_skip_summary(value)
+        else:
+            typer.echo(f"  {key}: {value}")
+
+    if skipped_present:
+        note = "Some table counts were skipped"
+        if skip_summary:
+            note = f"{note} ({skip_summary})"
+        typer.secho(f"  counts note: {note}", fg=typer.colors.YELLOW)
 
 
 def _resolve_workspace_override(workspace: Path | None) -> WorkspacePaths:
@@ -312,6 +405,11 @@ def info_databases(
         "--schema",
         help="Include schema information in the output.",
     ),
+    counts: bool = typer.Option(
+        True,
+        "--counts/--no-counts",
+        help="Toggle inclusion of per-table row counts.",
+    ),
 ) -> None:
     context = _require_context(ctx)
     targets = list(_resolve_targets(context, names))
@@ -324,7 +422,11 @@ def info_databases(
 
     for name in targets:
         try:
-            info = context.service.info(name, include_schema=include_schema)
+            info = context.service.info(
+                name,
+                include_schema=include_schema,
+                include_counts=counts,
+            )
         except DbLifecycleError as exc:
             _handle_failure(context, action="info", error=exc, source=name)
         else:
@@ -333,12 +435,12 @@ def info_databases(
                 fg=typer.colors.CYAN,
                 bold=True,
             )
-            for key, value in sorted(info.items()):
-                typer.echo(f"  {key}: {value}")
+            _echo_info_payload(info)
             context.logger.info(
                 "db-info",
                 source=name,
                 include_schema=include_schema,
+                include_counts=counts,
             )
 
 

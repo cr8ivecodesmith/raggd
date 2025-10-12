@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -150,6 +151,7 @@ def test_db_cli_upgrade_downgrade_and_info(tmp_path: Path) -> None:
     info_result = context.invoke("info", "demo", "--schema")
     assert info_result.exit_code == 0, info_result.stdout
     assert "Database info for demo" in info_result.stdout
+    assert "table_counts:" in info_result.stdout
     assert "schema_meta" in info_result.stdout
     assert context.next_short in info_result.stdout
 
@@ -186,6 +188,56 @@ def test_db_cli_vacuum_run_and_reset(tmp_path: Path) -> None:
     assert reset_result.exit_code == 0, reset_result.stdout
     db_path = context.paths.source_database_path("demo")
     assert db_path.exists()
+
+
+def test_db_cli_info_no_counts_flag(tmp_path: Path) -> None:
+    context = _prepare_workspace(tmp_path)
+
+    ensure_result = context.invoke("ensure", "demo")
+    assert ensure_result.exit_code == 0, ensure_result.stdout
+
+    info_result = context.invoke("info", "demo", "--no-counts")
+    assert info_result.exit_code == 0, info_result.stdout
+    assert "table_counts" not in info_result.stdout
+
+
+def test_db_cli_info_counts_skip_note(tmp_path: Path) -> None:
+    context = _prepare_workspace(tmp_path)
+
+    config_text = context.paths.config_file.read_text(encoding="utf-8")
+    document = tomlkit.parse(config_text)
+    db_table = document.get("db")
+    assert isinstance(db_table, Table)
+    db_table["info_count_row_limit"] = 1
+    context.paths.config_file.write_text(tomlkit.dumps(document), encoding="utf-8")
+
+    ensure_result = context.invoke("ensure", "demo")
+    assert ensure_result.exit_code == 0, ensure_result.stdout
+
+    db_path = context.paths.source_database_path("demo")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS big_rows(
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
+            );
+            """
+        )
+        conn.executemany(
+            "INSERT INTO big_rows(name) VALUES (?)",
+            [("one",), ("two",)],
+        )
+        conn.commit()
+
+    info_result = context.invoke("info", "demo")
+    assert info_result.exit_code == 0, info_result.stdout
+    assert "table_counts:" in info_result.stdout
+    assert "big_rows" in info_result.stdout
+    assert "table_counts_skipped:" in info_result.stdout
+    assert "table_counts_skipped_summary:" in info_result.stdout
+    assert "row_limit: 1" in info_result.stdout
+    assert "counts note" in info_result.stdout
 
 
 def test_db_cli_handles_missing_sources(tmp_path: Path) -> None:

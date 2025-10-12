@@ -41,7 +41,7 @@
   - [x] Update `DbLifecycleBackend.info` protocol + implementations (real + test doubles) to accept an `include_counts` flag and return count metadata.
   - [x] Implement table counting in `SQLiteLifecycleBackend.info` with internal helper (filters tables, enforces timeout via progress handler, records skipped tables).
   - [x] Update `DbLifecycleService.info` to surface `table_counts` in payload, track skip reasons, and enrich logging.
-  - [ ] Add `--counts/--no-counts` option to CLI command, adjust output formatting to render counts as a nested section, and include note on skipped tables/timeouts.
+  - [x] Add `--counts/--no-counts` option to CLI command, adjust output formatting to render counts as a nested section, and include note on skipped tables/timeouts.
   - [ ] Refresh docs in `docs/api/db.md` with flag description, sample output, and performance guidance.
   - [ ] Add/adjust tests across CLI, backend, lifecycle, and config to cover new behaviors and edge cases (timeout skip, disabled counts).
 
@@ -110,3 +110,11 @@
 - Split metadata normalization and payload construction into helpers to reduce `DbLifecycleService.info` complexity.
 - Fixed the stub logger fixture line length and revalidated `tests/modules/db/test_backend.py` table-count cases.
 - Ran `.venv/bin/ruff check src tests`, `pytest tests/modules/db/test_backend.py -k table_counts --no-cov`, and `pytest tests/modules/db/test_lifecycle.py -k info --no-cov` with the standard `.tmp` overrides.
+
+### 2025-10-13 04:25 UTC
+**Summary**
+- Added CLI flag plumbing and human-readable output for table counts.
+**Changes**
+- Introduced `--counts/--no-counts` to `raggd db info`, rendering nested table counts, skip details, and a highlighted note when any tables are skipped.
+- Expanded CLI integration tests to cover default counts, the `--no-counts` opt-out, and row-limit skip reporting.
+- Ran `pytest tests/cli/test_db.py --no-cov` with `UV_CACHE_DIR=.tmp/uv-cache`, `UV_PROJECT_ENVIRONMENT=.tmp/uv-env`, and `RAGGD_WORKSPACE=$PWD/.tmp/test-workspace`.
