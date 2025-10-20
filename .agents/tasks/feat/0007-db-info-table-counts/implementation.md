@@ -43,7 +43,7 @@
   - [x] Update `DbLifecycleService.info` to surface `table_counts` in payload, track skip reasons, and enrich logging.
   - [x] Add `--counts/--no-counts` option to CLI command, adjust output formatting to render counts as a nested section, and include note on skipped tables/timeouts.
   - [x] Refresh docs in `docs/api/db.md` with flag description, sample output, and performance guidance.
-  - [ ] Add/adjust tests across CLI, backend, lifecycle, and config to cover new behaviors and edge cases (timeout skip, disabled counts).
+  - [x] Add/adjust tests across CLI, backend, lifecycle, and config to cover new behaviors and edge cases (timeout skip, disabled counts).
 
 ## Test Plan
 - Unit:
@@ -125,3 +125,10 @@
 **Changes**
 - Expanded `docs/api/db.md` with `--counts/--no-counts` coverage, a sample output block showing skip metadata, and configuration guidance for timeout/row-limit tuning.
 - Re-ran `.venv/bin/pytest tests/cli/test_db.py --no-cov` using `UV_CACHE_DIR=.tmp/uv-cache`, `UV_PROJECT_ENVIRONMENT=.tmp/uv-env`, and `RAGGD_WORKSPACE=$PWD/.tmp/test-workspace`.
+
+### 2025-10-13 06:15 UTC
+**Summary**
+- Finalized automated coverage for table count workflows.
+**Changes**
+- Revalidated CLI, backend, lifecycle, settings, and config suites after count feature updates, focusing on timeout skips and `--no-counts` behavior.
+- Ran `pytest tests/modules/db/test_backend.py tests/modules/db/test_lifecycle.py tests/cli/test_db.py tests/core/test_config.py tests/modules/db/test_settings.py --no-cov` with `UV_CACHE_DIR=.tmp/uv-cache`, `UV_PROJECT_ENVIRONMENT=.tmp/uv-env`, and `RAGGD_WORKSPACE=$PWD/.tmp/test-workspace`.
